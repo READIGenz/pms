@@ -6,8 +6,6 @@ This repository contains a **fully commented, runnable** demo for:
 - **Auth**: OTP (dev static code `000000`) → JWT
 - **Flow**: Login → Landing (My Projects / Notifications / Payments) → My Projects (KPIs + cards) → Project Details (modules per role)
 
-> All files include **inline comments** explaining *what* and *why*.
-
 ---
 
 ## Quick Start
@@ -56,6 +54,3 @@ Seeded project:
 
 - `pms-backend/`: NestJS app, Prisma schema, seed, and REST endpoints.
 - `pms-frontend/`: Vite React app with routes & pages for the demo flow.
-- Everything is commented. Search for `// NOTE:` and `// REMARK:` markers for rationale.
-
-Have fun building!

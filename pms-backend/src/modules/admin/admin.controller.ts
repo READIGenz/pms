@@ -12,6 +12,7 @@ import {
 import { AdminService } from './admin.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @UseGuards(AuthGuard, AdminGuard)
 @Controller('admin')
@@ -66,21 +67,9 @@ export class AdminController {
   // --------------------
 
   @Post('users')
-  async createUser(
-    @Body()
-    dto: {
-      code?: string;
-      role: string;
-      name: string;
-      city?: string;
-      email?: string | null;
-      phone?: string | null;
-      isSuperAdmin?: boolean;
-    },
-  ) {
-    const res = await this.svc.createUser(dto);
-    return res;
-  }
+async createUser(@Body() dto: CreateUserDto) {
+  return this.svc.createUser(dto);
+}
 
   @Get('users')
   async searchUsers(@Query('q') q?: string) {

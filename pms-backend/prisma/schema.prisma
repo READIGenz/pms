@@ -28,7 +28,8 @@ model User {
   name         String?
   city         String?
   email        String?  @unique
-  phone        String?  @unique
+  countryCode  String   @default("91") // NEW
+  phone        String?                 // 10-digit local, no leading 0
   isSuperAdmin Boolean  @default(false)
   createdAt    DateTime @default(now())
   modifiedAt   DateTime @updatedAt
@@ -37,8 +38,9 @@ model User {
   @@index([email])
   @@index([code])
   @@index([role])
+  @@index([countryCode])
   @@index([phone])
-
+@@unique([countryCode, phone]) // phone is nullable → multiple NULL allowed; unique when phone is present
   memberships ProjectMember[]
 }
 

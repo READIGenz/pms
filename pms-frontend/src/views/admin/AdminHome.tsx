@@ -10,8 +10,7 @@ export default function AdminHome(){
     { to: '/admin/projects/new', title: 'Create New Project', desc: 'Add a project with code, city, status, stage & health.' },
     { to: '/admin/users/new',    title: 'Create New User',    desc: 'Add a pre-registered user with role, email & phone.' },
 
-    // 🔎 Roles
-    { to: '/admin/roles',  title: 'View Roles',   desc: 'See roles catalog and overview.' },
+    // 🔎 Assign
     { to: '/admin/assign', title: 'Assign Roles', desc: 'Pick a project and assign users per role (supports None).' },
   ];
 

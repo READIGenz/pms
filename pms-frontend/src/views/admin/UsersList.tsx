@@ -8,12 +8,19 @@ type User = {
   code: string;
   role: string;
   name: string;
-  city?: string;
+  city?: string | null;
   email?: string | null;
-  phone?: string | null;
+  countryCode?: string | null; // digits only, e.g. "91"
+  phone?: string | null;       // 10-digit local, e.g. "9876543210"
   isSuperAdmin?: boolean;
   createdAt?: string;
 };
+
+function fmtPhoneParen(u: User) {
+  if (u.countryCode && u.phone) return `(+${u.countryCode}) ${u.phone}`;
+  if (u.phone) return u.phone; // fallback if cc missing
+  return null;
+}
 
 export default function UsersList(){
   const [items, setItems] = useState<User[]>([]);
@@ -26,7 +33,9 @@ export default function UsersList(){
     setLoading(true);
     try {
       const { data } = await api.get(endpoints.admin.users, { params: query ? { q: query } : undefined });
-      setItems(Array.isArray(data) ? data : (data?.items ?? []));
+      // backend returns either an array or { ok, items }
+      const list: User[] = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      setItems(list);
     } catch(e:any) {
       setErr(e?.response?.data?.error || 'Failed to load users');
     } finally {
@@ -48,39 +57,45 @@ export default function UsersList(){
             <h2 className="text-xl font-semibold">Users</h2>
             <div className="text-sm text-gray-600">{loading ? 'Loading…' : `${items.length} result(s)`}</div>
           </div>
-          <div className="flex gap-2">
-            <input
-              className="border rounded px-3 py-2 w-64"
-              placeholder="Search by email/name/code/role…"
-              value={q}
-              onChange={(e)=>setQ(e.target.value)}
-            />
-            <Link to="/admin/users/new" className="px-3 py-2 rounded bg-emerald-600 text-white">New User</Link>
-            <Link to="/admin" className="px-3 py-2 rounded border">Back</Link>
-          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input
+            className="border rounded px-3 py-2 w-64"
+            placeholder="Search by email/name/code/role…"
+            value={q}
+            onChange={(e)=>setQ(e.target.value)}
+          />
+          <Link to="/admin/users/new" className="px-3 py-2 rounded bg-emerald-600 text-white">New User</Link>
+          <Link to="/admin" className="px-3 py-2 rounded border">Back</Link>
         </div>
 
         {err && <div className="text-red-600 text-sm mb-3">{err}</div>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map(u => (
-            <div key={u.userId} className="rounded-xl border bg-white p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-lg font-medium">{u.name}</div>
-                  <div className="text-sm text-gray-600">{u.code} · {u.role}</div>
-                  <div className="text-xs text-gray-500">
-                    {u.city || '—'} {u.email ? `· ${u.email}` : ''} {u.phone ? `· ${u.phone}` : ''}
+          {items.map(u => {
+            const phone = fmtPhoneParen(u);
+            return (
+              <div key={u.userId} className="rounded-xl border bg-white p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-lg font-medium">{u.name}</div>
+                    <div className="text-sm text-gray-600">{u.code} · {u.role}</div>
+                    <div className="text-xs text-gray-500">
+                      {u.city || '—'}
+                      {u.email ? ` · ${u.email}` : ''}
+                      {phone ? ` · ${phone}` : ''}
+                    </div>
                   </div>
+                  {u.isSuperAdmin && (
+                    <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                      SUPER ADMIN
+                    </span>
+                  )}
                 </div>
-                {u.isSuperAdmin && (
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                    SUPER ADMIN
-                  </span>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {!loading && items.length === 0 && (
             <div className="text-gray-500 text-sm p-4">No users found.</div>
           )}

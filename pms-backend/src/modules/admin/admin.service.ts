@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CreateUserDto } from './dto/create-user.dto';
 
 type CreateProjectDto = {
   code: string;
@@ -8,16 +9,6 @@ type CreateProjectDto = {
   status?: string;
   stage: string;
   health?: string;
-};
-
-type CreateUserDto = {
-  code?: string;              // optional; auto-generated if not provided
-  role: string;
-  name: string;
-  city?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  isSuperAdmin?: boolean;
 };
 
 type AssignDto = {
@@ -30,26 +21,31 @@ type AssignDto = {
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ---------------
-  // Helpers
-  // ---------------
+  // -----------------
+  // Common helpers
+  // -----------------
   private normStr(v?: string | null) {
     return (v ?? '').trim();
   }
 
   private normEmail(v?: string | null) {
-    const s = this.normStr(v);
-    return s ? s.toLowerCase() : null;
+    const s = this.normStr(v).toLowerCase();
+    return s || null;
   }
 
-  private normPhone(v?: string | null) {
-    const s = this.normStr(v);
-    if (!s) return null;
-    const digits = s.replace(/[^0-9]/g, '');
-    return digits || null;
+  private onlyDigits(v?: string | null) {
+    return this.normStr(v).replace(/\D/g, '');
   }
 
-  /** First 3 letters (A–Z) of role; padded to 3 if shorter. */
+  /** Local phone must be exactly 10 digits and not start with '0'. */
+  private normLocalPhone(v?: string | null): string | null {
+    const d = this.onlyDigits(v);
+    if (!d) return null;
+    if (!/^[1-9][0-9]{9}$/.test(d)) return null;
+    return d;
+  }
+
+  /** First 3 letters (A–Z) of role → uppercase; pad to 3 with 'X' if shorter. */
   private prefixFromRole(roleRaw: string): string {
     const letters = (roleRaw || '').replace(/[^A-Za-z]/g, '').toUpperCase();
     const base = letters.slice(0, 3) || 'USR';
@@ -57,12 +53,11 @@ export class AdminService {
   }
 
   /**
-   * Next sequential user code per prefix.
-   * "Customer" -> CUS001 (if none), CUS002, ... (expands > 999).
+   * Compute next user code for a role.
+   * e.g., "Customer" → "CUS001", "CUS002", … (expands >999).
    */
   async getNextUserCode(roleRaw: string): Promise<string> {
     const prefix = this.prefixFromRole(roleRaw);
-
     const rows = await this.prisma.user.findMany({
       where: { code: { startsWith: prefix } },
       select: { code: true },
@@ -83,9 +78,9 @@ export class AdminService {
     return prefix + String(next).padStart(width, '0');
   }
 
-  // ---------------
+  // -----------------
   // Projects
-  // ---------------
+  // -----------------
   async createProject(dto: CreateProjectDto) {
     const code = this.normStr(dto.code).toUpperCase();
     const name = this.normStr(dto.name);
@@ -123,34 +118,52 @@ export class AdminService {
     });
   }
 
-  // ---------------
+  // -----------------
   // Users
-  // ---------------
+  // -----------------
+  /**
+   * Create user with:
+   * - optional manual `code`, or auto from role
+   * - unique email / (countryCode, phone)
+   * - `countryCode` (digits) and `phone` (10-digit local)
+   */
   async createUser(dto: CreateUserDto) {
     const role = this.normStr(dto.role);
     const name = this.normStr(dto.name);
     const city = this.normStr(dto.city);
     const email = this.normEmail(dto.email);
-    const phone = this.normPhone(dto.phone);
+
+    // digits-only CC (e.g., "91", "1", "971"); allow undefined if email-only user
+    const countryCode = this.onlyDigits((dto as any).countryCode) || null;
+
+    // local 10-digit phone (validated)
+    const localPhone = this.normLocalPhone(dto.phone);
+
     const isSuperAdmin = !!dto.isSuperAdmin;
 
     if (!role || !name) {
       throw new BadRequestException('role and name are required');
     }
-    if (!email && !phone) {
+    if (!email && !localPhone) {
       throw new BadRequestException('Either email or phone is required');
     }
 
+    // Unique checks
     if (email) {
       const e = await this.prisma.user.findFirst({ where: { email } });
       if (e) throw new BadRequestException(`Email "${email}" already in use`);
     }
-    if (phone) {
-      const p = await this.prisma.user.findFirst({ where: { phone } });
-      if (p) throw new BadRequestException(`Phone "${phone}" already in use`);
+    if (countryCode && localPhone) {
+      const exists = await this.prisma.user.findFirst({
+        where: { countryCode, phone: localPhone },
+        select: { userId: true },
+      });
+      if (exists) {
+        throw new BadRequestException(`Phone +${countryCode}${localPhone} already in use`);
+      }
     }
 
-    // Try creating with provided or generated code; retry on unique conflict.
+    // Try creating with provided or generated code; retry on unique(code) conflicts.
     for (let attempt = 0; attempt < 3; attempt++) {
       const candidate = this.normStr(dto.code)?.toUpperCase() || (await this.getNextUserCode(role));
       try {
@@ -161,14 +174,17 @@ export class AdminService {
             name,
             city: city || null,
             email,
-            phone,
+            // IMPORTANT: Save split phone fields
+            countryCode: countryCode ?? '91', // fall back to default if phone present but cc missing
+            phone: localPhone || null,
             isSuperAdmin,
           },
         });
         return { ok: true, userId: u.userId, code: u.code };
       } catch (e: any) {
+        // Handle code unique conflict; re-generate next loop
         if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('code')) {
-          dto.code = undefined; // regenerate on next loop
+          (dto as any).code = undefined;
           continue;
         }
         throw e;
@@ -178,7 +194,7 @@ export class AdminService {
     throw new BadRequestException('Could not allocate a unique user code. Please retry.');
   }
 
-  /** If q omitted/blank, return recent users. Otherwise search. */
+  /** If q omitted/blank, return recent users; else search across common fields. */
   searchUsers(q?: string) {
     const query = this.normStr(q);
     if (!query) {
@@ -195,6 +211,7 @@ export class AdminService {
           { code:  { contains: query, mode: 'insensitive' } },
           { role:  { contains: query, mode: 'insensitive' } },
           { phone: { contains: query } },
+          { countryCode: { contains: query } },
         ],
       },
       orderBy: [{ name: 'asc' }],
@@ -202,9 +219,9 @@ export class AdminService {
     });
   }
 
-  // ---------------
-  // Assignments (ProjectMember)
-  // ---------------
+  // -----------------
+  // Project assignments
+  // -----------------
   async assign(dto: AssignDto) {
     const projectId = this.normStr(dto.projectId);
     const userId = this.normStr(dto.userId);
