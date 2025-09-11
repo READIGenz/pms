@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InspectionType {
+  WIR
+  MIR
+}
+
+enum InspectionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  AWC
+  REJECTED
+  INSPECTION_SCHEDULED
+}
+
+model User {
+  userId       String   @id @default(uuid())
+  code         String  @unique
+  role         String
+  name         String?
+  city         String?
+  email        String?  @unique
+  phone        String?  @unique
+  isSuperAdmin Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  modifiedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([email])
+  @@index([code])
+  @@index([role])
+  @@index([phone])
+
+  memberships ProjectMember[]
+}
+
+model Project {
+  projectId String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  city      String
+  status    String   @default("Ongoing")
+  stage     String
+  health    String   @default("Good")
+  createdAt DateTime @default(now())
+
+  memberships ProjectMember[]
+  inspections Inspection[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [projectId])
+  user    User    @relation(fields: [userId], references: [userId])
+
+  @@unique([projectId, userId, role], name: "projectId_userId_role")
+  @@index([projectId])
+  @@index([userId])
+}
+
+model File {
+  id        String   @id @default(uuid())
+  projectId String
+  key       String
+  kind      String
+  createdAt DateTime @default(now())
+}
+
+model Inspection {
+  id              String            @id @default(uuid())
+  type            InspectionType
+  projectId       String
+  project         Project           @relation(fields: [projectId], references: [projectId])
+  title           String
+  discipline      String
+  status          InspectionStatus  @default(DRAFT)
+  contractorId    String
+  inspectorId     String?
+  hodId           String?
+  parentId        String?
+  followupChildId String?
+  requestedAt     DateTime          @default(now())
+  submittedAt     DateTime?
+  closedAt        DateTime?
+  items           InspectionItem[]
+  lineage         InspectionEvent[]
+  evidence        Evidence[]
+  materials       MaterialsInfo?
+
+  @@index([projectId, type, status])
+  @@index([projectId, requestedAt])
+}
+
+model InspectionItem {
+  id           String     @id @default(uuid())
+  inspection   Inspection @relation(fields: [inspectionId], references: [id])
+  inspectionId String
+  isCritical   Boolean    @default(false)
+  specText     String?
+  requirement  String?
+  result       String?
+  measured     String?
+}
+
+model InspectionEvent {
+  id           String     @id @default(uuid())
+  inspection   Inspection @relation(fields: [inspectionId], references: [id])
+  inspectionId String
+  event        String
+  actorId      String
+  note         String?
+  at           DateTime   @default(now())
+}
+
+model Evidence {
+  id           String     @id @default(uuid())
+  inspection   Inspection @relation(fields: [inspectionId], references: [id])
+  inspectionId String
+  fileId       String
+  kind         String
+  lat          Float?
+  lng          Float?
+  ts           DateTime   @default(now())
+}
+
+model MaterialsInfo {
+  id           String     @id @default(uuid())
+  inspection   Inspection @relation(fields: [inspectionId], references: [id])
+  inspectionId String     @unique
+  brand        String?
+  batchNo      String?
+  qty          Float?
+  uom          String?
+}
