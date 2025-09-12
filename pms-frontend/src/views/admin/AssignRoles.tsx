@@ -28,6 +28,21 @@ export default function AdminAssignRoles(){
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // projectId -> whether any role assigned
+  const [assignedMap, setAssignedMap] = useState<Record<string, boolean>>({});
+
+  // NEW: which roles are currently in "edit" (dropdown) mode
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
+
+  // Build a quick index of all users by id (for display)
+  const userIndex = useMemo(() => {
+    const map: Record<string, User> = {};
+    for (const group of catalog) {
+      for (const u of group.users) map[u.userId] = u;
+    }
+    return map;
+  }, [catalog]);
+
   useEffect(() => {
     (async () => {
       setErr(null);
@@ -36,6 +51,22 @@ export default function AdminAssignRoles(){
         const { data } = await api.get(endpoints.admin.projects);
         const list: Project[] = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
         setProjects(list);
+
+        // compute per-project assignment status
+        const statuses: Record<string, boolean> = {};
+        await Promise.all(
+          list.map(async (p) => {
+            try {
+              const res = await api.get(endpoints.admin.projectRoles(p.projectId));
+              const assignObj = res?.data?.assignments || {};
+              const anyAssigned = Object.values(assignObj).some((val: any) => !!val);
+              statuses[p.projectId] = !!anyAssigned;
+            } catch {
+              statuses[p.projectId] = false;
+            }
+          })
+        );
+        setAssignedMap(statuses);
       }catch(e:any){
         setErr(e?.response?.data?.error || 'Failed to load projects');
       }finally{ setLoading(false); }
@@ -46,6 +77,7 @@ export default function AdminAssignRoles(){
     setSelectedProject(p);
     setErr(null);
     setStep('assign');
+    setEditing({}); // reset edit toggles when switching project
     try{
       const [usersRes, rolesRes] = await Promise.all([
         api.get(endpoints.admin.users), // q optional
@@ -76,12 +108,18 @@ export default function AdminAssignRoles(){
     setCurrent(s => ({...s, [role]: userIdOrNull === 'NONE' ? null : userIdOrNull}));
   };
 
+  const openEditor = (role: string) => setEditing(e => ({ ...e, [role]: true }));
+  const closeEditor = (role: string) => setEditing(e => ({ ...e, [role]: false }));
+
   const submit = async () => {
     if(!selectedProject) return;
     setSaving(true); setErr(null);
     try{
       const { data } = await api.post(endpoints.admin.assignRoles(selectedProject.projectId), { assignments: current });
       if(data?.ok){
+        // Update status tag for this project
+        const anyAssigned = Object.values(current).some(v => !!v);
+        setAssignedMap(m => ({ ...m, [selectedProject.projectId]: anyAssigned }));
         setConfirmOpen(true);
       } else {
         setErr(data?.error || 'Failed to save assignments');
@@ -102,12 +140,36 @@ export default function AdminAssignRoles(){
 
           {loading ? <div>Loading projects…</div> : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map(p => (
-                <button key={p.projectId} onClick={()=>pickProject(p)} className="text-left rounded-xl border p-4 hover:shadow">
-                  <div className="text-lg font-medium">{p.name}</div>
-                  <div className="text-sm text-gray-600">{p.code} · {p.city}</div>
-                </button>
-              ))}
+              {projects.map(p => {
+                const assigned = !!assignedMap[p.projectId];
+                const badgeCls = assigned
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  : 'bg-gray-100 text-gray-700 border-gray-200';
+                const badgeText = assigned ? 'Assigned' : 'Not Assigned';
+                const btnText   = assigned ? 'Modify' : 'Assign Now';
+
+                return (
+                  <div key={p.projectId} className="rounded-xl border p-4 hover:shadow flex flex-col gap-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-lg font-medium">{p.name}</div>
+                        <div className="text-sm text-gray-600">{p.code} · {p.city}</div>
+                      </div>
+                      <span className={`text-[11px] px-2 py-1 rounded-full border ${badgeCls}`}>
+                        {badgeText}
+                      </span>
+                    </div>
+                    <div>
+                      <button
+                        onClick={()=>pickProject(p)}
+                        className="px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                      >
+                        {btnText}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
               {!projects.length && (
                 <div className="text-gray-500 text-sm p-2">
                   No projects found. Create one from <a className="text-emerald-700 underline" href="/admin/projects/new">New Project</a>.
@@ -146,28 +208,81 @@ export default function AdminAssignRoles(){
           <div>Loading roles/users…</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {catalog.map(({ role, users }) => (
-              <div key={role} className="rounded-xl border p-4">
-                <div className="font-medium mb-2">{role}</div>
-                <select
-                  className="border rounded w-full p-2 bg-white"
-                  value={current[role] ?? 'NONE'}
-                  onChange={e=> setRoleUser(role, e.target.value)}
-                >
-                  <option value="NONE">None</option>
-                  {users.map(u => (
-                    <option key={u.userId} value={u.userId}>
-                      {u.name} {u.email ? `· ${u.email}` : u.phone ? `· ${u.phone}` : ''}
-                    </option>
-                  ))}
-                </select>
-                {!users.length && (
-                  <div className="text-xs text-gray-500 mt-2">
-                    No users with “{role}” role found. Create in <a className="text-emerald-700 underline" href="/admin/users/new">New User</a>.
-                  </div>
-                )}
-              </div>
-            ))}
+            {catalog.map(({ role, users }) => {
+              const selectedUserId = current[role] ?? null;
+              const assignedUser = selectedUserId ? userIndex[selectedUserId] : undefined;
+              const isEditing = !!editing[role];
+
+              return (
+                <div key={role} className="rounded-xl border p-4 space-y-2">
+                  <div className="font-medium">{role}</div>
+
+                  {!isEditing ? (
+                    <>
+                      {assignedUser ? (
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm">
+                            Assigned to <b>{assignedUser.name}</b>
+                            {assignedUser.email ? ` · ${assignedUser.email}` : assignedUser.phone ? ` · ${assignedUser.phone}` : ''}
+                          </div>
+                          <button
+                            className="px-3 py-1 rounded border hover:bg-gray-50"
+                            onClick={() => openEditor(role)}
+                          >
+                            Modify
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Not Assigned</span>
+                          <button
+                            className="px-3 py-1 rounded bg-amber-500 text-white hover:bg-amber-600"
+                            onClick={() => openEditor(role)}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <select
+                        className="border rounded w-full p-2 bg-white"
+                        value={selectedUserId ?? 'NONE'}
+                        onChange={e => setRoleUser(role, e.target.value)}
+                      >
+                        <option value="NONE">None</option>
+                        {users.map(u => (
+                          <option key={u.userId} value={u.userId}>
+                            {u.name} {u.email ? `· ${u.email}` : u.phone ? `· ${u.phone}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {!users.length && (
+                        <div className="text-xs text-gray-500">
+                          No users with “{role}” role found. Create in{' '}
+                          <a className="text-emerald-700 underline" href="/admin/users/new">New User</a>.
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          className="px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                          onClick={() => closeEditor(role)}
+                        >
+                          Done
+                        </button>
+                        <button
+                          className="px-3 py-1 rounded border"
+                          onClick={() => { setRoleUser(role, 'NONE'); closeEditor(role); }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
