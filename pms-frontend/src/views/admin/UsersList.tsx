@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
@@ -13,6 +13,7 @@ type User = {
   countryCode?: string | null; // digits only, e.g. "91"
   phone?: string | null;       // 10-digit local, e.g. "9876543210"
   isSuperAdmin?: boolean;
+  status?: 'Active'|'Inactive';
   createdAt?: string;
 };
 
@@ -28,6 +29,17 @@ export default function UsersList(){
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string|null>(null);
 
+  // who is logged in?
+  const currentUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
+  }, []);
+  const canModify = !!currentUser?.isSuperAdmin;
+
+  // inline edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [newStatus, setNewStatus] = useState<'Active'|'Inactive'>('Active');
+  const [saving, setSaving] = useState(false);
+  
   const load = async (query?: string) => {
     setErr(null);
     setLoading(true);
@@ -48,6 +60,34 @@ export default function UsersList(){
     const t = setTimeout(() => load(q.trim() || undefined), 300);
     return () => clearTimeout(t);
   }, [q]);
+
+  const beginEdit = (u: User) => {
+    setEditingId(u.userId);
+    setNewStatus((u.status as 'Active'|'Inactive') || 'Active');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveStatus = async (u: User) => {
+    if (!editingId) return;
+    try {
+      setSaving(true);
+      const { data } = await api.patch(endpoints.admin.userStatus(u.userId), { status: newStatus });
+      if (data?.ok) {
+        // update local list
+        setItems(arr => arr.map(it => it.userId === u.userId ? { ...it, status: newStatus } : it));
+        setEditingId(null);
+      } else {
+        setErr(data?.error || 'Failed to update status');
+      }
+    } catch (e:any) {
+      setErr(e?.response?.data?.error || 'Failed to update status');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen p-6 bg-gray-50">
@@ -72,11 +112,16 @@ export default function UsersList(){
 
         {err && <div className="text-red-600 text-sm mb-3">{err}</div>}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map(u => {
             const phone = fmtPhoneParen(u);
-            return (
-              <div key={u.userId} className="rounded-xl border bg-white p-4">
+            const isEditing = editingId === u.userId;
+            const badge = u.status === 'Inactive'
+              ? 'bg-red-100 text-red-700 border-red-200'
+              : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+
+           return (
+              <div key={u.userId} className="rounded-xl border bg-white p-4 space-y-2">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-lg font-medium">{u.name}</div>
@@ -87,12 +132,51 @@ export default function UsersList(){
                       {phone ? ` · ${phone}` : ''}
                     </div>
                   </div>
-                  {u.isSuperAdmin && (
-                    <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                      SUPER ADMIN
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[10px] px-2 py-1 rounded-full border ${badge}`}>
+                      {u.status || 'Active'}
                     </span>
-                  )}
+                    {u.isSuperAdmin && (
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                        SUPER ADMIN
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {canModify && (
+                  <div className="pt-2">
+                    {!isEditing ? (
+                      <button
+                        className="px-3 py-1 rounded border hover:bg-gray-50"
+                        onClick={() => beginEdit(u)}
+                      >
+                        Modify Status
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="border rounded px-2 py-1 bg-white"
+                          value={newStatus}
+                          onChange={e => setNewStatus(e.target.value as 'Active'|'Inactive')}
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                        </select>
+                        <button
+                          className="px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-60"
+                          disabled={saving}
+                          onClick={() => saveStatus(u)}
+                        >
+                          {saving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button className="px-3 py-1 rounded border" onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

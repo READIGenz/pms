@@ -32,6 +32,7 @@ export default function AdminUserNew(){
     dial: DIALS[0].dial,      // e.g. "+91"
     phoneLocal: '',           // 10 digits (no leading 0)
     isSuperAdmin: false,
+    status: 'Active' as 'Active'|'Inactive',
   });
 
   const [busy, setBusy] = useState(false);
@@ -103,6 +104,7 @@ export default function AdminUserNew(){
         countryCode: form.dial.replace('+', ''), // e.g. "91"
         phone: form.phoneLocal || undefined,     // e.g. "9876543210"
         isSuperAdmin: form.isSuperAdmin,
+        status: form.status,
       };
 
       const { data } = await api.post(endpoints.admin.users, payload);
@@ -209,6 +211,19 @@ export default function AdminUserNew(){
               Super Admin (full access)
             </label>
           </div>
+<div>
+  <label className="text-sm">Status</label>
+  <select
+    className="border rounded w-full p-3 bg-white"
+    value={form.status}
+    onChange={e => setForm(s => ({ ...s, status: e.target.value as 'Active'|'Inactive' }))}
+  >
+    <option value="Active">Active</option>
+    <option value="Inactive">Inactive</option>
+  </select>
+</div>
+
+
         </div>
 
         {err && <div className="text-red-600 text-sm">{err}</div>}

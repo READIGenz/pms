@@ -132,38 +132,25 @@ export class AdminService {
     const name = this.normStr(dto.name);
     const city = this.normStr(dto.city);
     const email = this.normEmail(dto.email);
-
-    // digits-only CC (e.g., "91", "1", "971"); allow undefined if email-only user
     const countryCode = this.onlyDigits((dto as any).countryCode) || null;
-
-    // local 10-digit phone (validated)
-    const localPhone = this.normLocalPhone(dto.phone);
-
+    const localPhone  = this.normLocalPhone(dto.phone);
     const isSuperAdmin = !!dto.isSuperAdmin;
 
-    if (!role || !name) {
-      throw new BadRequestException('role and name are required');
-    }
-    if (!email && !localPhone) {
-      throw new BadRequestException('Either email or phone is required');
-    }
+    // 👇 status (default Active)
+    const status = (this.normStr(dto.status) as 'Active'|'Inactive') || 'Active';
 
-    // Unique checks
+    if (!role || !name) throw new BadRequestException('role and name are required');
+    if (!email && !localPhone) throw new BadRequestException('Either email or phone is required');
+
     if (email) {
       const e = await this.prisma.user.findFirst({ where: { email } });
       if (e) throw new BadRequestException(`Email "${email}" already in use`);
     }
     if (countryCode && localPhone) {
-      const exists = await this.prisma.user.findFirst({
-        where: { countryCode, phone: localPhone },
-        select: { userId: true },
-      });
-      if (exists) {
-        throw new BadRequestException(`Phone +${countryCode}${localPhone} already in use`);
-      }
+      const exists = await this.prisma.user.findFirst({ where: { countryCode, phone: localPhone } });
+      if (exists) throw new BadRequestException(`Phone +${countryCode}${localPhone} already in use`);
     }
 
-    // Try creating with provided or generated code; retry on unique(code) conflicts.
     for (let attempt = 0; attempt < 3; attempt++) {
       const candidate = this.normStr(dto.code)?.toUpperCase() || (await this.getNextUserCode(role));
       try {
@@ -174,15 +161,14 @@ export class AdminService {
             name,
             city: city || null,
             email,
-            // IMPORTANT: Save split phone fields
-            countryCode: countryCode ?? '91', // fall back to default if phone present but cc missing
+            countryCode: countryCode ?? '91',
             phone: localPhone || null,
             isSuperAdmin,
+            status, // 👈 NEW
           },
         });
         return { ok: true, userId: u.userId, code: u.code };
       } catch (e: any) {
-        // Handle code unique conflict; re-generate next loop
         if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('code')) {
           (dto as any).code = undefined;
           continue;
@@ -190,10 +176,23 @@ export class AdminService {
         throw e;
       }
     }
-
     throw new BadRequestException('Could not allocate a unique user code. Please retry.');
   }
 
+  async updateUserStatus(userId: string, status: 'Active'|'Inactive') {
+    const uid = this.normStr(userId);
+    if (!uid) throw new BadRequestException('userId required');
+    if (status !== 'Active' && status !== 'Inactive') {
+      throw new BadRequestException('status must be Active or Inactive');
+    }
+    const u = await this.prisma.user.update({
+      where: { userId: uid },
+      data: { status },
+      select: { userId: true, status: true },
+    });
+    return { ok: true, ...u };
+  }
+  
   /** If q omitted/blank, return recent users; else search across common fields. */
   searchUsers(q?: string) {
     const query = this.normStr(q);

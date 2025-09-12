@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -83,6 +84,18 @@ async createUser(@Body() dto: CreateUserDto) {
     const code = await this.svc.getNextUserCode(role);
     return { ok: true, code };
   }
+
+  @Patch('users/:id/status')
+  async setUserStatus(
+    @Param('id') id: string,
+    @Body() body: { status: 'Active'|'Inactive' }
+  ) {
+    if (!body || (body.status !== 'Active' && body.status !== 'Inactive')) {
+      throw new BadRequestException('status must be Active or Inactive');
+    }
+    return this.svc.updateUserStatus(id, body.status);
+  }
+
 
   // Roles catalog for "View Roles" page
   @Get('roles/catalog')
@@ -177,3 +190,7 @@ async createUser(@Body() dto: CreateUserDto) {
     return { ok: true };
   }
 }
+function rolesCatalog() {
+  throw new Error('Function not implemented.');
+}
+

@@ -20,6 +20,7 @@ export const endpoints = {
     projectRoles: (projectId: string) => `/admin/projects/${projectId}/roles`,     // GET current assignments
     assignRoles: (projectId: string) => `/admin/projects/${projectId}/assign-roles`, // POST bulk assign
     usersNextCode: '/admin/users/next-code',
+     userStatus:   (id: string) => `/admin/users/${id}/status`,
   },
   projectModules: (id: string) => `/projects/${id}/modules`,
 };

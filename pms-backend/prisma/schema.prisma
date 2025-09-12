@@ -21,18 +21,26 @@ enum InspectionStatus {
   INSPECTION_SCHEDULED
 }
 
+enum UserStatus {
+  Active
+  Inactive
+}
+
 model User {
-  userId       String   @id @default(uuid())
-  code         String  @unique
+  userId       String     @id @default(uuid())
+  code         String     @unique
   role         String
   name         String?
   city         String?
-  email        String?  @unique
-  countryCode  String   @default("91") // NEW
-  phone        String?                 // 10-digit local, no leading 0
-  isSuperAdmin Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  modifiedAt   DateTime @updatedAt
+  email        String?    @unique
+  countryCode  String     @default("91") // digits only (e.g. "91")
+  phone        String?                  // 10-digit local, no leading 0
+  isSuperAdmin Boolean    @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  modifiedAt   DateTime @updatedAt      @db.Timestamptz(6)
+  status       UserStatus @default(Active)
+
+  memberships  ProjectMember[]
 
   @@index([name])
   @@index([email])
@@ -40,19 +48,19 @@ model User {
   @@index([role])
   @@index([countryCode])
   @@index([phone])
-@@unique([countryCode, phone]) // phone is nullable → multiple NULL allowed; unique when phone is present
-  memberships ProjectMember[]
+  @@index([countryCode, phone])          // 🔎 speeds cc+phone lookups
+  @@unique([countryCode, phone])         // unique when phone present; multiple NULLs allowed
 }
 
 model Project {
-  projectId String   @id @default(uuid())
-  code      String   @unique
+  projectId String    @id @default(uuid())
+  code      String    @unique
   name      String
   city      String
-  status    String   @default("Ongoing")
+  status    String    @default("Ongoing")
   stage     String
-  health    String   @default("Good")
-  createdAt DateTime @default(now())
+  health    String    @default("Good")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 
   memberships ProjectMember[]
   inspections Inspection[]
@@ -63,10 +71,10 @@ model ProjectMember {
   projectId String
   userId    String
   role      String
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  project Project @relation(fields: [projectId], references: [projectId])
-  user    User    @relation(fields: [userId], references: [userId])
+  project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   @@unique([projectId, userId, role], name: "projectId_userId_role")
   @@index([projectId])
@@ -78,25 +86,25 @@ model File {
   projectId String
   key       String
   kind      String
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
 
 model Inspection {
-  id              String            @id @default(uuid())
+  id              String           @id @default(uuid())
   type            InspectionType
   projectId       String
-  project         Project           @relation(fields: [projectId], references: [projectId])
+  project         Project          @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
   title           String
   discipline      String
-  status          InspectionStatus  @default(DRAFT)
+  status          InspectionStatus @default(DRAFT)
   contractorId    String
   inspectorId     String?
   hodId           String?
   parentId        String?
   followupChildId String?
-  requestedAt     DateTime          @default(now())
-  submittedAt     DateTime?
-  closedAt        DateTime?
+  requestedAt     DateTime         @default(now()) @db.Timestamptz(6)
+  submittedAt     DateTime?       @default(now()) @db.Timestamptz(6)
+  closedAt        DateTime?       @default(now()) @db.Timestamptz(6)
   items           InspectionItem[]
   lineage         InspectionEvent[]
   evidence        Evidence[]
@@ -108,8 +116,8 @@ model Inspection {
 
 model InspectionItem {
   id           String     @id @default(uuid())
-  inspection   Inspection @relation(fields: [inspectionId], references: [id])
   inspectionId String
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   isCritical   Boolean    @default(false)
   specText     String?
   requirement  String?
@@ -119,29 +127,29 @@ model InspectionItem {
 
 model InspectionEvent {
   id           String     @id @default(uuid())
-  inspection   Inspection @relation(fields: [inspectionId], references: [id])
   inspectionId String
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   event        String
   actorId      String
   note         String?
-  at           DateTime   @default(now())
+  at           DateTime          @default(now()) @db.Timestamptz(6)
 }
 
 model Evidence {
   id           String     @id @default(uuid())
-  inspection   Inspection @relation(fields: [inspectionId], references: [id])
   inspectionId String
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   fileId       String
   kind         String
   lat          Float?
   lng          Float?
-  ts           DateTime   @default(now())
+  ts           DateTime         @default(now()) @db.Timestamptz(6)
 }
 
 model MaterialsInfo {
   id           String     @id @default(uuid())
-  inspection   Inspection @relation(fields: [inspectionId], references: [id])
   inspectionId String     @unique
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   brand        String?
   batchNo      String?
   qty          Float?

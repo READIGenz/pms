@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsOptional, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
 export class CreateUserDto {
   @IsOptional() @IsString()
@@ -26,4 +26,6 @@ export class CreateUserDto {
 
   @IsOptional() @IsBoolean()
   isSuperAdmin?: boolean;
+
+  @IsOptional() @IsIn(['Active','Inactive']) status?: 'Active'|'Inactive';
 }
