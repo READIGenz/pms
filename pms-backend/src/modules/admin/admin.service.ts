@@ -192,7 +192,7 @@ export class AdminService {
     });
     return { ok: true, ...u };
   }
-  
+
   /** If q omitted/blank, return recent users; else search across common fields. */
   searchUsers(q?: string) {
     const query = this.normStr(q);
@@ -257,4 +257,28 @@ export class AdminService {
     if (!rid) throw new BadRequestException('id required');
     return this.prisma.projectMember.delete({ where: { id: rid } });
   }
+
+  async userProjects(userId: string) {
+  if (!userId) throw new BadRequestException('userId required');
+  const memberships = await this.prisma.projectMember.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      project: true,
+    },
+  });
+  const projects = memberships.map(m => ({
+    projectId: m.projectId,
+    code: m.project.code,
+    name: m.project.name,
+    city: m.project.city,
+    status: m.project.status,
+    stage: m.project.stage,
+    health: m.project.health,
+    role: m.role,
+    assignedAt: m.createdAt,
+  }));
+  return { ok: true, projects };
+}
+
 }

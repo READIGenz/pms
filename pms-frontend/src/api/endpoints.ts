@@ -21,6 +21,7 @@ export const endpoints = {
     assignRoles: (projectId: string) => `/admin/projects/${projectId}/assign-roles`, // POST bulk assign
     usersNextCode: '/admin/users/next-code',
      userStatus:   (id: string) => `/admin/users/${id}/status`,
+     userProjects: (userId: string) => `/admin/users/${userId}/projects`,
   },
   projectModules: (id: string) => `/projects/${id}/modules`,
 };

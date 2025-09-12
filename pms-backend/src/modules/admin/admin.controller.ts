@@ -96,6 +96,11 @@ async createUser(@Body() dto: CreateUserDto) {
     return this.svc.updateUserStatus(id, body.status);
   }
 
+  // GET /admin/users/:id/projects
+@Get('users/:userId/projects')
+async userProjects(@Param('userId') userId: string) {
+  return this.svc.userProjects(userId);
+}
 
   // Roles catalog for "View Roles" page
   @Get('roles/catalog')

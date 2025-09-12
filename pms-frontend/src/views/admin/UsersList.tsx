@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
@@ -17,10 +17,30 @@ type User = {
   createdAt?: string;
 };
 
+type UserProject = {
+  projectId: string;
+  code: string;
+  name: string;
+  city: string;
+  role: string;          // role for this user within that project
+  assignedAt?: string;   // when membership created
+  status?: string;       // Project.status
+  stage?: string;        // Project.stage
+  health?: string;       // Project.health
+};
+
 function fmtPhoneParen(u: User) {
   if (u.countryCode && u.phone) return `(+${u.countryCode}) ${u.phone}`;
   if (u.phone) return u.phone; // fallback if cc missing
   return null;
+}
+
+function fmtDateIso(d?: string) {
+  if (!d) return '';
+  try {
+    const dt = new Date(d);
+    return new Intl.DateTimeFormat(undefined, { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }).format(dt);
+  } catch { return d; }
 }
 
 export default function UsersList(){
@@ -39,7 +59,13 @@ export default function UsersList(){
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newStatus, setNewStatus] = useState<'Active'|'Inactive'>('Active');
   const [saving, setSaving] = useState(false);
-  
+
+  // EXPAND: which user is expanded + loaded data/cache + per-user loading/error
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [uProjects, setUProjects] = useState<Record<string, UserProject[]>>({});
+  const [uLoading, setULoading] = useState<Record<string, boolean>>({});
+  const [uError, setUError] = useState<Record<string, string|undefined>>({});
+
   const load = async (query?: string) => {
     setErr(null);
     setLoading(true);
@@ -61,16 +87,19 @@ export default function UsersList(){
     return () => clearTimeout(t);
   }, [q]);
 
-  const beginEdit = (u: User) => {
+  const beginEdit = (u: User, e?: MouseEvent) => {
+    e?.stopPropagation(); // do not toggle expand when clicking edit
     setEditingId(u.userId);
     setNewStatus((u.status as 'Active'|'Inactive') || 'Active');
   };
 
-  const cancelEdit = () => {
+  const cancelEdit = (e?: MouseEvent) => {
+    e?.stopPropagation();
     setEditingId(null);
   };
 
-  const saveStatus = async (u: User) => {
+  const saveStatus = async (u: User, e?: MouseEvent) => {
+    e?.stopPropagation();
     if (!editingId) return;
     try {
       setSaving(true);
@@ -86,6 +115,36 @@ export default function UsersList(){
       setErr(e?.response?.data?.error || 'Failed to update status');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Toggle expand and (lazy) load user projects
+  const toggleExpand = async (u: User) => {
+    if (expandedId === u.userId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(u.userId);
+
+    // already loaded? reuse cache
+    if (uProjects[u.userId]) return;
+
+    try {
+      setULoading(m => ({ ...m, [u.userId]: true }));
+      setUError(m => ({ ...m, [u.userId]: undefined }));
+      // Expect endpoints.admin.userProjects(userId) → { ok, projects: UserProject[] }
+      const { data } = await api.get(endpoints.admin.userProjects(u.userId));
+      const projects: UserProject[] =
+        Array.isArray(data?.projects) ? data.projects :
+        Array.isArray(data) ? data as UserProject[] :
+        [];
+
+      setUProjects(m => ({ ...m, [u.userId]: projects }));
+    } catch (e:any) {
+      const msg = e?.response?.data?.error || 'Failed to load assigned projects';
+      setUError(m => ({ ...m, [u.userId]: msg }));
+    } finally {
+      setULoading(m => ({ ...m, [u.userId]: false }));
     }
   };
 
@@ -112,7 +171,7 @@ export default function UsersList(){
 
         {err && <div className="text-red-600 text-sm mb-3">{err}</div>}
 
-         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map(u => {
             const phone = fmtPhoneParen(u);
             const isEditing = editingId === u.userId;
@@ -120,8 +179,19 @@ export default function UsersList(){
               ? 'bg-red-100 text-red-700 border-red-200'
               : 'bg-emerald-100 text-emerald-700 border-emerald-200';
 
-           return (
-              <div key={u.userId} className="rounded-xl border bg-white p-4 space-y-2">
+            const isExpanded = expandedId === u.userId;
+            const projLoading = !!uLoading[u.userId];
+            const projErr = uError[u.userId];
+            const projects = uProjects[u.userId] || [];
+
+            return (
+              <div
+                key={u.userId}
+                className="rounded-xl border bg-white p-4 space-y-2 cursor-pointer hover:shadow transition"
+                onClick={() => toggleExpand(u)}
+                role="button"
+                aria-expanded={isExpanded}
+              >
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-lg font-medium">{u.name}</div>
@@ -141,15 +211,16 @@ export default function UsersList(){
                         SUPER ADMIN
                       </span>
                     )}
+                    <span className="text-[10px] text-gray-400 mt-1 select-none">{isExpanded ? '▲' : '▼'}</span>
                   </div>
                 </div>
 
                 {canModify && (
-                  <div className="pt-2">
+                  <div className="pt-2" onClick={(e)=>e.stopPropagation()}>
                     {!isEditing ? (
                       <button
                         className="px-3 py-1 rounded border hover:bg-gray-50"
-                        onClick={() => beginEdit(u)}
+                        onClick={(e) => beginEdit(u, e)}
                       >
                         Modify Status
                       </button>
@@ -166,14 +237,54 @@ export default function UsersList(){
                         <button
                           className="px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-60"
                           disabled={saving}
-                          onClick={() => saveStatus(u)}
+                          onClick={(e) => saveStatus(u, e)}
                         >
                           {saving ? 'Saving…' : 'Save'}
                         </button>
-                        <button className="px-3 py-1 rounded border" onClick={cancelEdit}>
+                        <button className="px-3 py-1 rounded border" onClick={(e) => cancelEdit(e)}>
                           Cancel
                         </button>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* --- Expanded area: projects for this user --- */}
+                {isExpanded && (
+                  <div className="mt-3 border-t pt-3">
+                    <div className="text-sm font-medium mb-2">Assigned Projects</div>
+                    {projLoading && <div className="text-sm text-gray-500">Loading projects…</div>}
+                    {projErr && <div className="text-sm text-red-600">{projErr}</div>}
+                    {!projLoading && !projErr && (
+                      <>
+                        {projects.length === 0 ? (
+                          <div className="text-sm text-gray-500">No projects assigned.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {projects.map(p => (
+                              <div key={p.projectId} className="rounded border p-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="font-medium">{p.name}</div>
+                                    <div className="text-xs text-gray-600">
+                                      {p.code} · {p.city}
+                                      {p.status ? ` · ${p.status}` : ''}{p.stage ? ` / ${p.stage}` : ''}{p.health ? ` / ${p.health}` : ''}
+                                    </div>
+                                  </div>
+                                  <span className="text-[11px] px-2 py-1 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">
+                                    {p.role}
+                                  </span>
+                                </div>
+                                {p.assignedAt && (
+                                  <div className="text-[11px] text-gray-500 mt-1">
+                                    Assigned on {fmtDateIso(p.assignedAt)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
