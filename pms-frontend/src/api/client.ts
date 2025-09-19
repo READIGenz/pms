@@ -1,15 +1,14 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  // must include /api because backend has app.setGlobalPrefix('api')
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+  baseURL: '',
+  withCredentials: false,
+  headers: { 'Content-Type': 'application/json' }
 });
 
+// Optionally attach token automatically
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) {
-    config.headers = config.headers ?? {};
-    (config.headers as any).Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });

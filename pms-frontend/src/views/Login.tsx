@@ -1,13 +1,4 @@
-/**
- * views/Login.tsx
- * ---------------
- * Adds user Active/Inactive checks:
- *  - During username validation (GET /auth/exists?login=...&verbose=1)
- *    -> If Inactive, block with "<name> has been de-activated by Admin. Contact Admin for more information!"
- *  - Double-check after OTP verify as a safety net.
- * Everything else unchanged (suggestions, remember, show/hide OTP, admin routing).
- */
-
+// src/views/Login.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -16,21 +7,20 @@ type Step = 'enter' | 'otp';
 type ExistsResponse = { ok: boolean; exists: boolean; user?: { name?: string; status?: 'Active'|'Inactive' } };
 type VerifyResponse = { ok: boolean; token?: string; user?: any; error?: string };
 
-// ---------- Local helpers ----------
+// ---- Helpers ----
 function decodeJwtPayload(token: string): any | null {
   try {
     const parts = token.split('.');
     if (parts.length < 2) return null;
     const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
-    const json = atob(b64 + pad);
-    return JSON.parse(json);
+    return JSON.parse(atob(b64 + pad));
   } catch {
     return null;
   }
 }
 
-const SAVED_LOGINS_KEY = 'savedLogins'; // JSON-encoded string[]
+const SAVED_LOGINS_KEY = 'savedLogins';
 
 function readSavedLogins(): string[] {
   try {
@@ -42,73 +32,57 @@ function readSavedLogins(): string[] {
   }
 }
 function writeSavedLogins(arr: string[]) {
-  try {
-    localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr));
-  } catch {}
+  try { localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr)); } catch {}
 }
 function addSavedLogin(login: string) {
-  const trimmed = (login || '').trim();
-  if (!trimmed) return;
+  const v = (login || '').trim();
+  if (!v) return;
   const list = readSavedLogins();
-  const idx = list.findIndex((v) => v.toLowerCase() === trimmed.toLowerCase());
-  if (idx >= 0) list.splice(idx, 1);
-  list.unshift(trimmed);
-  writeSavedLogins(list.slice(0, 8)); // keep 8 MRU
+  const i = list.findIndex((x) => x.toLowerCase() === v.toLowerCase());
+  if (i >= 0) list.splice(i, 1);
+  list.unshift(v);
+  writeSavedLogins(list.slice(0, 8));
 }
 function removeSavedLogin(login: string) {
-  const next = readSavedLogins().filter((v) => v.toLowerCase() !== (login || '').toLowerCase());
-  writeSavedLogins(next);
+  writeSavedLogins(readSavedLogins().filter((x) => x.toLowerCase() !== (login || '').toLowerCase()));
 }
 function clearSavedLogins() {
   writeSavedLogins([]);
 }
 
 export default function Login() {
-  // Prefill username with most recent remembered (if any)
+  // Prefill username from MRU
   const initialLogin = (() => {
     const saved = readSavedLogins();
     return saved.length ? saved[0] : '';
   })();
 
-  // ---- State ----
-  const [login, setLogin] = useState<string>(initialLogin);
+  // --- State ---
+  const [login, setLogin] = useState(initialLogin);
   const [step, setStep] = useState<Step>('enter');
   const [code, setCode] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showOtp, setShowOtp] = useState<boolean>(false);
-  // Keyboard navigation for suggestions
-  const [activeIdx, setActiveIdx] = useState<number>(-1);
-  const listboxId = 'login-suggestions-listbox';
+  const [showOtp, setShowOtp] = useState(false);
 
-  // Remember me only adds on success; does NOT erase when unchecked
-  const [remember, setRemember] = useState<boolean>(false);
-
-  // Suggestions & manage modal
-  const [savedLogins, setSavedLogins] = useState<string[]>(() => readSavedLogins());
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [showManage, setShowManage] = useState<boolean>(false);
-  const inputWrapRef = useRef<HTMLDivElement | null>(null);
-
-  // Cosmetic prefs
+  // prefs
   const [lang, setLang] = useState<string>(() => localStorage.getItem('lang') || 'en');
   const [dark, setDark] = useState<boolean>(() => localStorage.getItem('mode') === 'dark');
 
+  // saved usernames UI
+  const [savedLogins, setSavedLogins] = useState<string[]>(() => readSavedLogins());
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [showManage, setShowManage] = useState(false);
+  const inputWrapRef = useRef<HTMLDivElement | null>(null);
+  const listboxId = 'login-suggestions-listbox';
+
+  // remember-me (only records on successful login)
+  const [remember, setRemember] = useState(false);
+
   const nav = useNavigate();
 
-  // Force navigation helper (logs + hard fallback if router nav doesn’t stick)
-  const forceNavigate = (path: string) => {
-    console.log('[Login] navigating to', path);
-    nav(path, { replace: true });
-    setTimeout(() => {
-      if (window.location.pathname !== path) {
-        console.log('[Login] router navigation didn’t stick → hard redirect to', path);
-        window.location.assign(path);
-      }
-    }, 150);
-  };
-
-  // ---- Effects ----
+  // --- Effects ---
   useEffect(() => { setActiveIdx(-1); }, [login]);
 
   useEffect(() => {
@@ -116,9 +90,7 @@ export default function Login() {
     localStorage.setItem('mode', dark ? 'dark' : 'light');
   }, [dark]);
 
-  useEffect(() => {
-    localStorage.setItem('lang', lang);
-  }, [lang]);
+  useEffect(() => { localStorage.setItem('lang', lang); }, [lang]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -129,42 +101,43 @@ export default function Login() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  // Filter suggestions as user types
+  // --- Derived ---
   const filteredSuggestions = useMemo(() => {
     const q = login.trim().toLowerCase();
     if (!q) return savedLogins;
     return savedLogins.filter((s) => s.toLowerCase().includes(q));
   }, [login, savedLogins]);
 
-  // ---- Actions ----
+  // --- Actions ---
+  const forceNavigate = (path: string) => {
+    nav(path, { replace: true });
+    setTimeout(() => {
+      if (location.pathname !== path) location.assign(path);
+    }, 150);
+  };
 
-  // Validate username without requesting OTP
+  // GET /auth/exists?login=...&verbose=1
   const validateUser = async () => {
     setErr(null);
-    if (!login.trim()) {
+    const value = login.trim();
+    if (!value) {
       setErr('Enter email or phone');
       return;
     }
     try {
       setBusy(true);
-      // Ask backend for existence + status (verbose=1)
-      const { data } = await api.get<ExistsResponse>('/auth/exists', { params: { login, verbose: 1 } });
+      const { data } = await api.get<ExistsResponse>('/auth/exists', { params: { login: value, verbose: 1 } });
       if (!data?.ok || data.exists !== true) {
         setErr('User does not exist. Check if the username is correct!');
         return;
       }
-
-      // If backend returned status, block inactive users here
       const status = data.user?.status;
       const name = data.user?.name || 'User';
       if (status === 'Inactive') {
         setErr(`${name} has been de-activated by Admin. Contact Admin for more information!`);
         return;
       }
-
-      // Proceed to OTP input
-      console.log('[Login.validateUser] user exists & active → show OTP');
-      setStep('otp'); // we do NOT call /auth/otp/request here
+      setStep('otp'); // proceed to OTP entry
     } catch (e: any) {
       const msg =
         e?.response?.status === 404
@@ -176,27 +149,22 @@ export default function Login() {
     }
   };
 
-  // Verify OTP
+  // POST /auth/otp/verify  { login, code }
   const verify = async () => {
     setErr(null);
     try {
       setBusy(true);
-      console.log('[Login.verify] verifying OTP for', login);
-      // POST /auth/otp/verify { login, code } -> { ok, token, user }
       const { data } = await api.post<VerifyResponse>('/auth/otp/verify', { login, code });
-      console.log('[Login.verify] response:', data);
-
       if (!data?.ok) {
         setErr(data?.error || 'Invalid OTP');
         return;
       }
-
-      // Safety check: block inactive accounts even if they got here
       const userStatus = data.user?.status as ('Active'|'Inactive'|undefined);
+      console.log(data);
+      console.log({userStatus});
       const userName = data.user?.name || 'User';
       if (userStatus === 'Inactive') {
         setErr(`${userName} has been de-activated by Admin. Contact Admin for more information!`);
-        // ensure any partial session is cleared
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setStep('enter');
@@ -204,51 +172,61 @@ export default function Login() {
         return;
       }
 
-      // Persist session
+      // persist session
       localStorage.setItem('token', data.token!);
       localStorage.setItem('user', JSON.stringify(data.user));
-      console.log('[Login.verify] token saved, user:', data.user);
-
-      // Remember only on success and if checked
       if (remember) {
         addSavedLogin(login);
         setSavedLogins(readSavedLogins());
-        console.log('[Login.verify] remember=true → saved username');
       }
 
-      // Decide route: JWT payload is source of truth; fallback to user flag
+      // decide route from token/user payload
       const payload = decodeJwtPayload(data.token!);
       const isAdmin = !!(payload && payload.isSuperAdmin);
-      console.log('[Login.verify] payload:', payload, 'user.isSuperAdmin:', data.user?.isSuperAdmin);
+      const rawRole: string | undefined =
+        data.user?.userRole || payload?.userRole || payload?.role || undefined;
+console.log(rawRole);
+      // Normalize enum text including "Ava-PMT"
+      const normalize = (r?: string) => (r || '').trim();
+      const role = normalize(rawRole);
+
+      // Map roles to app routes
+      const routeByRole: Record<string, string> = {
+        Admin: '/adminHome',
+        Client: '/clientHome',
+        'Ava-PMT': '/ava-pmtHome',
+        Contractor: '/contractorHome',
+        Consultant: '/consultantHome',
+        PMC: '/ava-pmtHome',        // as requested, PMC goes to Ava-PMT home
+        Supplier: '/supplierHome',
+      };
 
       if (isAdmin || data.user?.isSuperAdmin) {
-        console.log('[Login.verify] admin detected → /admin');
-        forceNavigate('/admin');
-        return;
+        return forceNavigate('/adminHome');
       }
-      console.log('[Login.verify] non-admin → /landing');
-      forceNavigate('/landing');
-      return;
+
+      const target = routeByRole[role] || '/landing';
+      return forceNavigate(target);
     } catch (e: any) {
-      const msg = e?.response?.data?.error || 'Failed to verify OTP';
-      console.log('[Login.verify] error:', msg, e);
-      setErr(msg);
+      setErr(e?.response?.data?.error || 'Failed to verify OTP');
     } finally {
       setBusy(false);
     }
   };
 
-  // ---- UI helpers ----
+  // Input classes
   const inputBase =
     'border rounded w-full p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/70 focus:border-emerald-500';
+
+  // Buttons
   const btnPrimary =
     'w-full py-3 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 disabled:cursor-not-allowed';
-  const btnSecondary = 'w-full py-3 rounded border hover:bg-gray-50';
+  const btnSecondary = 'w-full py-3 rounded border hover:bg-gray-50 dark:hover:bg-neutral-800';
 
   const onEnterOtp = (e: React.KeyboardEvent<HTMLInputElement>) =>
     e.key === 'Enter' && code.trim().length >= 6 && verify();
 
-  // Commit the currently highlighted suggestion
+  // commit a suggestion
   const commitSelection = (index: number) => {
     const val = filteredSuggestions[index];
     if (!val) return;
@@ -257,60 +235,34 @@ export default function Login() {
     setActiveIdx(-1);
   };
 
-  // Handle keyboard on the username input
+  // keyboard for saved suggestions
   const handleLoginKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const open = showSuggestions && filteredSuggestions.length > 0;
-
     switch (e.key) {
-      case 'ArrowDown': {
+      case 'ArrowDown':
         e.preventDefault();
-        if (!open) {
-          setShowSuggestions(true);
-          setActiveIdx(0);
-        } else {
-          setActiveIdx((prev) => (prev + 1) % filteredSuggestions.length);
-        }
+        if (!open) { setShowSuggestions(true); setActiveIdx(0); }
+        else { setActiveIdx((p) => (p + 1) % filteredSuggestions.length); }
         break;
-      }
-      case 'ArrowUp': {
+      case 'ArrowUp':
         e.preventDefault();
-        if (!open) {
-          setShowSuggestions(true);
-          setActiveIdx(filteredSuggestions.length - 1);
-        } else {
-          setActiveIdx((prev) => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
-        }
+        if (!open) { setShowSuggestions(true); setActiveIdx(filteredSuggestions.length - 1); }
+        else { setActiveIdx((p) => (p - 1 + filteredSuggestions.length) % filteredSuggestions.length); }
         break;
-      }
-      case 'Home': {
+      case 'Home':
         if (open) { e.preventDefault(); setActiveIdx(0); }
         break;
-      }
-      case 'End': {
+      case 'End':
         if (open) { e.preventDefault(); setActiveIdx(filteredSuggestions.length - 1); }
         break;
-      }
-      case 'Enter': {
-        if (open && activeIdx >= 0) {
-          e.preventDefault();
-          commitSelection(activeIdx);
-        } else {
-          // No menu or nothing highlighted → validate username
-          validateUser();
-        }
+      case 'Enter':
+        if (open && activeIdx >= 0) { e.preventDefault(); commitSelection(activeIdx); }
+        else { validateUser(); }
         break;
-      }
-      case 'Escape': {
-        if (open) {
-          e.preventDefault();
-          setShowSuggestions(false);
-          setActiveIdx(-1);
-        }
+      case 'Escape':
+        if (open) { e.preventDefault(); setShowSuggestions(false); setActiveIdx(-1); }
         break;
-      }
-      default:
-        // allow normal typing / Tab etc.
-        break;
+      default: break;
     }
   };
 
@@ -337,27 +289,8 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Prefs */}
-            <div className="flex items-center gap-3">
-              <select
-                className="border rounded px-3 py-2 text-sm bg-white dark:bg-neutral-800 dark:text-white"
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
-                aria-label="Select language"
-              >
-                <option value="en">English</option>
-                <option value="hi">हिन्दी</option>
-                <option value="ta">தமிழ்</option>
-              </select>
-              <button
-                type="button"
-                onClick={() => setDark((v) => !v)}
-                className="px-3 py-2 rounded border text-sm bg-white dark:bg-neutral-800 dark:text-white"
-                title="Toggle Light/Dark"
-              >
-                {dark ? 'Light Mode' : 'Dark Mode'}
-              </button>
-            </div>
+            {/* Prefs (hidden for now) */}
+            <div className="flex items-center gap-3">{/* theme/lang toggles could go here */}</div>
           </div>
 
           {/* Tagline */}

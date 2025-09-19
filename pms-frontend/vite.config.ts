@@ -1,12 +1,19 @@
-/**
- * vite.config.ts
- * --------------
- * Simple config that enables React fast-refresh and runs dev server on 5173.
- */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173 },
+   resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/auth': 'http://localhost:3000',
+      '/admin': 'http://localhost:3000'
+    }
+  }
 });

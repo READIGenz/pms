@@ -1,3 +1,0 @@
-// After successful verify in Login.tsx:
-if (data.user?.isSuperAdmin) nav('/admin');
-else nav('/landing');

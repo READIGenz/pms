@@ -1,22 +1,19 @@
-/**
- * main.ts
- * -------
- * REMARK: NestJS bootstrap. We set a global API prefix `/api` and enable CORS
- * so the Vite dev server (http://localhost:5173) can talk to the API.
- */
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true,forbidNonWhitelisted: false }));
-  app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? true,
-    credentials: true,
-  });
+  const app = await NestFactory.create(AppModule, { cors: true });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,        // strips unknown fields (keep DTOs exact)
+      forbidNonWhitelisted: false,
+      transform: true,
+    }),
+  );
+
   await app.listen(process.env.PORT || 3000);
-  console.log(`API listening on http://localhost:${process.env.PORT || 3000}/api`);
 }
 bootstrap();
