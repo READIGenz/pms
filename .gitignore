@@ -1,0 +1,106 @@
+
+seed1.ts
+seed2.ts
+# ---- OS / Editor junk ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.orig
+*.log
+*.tmp
+*.temp
+
+# VSCode workspace state (keep settings.json if you want)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# ---- Node / Package managers ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+# If you want to commit a lockfile, remove the one you use from above.
+
+# ---- Env / Secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- TypeScript ----
+*.tsbuildinfo
+
+# ---- Test / Coverage ----
+coverage/
+.nyc_output/
+jest-cache/
+jest-temp/
+*.lcov
+
+# ---- Build outputs ----
+dist/
+build/
+.out/
+
+# ---- Frontend (Vite / React) ----
+# root or any package: adjust paths if you keep separate folders
+.vite/
+vite.svg
+**/pms-frontend/dist/
+**/pms-frontend/.vite/
+**/pms-frontend/.eslintcache
+
+# ---- Backend (NestJS) ----
+**/pms-backend/dist/
+**/pms-backend/.eslintcache
+
+# ---- Prisma ----
+# Keep migrations under version control; ignore generated artifacts/cache
+prisma/*.db
+prisma/*.db-journal
+prisma/dev.db
+prisma/dev.db-journal
+prisma/.cache/
+# Prisma Client is generated into node_modules by default; no need to ignore separately
+
+# ---- Logs / PIDs ----
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ---- Cache / Tooling ----
+.cache/
+.tmp/
+temp/
+.tmp-cache/
+.eslintcache
+.stylelintcache
+.turbo/
+.parcel-cache/
+
+# ---- Storybook (if used) ----
+storybook-static/
+.out/
+
+# ---- Next.js (if any) ----
+.next/
+.next/cache/
+
+# ---- Misc cloud deployers (uncomment if relevant) ----
+# .vercel/
+# .netlify/
+# .firebase/
+
+# ---- SQLite etc (safety) ----
+*.sqlite
+*.sqlite-journal
+
+# ---- Binary assets build time ----
+*.tgz
+*.gz

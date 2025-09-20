@@ -1,79 +1,145 @@
-import { Injectable } from '@nestjs/common';
+// pms-backend/src/modules/auth/auth.service.ts
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service'; // adjust path as needed
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+  ) {}
 
-  /**
-   * Accepts email or phone in `login`.
-   * - If contains '@' -> email.
-   * - Else treat as phone: normalize digits, default cc to '+91' if 10 digits.
-   *   If login includes a country code (e.g. +919000000001 / 919000000001), we split it.
-   */
-  async findByLogin(login: string) {
-    const raw = (login || '').trim();
+  async exists(login: string, verbose = false) {
+    const user = await this.findByLogin(login);
+    if (!user) return { ok: true, exists: false };
+    const res: any = { ok: true, exists: true };
+    if (verbose) res.user = { name: this.fullName(user), status: user.userStatus };
+    return res;
+  }
 
-    if (raw.includes('@')) {
-      const email = raw.toLowerCase();
-      return this.prisma.user.findUnique({ where: { email } });
+  async verifyOtp(login: string, code: string) {
+    // TODO: replace with your real OTP validation
+    if (code !== '000000') {
+      throw new UnauthorizedException('Invalid OTP');
+    }
+    const user = await this.findByLogin(login);
+    if (!user) throw new UnauthorizedException('User not found');
+    if (user.userStatus !== 'Active') throw new UnauthorizedException('User is inactive');
+
+    // Load role memberships with company/project for labels
+    const memberships = await this.prisma.userRoleMembership.findMany({
+      where: { userId: user.userId },
+      include: {
+        company: { select: { companyId: true, name: true, companyRole: true } },
+        project: { select: { projectId: true, title: true, code: true } },
+      },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    });
+
+    return { user, memberships };
+  }
+
+  async assumeRole(userId: string, membershipId: string) {
+    const m = await this.prisma.userRoleMembership.findFirst({
+      where: { id: membershipId, userId },
+      include: {
+        company: { select: { companyId: true, name: true, companyRole: true } },
+        project: { select: { projectId: true, title: true, code: true } },
+      },
+    });
+    if (!m) throw new BadRequestException('Invalid membership');
+
+    const user = await this.prisma.user.findUnique({
+      where: { userId },
+      select: {
+        userId: true, firstName: true, lastName: true,
+        email: true, phone: true, countryCode: true,
+        userStatus: true, isSuperAdmin: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    // Final token for the chosen role
+    const jwtPayload: any = {
+      sub: user.userId,
+      isSuperAdmin: !!user.isSuperAdmin,
+      role: m.role,                    // e.g. "Client", "Ava-PMT"…
+      scopeType: m.scopeType,          // Global | Company | Project
+      companyId: m.companyId ?? null,
+      projectId: m.projectId ?? null,
+    };
+
+    const token = await this.signJwt(jwtPayload, { expiresIn: '2h' });
+
+    return {
+      ok: true,
+      token,
+      jwt: jwtPayload,
+      user: {
+        userId: user.userId,
+        name: this.fullName(user),
+        email: user.email,
+        phone: user.phone,
+        countryCode: user.countryCode,
+        status: user.userStatus,
+        isSuperAdmin: !!user.isSuperAdmin,
+      },
+      role: {
+        id: m.id,
+        role: m.role,
+        scopeType: m.scopeType,
+        scopeId: m.companyId ?? m.projectId ?? null,
+        label: this.describeMembership(m),
+        company: m.companyId
+          ? { id: m.companyId, name: m.company?.name, role: m.company?.companyRole }
+          : undefined,
+        project: m.projectId
+          ? { id: m.projectId, title: m.project?.title, code: m.project?.code }
+          : undefined,
+      },
+    };
+  }
+
+  describeMembership(m: any): string {
+    switch (m.scopeType) {
+      case 'Global':
+        return `${m.role} — Global`;
+      case 'Company':
+        return `${m.role} @ ${m.company?.name ?? 'Company'}`;
+      case 'Project':
+        return `${m.role} — ${m.project?.title ?? 'Project'}${m.project?.code ? ` (${m.project.code})` : ''}`;
+      default:
+        return m.role;
+    }
+  }
+
+  signJwt(payload: any, options?: { expiresIn?: string | number }) {
+    return this.jwt.signAsync(payload, options);
+  }
+
+  private async findByLogin(raw: string) {
+    const login = (raw || '').trim();
+    if (!login) return null;
+
+    if (login.includes('@')) {
+      return this.prisma.user.findUnique({ where: { email: login.toLowerCase() } });
     }
 
-    // phone path
-    const digits = raw.replace(/[^\d+]/g, '');
-    // cases:
-    //  - "9000000001" => cc +91, phone 9000000001
-    //  - "+919000000001" or "919000000001" => cc +91, phone 9000000001
-    //  - "+1xxxxxxxxxx" etc.
-    let cc = '+91';
-    let phone = digits;
-
-    if (digits.startsWith('+')) {
-      // +<cc><number> — try India or generic split
-      if (digits.startsWith('+91') && digits.length >= 13) {
-        cc = '+91';
-        phone = digits.slice(3);
-      } else {
-        // crude split: assume first 1–3 chars after + is country code
-        // adjust to your real parsing needs
-        cc = '+' + digits.slice(1, 3);
-        phone = digits.slice(3);
-      }
-    } else if (digits.length > 10) {
-      // like "919000000001" => assume 91 + 10
-      if (digits.startsWith('91') && digits.length >= 12) {
-        cc = '+91';
-        phone = digits.slice(2);
-      } else {
-        // fallback: last 10 as number, rest as cc (simple heuristic)
-        cc = '+' + digits.slice(0, digits.length - 10);
-        phone = digits.slice(-10);
-      }
-    } else if (digits.length === 10) {
-      cc = '+91';
-      phone = digits;
-    }
-
-    return this.prisma.user.findUnique({
-      where: { countryCode_phone: { countryCode: cc, phone } }, // <- matches your composite unique
+    // phone: accept with or without +91, etc.
+    const digits = login.replace(/\D/g, '');
+    // if you store +91 in db, normalize here as needed
+    return this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: digits },
+          { phone: login },
+        ],
+      },
     });
   }
 
-  issueToken(user: any) {
-    const payload = {
-      sub: user.userId,
-      isSuperAdmin: !!user.isSuperAdmin,
-      name: [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ') || 'User',
-    };
-    const token = this.jwt.sign(payload);
-    return { token, payload };
-  }
-
-  // Optional: for /auth/me later
-  async me(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { userId } });
-    if (!user) return { ok: false, error: 'Not found' };
-    return { ok: true, user };
+  private fullName(u: any) {
+    return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(' ').trim() || 'User';
   }
 }

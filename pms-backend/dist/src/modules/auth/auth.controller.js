@@ -13,75 +13,123 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
+// pms-backend/src/modules/auth/auth.controller.ts
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
-const otp_dto_1 = require("./dto/otp.dto");
+const jwt_guard_1 = require("../../common/guards/jwt.guard");
+const assume_role_dto_1 = require("./dto/assume-role.dto");
+function nameOf(u) {
+    return [u?.firstName, u?.middleName, u?.lastName].filter(Boolean).join(' ').trim() || 'User';
+}
 let AuthController = class AuthController {
     constructor(auth) {
         this.auth = auth;
     }
-    // GET /auth/exists?login=...&verbose=1
-    async exists(login, verbose) {
-        if (!login || !login.trim()) {
-            throw new common_1.BadRequestException('login required');
-        }
-        const user = await this.auth.findByLogin(login);
-        const exists = !!user;
-        if (!exists)
-            return { ok: true, exists: false };
-        // name + status for your Login.tsx
-        const fullName = [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ') || 'User';
-        const res = { ok: true, exists: true };
-        if (verbose)
-            res.user = { name: fullName, status: user.userStatus };
-        return res;
+    async exists(req) {
+        const login = req.query?.login ?? '';
+        const verbose = req.query?.verbose;
+        return this.auth.exists(login, verbose === '1');
     }
-    // POST /auth/otp/verify { login, code }
-    async otpVerify(dto) {
-        const { login, code } = dto;
-        // dev OTP check
-        if (code !== '000000') {
-            return { ok: false, error: 'Invalid OTP' };
+    // No guard here; OTP is the proof
+    async verifyOtp(dto) {
+        const { user, memberships } = await this.auth.verifyOtp(dto.login, dto.code);
+        // 0 or 1 role → issue final token immediately
+        if (!memberships || memberships.length <= 1) {
+            const payload = {
+                sub: user.userId,
+                isSuperAdmin: !!user.isSuperAdmin,
+            };
+            if (memberships?.length === 1) {
+                payload.role = memberships[0].role;
+            }
+            const token = await this.auth.signJwt(payload, { expiresIn: '2h' });
+            return {
+                ok: true,
+                user: {
+                    userId: user.userId,
+                    name: nameOf(user), // ✅ build name
+                    email: user.email,
+                    phone: user.phone,
+                    countryCode: user.countryCode,
+                    status: user.userStatus,
+                    isSuperAdmin: !!user.isSuperAdmin,
+                },
+                token,
+                jwt: payload,
+                chooseRole: false,
+                roles: [],
+            };
         }
-        const user = await this.auth.findByLogin(login);
-        if (!user) {
-            return { ok: false, error: 'User not found' };
-        }
-        // safety: block inactive
-        if (user.userStatus === 'Inactive') {
-            const name = [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ') || 'User';
-            return { ok: false, error: `${name} has been de-activated by Admin. Contact Admin for more information!` };
-        }
-        const { token, payload } = this.auth.issueToken(user);
-        const uiUser = {
-            userId: user.userId,
-            name: [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ') || 'User',
-            isSuperAdmin: !!user.isSuperAdmin,
-            status: user.userStatus,
-            email: user.email,
-            phone: user.phone,
-            countryCode: user.countryCode,
-            userRole: user.userRole
+        // Multiple roles → short-lived bootstrap token
+        const provisional = await this.auth.signJwt({ sub: user.userId, provisional: true }, { expiresIn: '10m' });
+        const roles = memberships.map((m) => ({
+            id: m.id,
+            role: m.role,
+            scopeType: m.scopeType,
+            scopeId: m.companyId ?? m.projectId ?? null,
+            label: this.auth.describeMembership(m),
+            company: m.companyId
+                ? { id: m.companyId, name: m.company?.name, role: m.company?.companyRole }
+                : undefined,
+            project: m.projectId
+                ? { id: m.projectId, title: m.project?.title, code: m.project?.code }
+                : undefined,
+        }));
+        return {
+            ok: true,
+            user: {
+                userId: user.userId,
+                name: nameOf(user), // ✅ build name
+                email: user.email,
+                phone: user.phone,
+                countryCode: user.countryCode,
+                status: user.userStatus,
+                isSuperAdmin: !!user.isSuperAdmin,
+            },
+            token: provisional, // ✅ FE uses this for /auth/assume-role
+            chooseRole: true,
+            roles,
         };
-        return { ok: true, token, user: uiUser, jwt: payload };
+    }
+    async assume(req, dto) {
+        return this.auth.assumeRole(req.user.sub, dto.membershipId);
+    }
+    async me(req) {
+        return { ok: true, me: req.user };
     }
 };
 exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Get)('exists'),
-    __param(0, (0, common_1.Query)('login')),
-    __param(1, (0, common_1.Query)('verbose')),
+    __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "exists", null);
 __decorate([
     (0, common_1.Post)('otp/verify'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [otp_dto_1.VerifyOtpDto]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
-], AuthController.prototype, "otpVerify", null);
+], AuthController.prototype, "verifyOtp", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('assume-role'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, assume_role_dto_1.AssumeRoleDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "assume", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_guard_1.JwtAuthGuard),
+    (0, common_1.Get)('me'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "me", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

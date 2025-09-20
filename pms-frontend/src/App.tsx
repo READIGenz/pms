@@ -11,7 +11,7 @@ import PermissionExplorer from './views/admin/PermissionExplorer';
 
 // Role homes (create these files or swap with your actual components)
 import ClientHome from './views/client/clientHome';
-import AvaPmtHome from './views/ava_pmt/ava_pmtHome';
+import AvaPmtHome from './views/avapmt/avapmtHome';
 import ContractorHome from './views/contractor/contractorHome';
 import ConsultantHome from './views/consultant/consultantHome';
 import SupplierHome from './views/supplier/supplierHome';
@@ -49,7 +49,7 @@ export default function App() {
 
         {/* Role-based homes */}
         <Route path="/clientHome" element={<RequireAuth><ClientHome /></RequireAuth>} />
-        <Route path="/ava-pmtHome" element={<RequireAuth><AvaPmtHome /></RequireAuth>} />
+        <Route path="/avapmtHome" element={<RequireAuth><AvaPmtHome /></RequireAuth>} />
         <Route path="/contractorHome" element={<RequireAuth><ContractorHome /></RequireAuth>} />
         <Route path="/consultantHome" element={<RequireAuth><ConsultantHome /></RequireAuth>} />
         <Route path="/supplierHome" element={<RequireAuth><SupplierHome /></RequireAuth>} />

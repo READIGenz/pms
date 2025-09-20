@@ -1,11 +1,57 @@
-// src/views/Login.tsx
+// pms-frontend/src/views/Login.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
-type Step = 'enter' | 'otp';
-type ExistsResponse = { ok: boolean; exists: boolean; user?: { name?: string; status?: 'Active'|'Inactive' } };
-type VerifyResponse = { ok: boolean; token?: string; user?: any; error?: string };
+type Step = 'enter' | 'otp' | 'choose-role';
+
+type RoleOption = {
+  id: string;
+  role: 'Admin' | 'Client' | 'Ava-PMT' | 'Ava_PMT' | 'Contractor' | 'Consultant' | 'PMC' | 'Supplier';
+  scopeType: 'Global' | 'Company' | 'Project';
+  scopeId: string | null;
+  label: string;
+  company?: { id: string; name: string; role: string };
+  project?: { id: string; title: string; code?: string | null };
+};
+
+type ExistsResponse = {
+  ok: boolean;
+  exists: boolean;
+  user?: { name?: string; status?: 'Active' | 'Inactive' };
+};
+
+type VerifyResponse =
+  | {
+      ok: true;
+      token?: string; // may be omitted when chooseRole=true (identity-only flow)
+      user: any;
+      jwt?: any;
+      chooseRole: false;
+      roles: RoleOption[];
+    }
+  | {
+      ok: true;
+      user: any;
+      jwt?: any;
+      chooseRole: true;
+      roles: RoleOption[];
+      token?: string; // if backend includes a base token, we’ll keep it
+    }
+  | { ok: false; error: string };
+
+type AssumeRoleResponse =
+  | {
+      ok: true;
+      token: string;
+      user: any;
+      jwt: any;
+      role: RoleOption;
+    }
+  | {
+      ok: false;
+      error?: string;
+    };
 
 // ---- Helpers ----
 function decodeJwtPayload(token: string): any | null {
@@ -32,7 +78,9 @@ function readSavedLogins(): string[] {
   }
 }
 function writeSavedLogins(arr: string[]) {
-  try { localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr)); } catch {}
+  try {
+    localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr));
+  } catch {}
 }
 function addSavedLogin(login: string) {
   const v = (login || '').trim();
@@ -50,6 +98,29 @@ function clearSavedLogins() {
   writeSavedLogins([]);
 }
 
+// Map role (handles Admin/Client/Ava-PMT/Ava_PMT/PMC/…)
+
+function mapRoleToPath(role: string): string {
+  const norm = (role || '')
+    .toString()
+    .trim()
+    .replace(/[_\s-]+/g, '') // Ava-PMT / Ava_PMT → avapmt
+    .toLowerCase();
+    console.log('role: ', role);
+console.log('role: ', norm);
+  switch (norm) {
+    case 'admin': return '/adminHome';
+    case 'client': return '/clientHome';
+    case 'avapmt': return '/avapmtHome';
+    case 'pmc': return '/pmcHome';
+    case 'contractor': return '/contractorHome';
+    case 'consultant': return '/consultantHome';
+    case 'supplier': return '/supplierHome';
+    default: return '/landing';
+  
+  }
+}
+
 export default function Login() {
   // Prefill username from MRU
   const initialLogin = (() => {
@@ -65,9 +136,10 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
 
-  // prefs
-  const [lang, setLang] = useState<string>(() => localStorage.getItem('lang') || 'en');
-  const [dark, setDark] = useState<boolean>(() => localStorage.getItem('mode') === 'dark');
+  // role selection
+  const [pendingUser, setPendingUser] = useState<any | null>(null);
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
 
   // saved usernames UI
   const [savedLogins, setSavedLogins] = useState<string[]>(() => readSavedLogins());
@@ -76,21 +148,12 @@ export default function Login() {
   const [showManage, setShowManage] = useState(false);
   const inputWrapRef = useRef<HTMLDivElement | null>(null);
   const listboxId = 'login-suggestions-listbox';
-
-  // remember-me (only records on successful login)
   const [remember, setRemember] = useState(false);
 
   const nav = useNavigate();
 
   // --- Effects ---
   useEffect(() => { setActiveIdx(-1); }, [login]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('mode', dark ? 'dark' : 'light');
-  }, [dark]);
-
-  useEffect(() => { localStorage.setItem('lang', lang); }, [lang]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -137,12 +200,12 @@ export default function Login() {
         setErr(`${name} has been de-activated by Admin. Contact Admin for more information!`);
         return;
       }
-      setStep('otp'); // proceed to OTP entry
+      setStep('otp'); // proceed
     } catch (e: any) {
       const msg =
         e?.response?.status === 404
           ? 'Username validation endpoint not found (GET /auth/exists).'
-          : (e?.response?.data?.error || 'Failed to validate username');
+          : e?.response?.data?.error || 'Failed to validate username';
       setErr(msg);
     } finally {
       setBusy(false);
@@ -151,68 +214,118 @@ export default function Login() {
 
   // POST /auth/otp/verify  { login, code }
   const verify = async () => {
-    setErr(null);
-    try {
-      setBusy(true);
-      const { data } = await api.post<VerifyResponse>('/auth/otp/verify', { login, code });
-      if (!data?.ok) {
-        setErr(data?.error || 'Invalid OTP');
-        return;
-      }
-      const userStatus = data.user?.status as ('Active'|'Inactive'|undefined);
-      console.log(data);
-      console.log({userStatus});
-      const userName = data.user?.name || 'User';
-      if (userStatus === 'Inactive') {
-        setErr(`${userName} has been de-activated by Admin. Contact Admin for more information!`);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setStep('enter');
-        setCode('');
-        return;
-      }
-
-      // persist session
-      localStorage.setItem('token', data.token!);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      if (remember) {
-        addSavedLogin(login);
-        setSavedLogins(readSavedLogins());
-      }
-
-      // decide route from token/user payload
-      const payload = decodeJwtPayload(data.token!);
-      const isAdmin = !!(payload && payload.isSuperAdmin);
-      const rawRole: string | undefined =
-        data.user?.userRole || payload?.userRole || payload?.role || undefined;
-console.log(rawRole);
-      // Normalize enum text including "Ava-PMT"
-      const normalize = (r?: string) => (r || '').trim();
-      const role = normalize(rawRole);
-
-      // Map roles to app routes
-      const routeByRole: Record<string, string> = {
-        Admin: '/adminHome',
-        Client: '/clientHome',
-        'Ava-PMT': '/ava-pmtHome',
-        Contractor: '/contractorHome',
-        Consultant: '/consultantHome',
-        PMC: '/ava-pmtHome',        // as requested, PMC goes to Ava-PMT home
-        Supplier: '/supplierHome',
-      };
-
-      if (isAdmin || data.user?.isSuperAdmin) {
-        return forceNavigate('/adminHome');
-      }
-
-      const target = routeByRole[role] || '/landing';
-      return forceNavigate(target);
-    } catch (e: any) {
-      setErr(e?.response?.data?.error || 'Failed to verify OTP');
-    } finally {
-      setBusy(false);
+  setErr(null);
+  try {
+    setBusy(true);
+    const { data } = await api.post<VerifyResponse>('/auth/otp/verify', { login, code });
+console.log('Verify Response :', data);
+    if (!data?.ok) {
+      setErr((data as any)?.error || 'Invalid OTP');
+      return;
     }
-  };
+
+    // Try to capture any token the backend might give us (even in choose-role)
+    const bootstrapToken =
+      (data as any).token ||
+      (data as any).jwt?.token ||
+      (data as any).jwtToken ||
+      null;
+
+    if (bootstrapToken) {
+      localStorage.setItem('token', bootstrapToken);
+    }
+
+    localStorage.setItem('user', JSON.stringify((data as any).user || {}));
+    if (remember) {
+      addSavedLogin(login);
+      setSavedLogins(readSavedLogins());
+    }
+
+    if ((data as any).chooseRole === true) {
+      // Stash a short-lived OTP session for the assume-role step if no token yet
+      sessionStorage.setItem(
+        'otpSession',
+        JSON.stringify({ login, otp: code, token: bootstrapToken })
+      );
+
+      setPendingUser((data as any).user);
+      setRoleOptions(((data as any).roles || []) as RoleOption[]);
+      setSelectedMembershipId(null);
+      setStep('choose-role');
+      return;
+    }
+
+    // Final token path → route
+    const token = (data as any).token || bootstrapToken;
+    const payload = token ? decodeJwtPayload(token) : null;
+    const isAdmin = !!(payload && payload.isSuperAdmin) || !!(data as any).user?.isSuperAdmin;
+
+    if (isAdmin) return forceNavigate('/adminHome');
+
+    const roleInJwt = payload?.userRole || payload?.role;
+    if (roleInJwt) return forceNavigate(mapRoleToPath(String(roleInJwt)));
+
+    return forceNavigate('/landing');
+  } catch (e: any) {
+    setErr(e?.response?.data?.error || 'Failed to verify OTP');
+  } finally {
+    setBusy(false);
+  }
+};
+
+
+  const assumeRole = async () => {
+  if (!selectedMembershipId) {
+    setErr('Select a role to continue.');
+    return;
+  }
+
+  const storedToken = localStorage.getItem('token');
+  const otpSessionRaw = sessionStorage.getItem('otpSession');
+  const otpSession = otpSessionRaw ? JSON.parse(otpSessionRaw) as { login?: string; otp?: string; token?: string | null } : null;
+
+  // Prefer any available token (localStorage or interim one from otpSession)
+  const bearer = storedToken || otpSession?.token || null;
+
+  try {
+    setBusy(true);
+
+    // Build payload; include login+otp only when we have no bearer
+    const body: any = { membershipId: selectedMembershipId };
+    if (!bearer && otpSession?.login && otpSession?.otp) {
+      body.login = otpSession.login;
+      body.otp = otpSession.otp;
+    }
+
+    const { data } = await api.post<AssumeRoleResponse>(
+      '/auth/assume-role',
+      body,
+      bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : undefined
+    );
+
+    if (!data || data.ok !== true) {
+      const serverMsg = (data && 'error' in data && data.error) || 'Failed to assume role';
+      setErr(serverMsg);
+      return;
+    }
+
+    // Success → persist final token and route
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user || {}));
+    sessionStorage.removeItem('otpSession');
+
+    const target = mapRoleToPath(String(data.role.role));
+    forceNavigate(target);
+  } catch (e: any) {
+    const msg = e?.response?.status === 401
+      ? 'Unauthorized. Your session may have expired. Please try again.'
+      : (e?.response?.data?.error || 'Failed to assume role');
+    setErr(msg);
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   // Input classes
   const inputBase =
@@ -289,8 +402,8 @@ console.log(rawRole);
               </div>
             </div>
 
-            {/* Prefs (hidden for now) */}
-            <div className="flex items-center gap-3">{/* theme/lang toggles could go here */}</div>
+            {/* keep right side minimal */}
+            <div className="flex items-center gap-3">{/* reserved */}</div>
           </div>
 
           {/* Tagline */}
@@ -359,9 +472,7 @@ console.log(rawRole);
                                 }}
                                 className={
                                   'w-full text-left px-3 py-2 ' +
-                                  (active
-                                    ? 'bg-emerald-50 dark:bg-neutral-700'
-                                    : 'hover:bg-emerald-50 dark:hover:bg-neutral-700')
+                                  (active ? 'bg-emerald-50 dark:bg-neutral-700' : 'hover:bg-emerald-50 dark:hover:bg-neutral-700')
                                 }
                               >
                                 {s}
@@ -374,31 +485,17 @@ console.log(rawRole);
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={validateUser}
-                  className={btnPrimary}
-                  disabled={busy || !login.trim()}
-                >
+                <button type="button" onClick={validateUser} className={btnPrimary} disabled={busy || !login.trim()}>
                   {busy ? 'Checking…' : 'Send OTP'}
                 </button>
 
                 {/* Remember + Manage */}
                 <div className="mt-2 flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={remember}
-                      onChange={(e) => setRemember(e.target.checked)}
-                    />
+                    <input type="checkbox" className="h-4 w-4" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                     Remember me on this device
                   </label>
-                  <button
-                    type="button"
-                    className="text-sm text-emerald-700 hover:underline"
-                    onClick={() => setShowManage(true)}
-                  >
+                  <button type="button" className="text-sm text-emerald-700 hover:underline" onClick={() => setShowManage(true)}>
                     Manage saved logins
                   </button>
                 </div>
@@ -412,15 +509,8 @@ console.log(rawRole);
                     </a>
                   </div>
                   <div>
-                    By continuing, you agree to our{' '}
-                    <a className="text-emerald-700 hover:underline" href="/terms">
-                      Terms
-                    </a>{' '}
-                    and{' '}
-                    <a className="text-emerald-700 hover:underline" href="/privacy">
-                      Privacy Policy
-                    </a>
-                    .
+                    By continuing, you agree to our <a className="text-emerald-700 hover:underline" href="/terms">Terms</a> and{' '}
+                    <a className="text-emerald-700 hover:underline" href="/privacy">Privacy Policy</a>.
                   </div>
                 </div>
 
@@ -456,12 +546,7 @@ console.log(rawRole);
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={verify}
-                  className={btnPrimary}
-                  disabled={busy || code.trim().length < 6}
-                >
+                <button type="button" onClick={verify} className={btnPrimary} disabled={busy || code.trim().length < 6}>
                   {busy ? 'Verifying…' : 'Verify & Continue'}
                 </button>
 
@@ -469,6 +554,48 @@ console.log(rawRole);
                   Back
                 </button>
               </>
+            )}
+
+            {step === 'choose-role' && (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ''}! Please choose how you’d like to continue:
+                </div>
+                <div className="space-y-2">
+                  {roleOptions.map((r) => (
+                    <label
+                      key={r.id}
+                      className={
+                        'flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-emerald-50 dark:hover:bg-neutral-800 ' +
+                        (selectedMembershipId === r.id ? 'border-emerald-500' : 'dark:border-neutral-800')
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name="roleOption"
+                        checked={selectedMembershipId === r.id}
+                        onChange={() => setSelectedMembershipId(r.id)}
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium dark:text-white">{r.label}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                          {r.scopeType === 'Company' && r.company ? `Company: ${r.company.name} (${r.company.role})` : null}
+                          {r.scopeType === 'Project' && r.project ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}` : null}
+                          {r.scopeType === 'Global' ? 'Global scope' : null}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button className={btnPrimary} onClick={assumeRole} disabled={busy || !selectedMembershipId}>
+                    {busy ? 'Continuing…' : 'Continue'}
+                  </button>
+                  <button className={btnSecondary} onClick={() => setStep('enter')}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
 
             {err && <div className="text-red-600 text-sm">{err}</div>}
@@ -484,10 +611,7 @@ console.log(rawRole);
             <div className="w-full max-w-lg rounded-xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-lg">
               <div className="flex items-center justify-between p-4 border-b dark:border-neutral-800">
                 <h3 className="text-lg font-semibold dark:text-white">Saved logins</h3>
-                <button
-                  className="px-2 py-1 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  onClick={() => setShowManage(false)}
-                >
+                <button className="px-2 py-1 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800" onClick={() => setShowManage(false)}>
                   Close
                 </button>
               </div>
@@ -515,9 +639,7 @@ console.log(rawRole);
                 )}
               </div>
               <div className="p-4 border-t dark:border-neutral-800 flex items-center justify-between">
-                <div className="text-xs text-gray-600 dark:text-gray-400">
-                  Removing does not affect server accounts—only local suggestions.
-                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Removing does not affect server accounts—only local suggestions.</div>
                 <button
                   className="px-3 py-1.5 rounded bg-red-600 text-white text-sm disabled:opacity-60"
                   disabled={savedLogins.length === 0}

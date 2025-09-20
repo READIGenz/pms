@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation, Navigate, NavLink } from 'react-router-dom';
 
-export default function ava_pmtHome() {
+export default function avapmtHome() {
   // client-side guard
   const token = localStorage.getItem('token');
   const loc = useLocation();

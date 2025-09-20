@@ -7,7 +7,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Enums (mapped to existing Postgres enums)
+// ============================= Enums ============================= */
 
 enum PreferredLanguage {
   en
@@ -180,7 +180,16 @@ enum AreaUnit {
   @@map("area_unit")
 }
 
-// Models (mapped to existing tables)
+// Scope of a role (for multi-role users) */
+enum RoleScope {
+  Global
+  Company
+  Project
+
+  @@map("RoleScope")
+}
+
+// ============================ Models ============================ */
 
 model State {
   stateId   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -239,18 +248,23 @@ model User {
   isSuperAdmin      Boolean?           @default(false)
   createdAt         DateTime           @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime           @default(now()) @db.Timestamptz(6)
-  userRole          UserRole?
+
+  // Optional legacy "primary role"
+  userRole UserRole?
 
   state    State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
   district District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
 
-  // 1:M shortcuts you already had
-  projectsAsClient Project[] @relation("ProjectClientUser")
-  companiesOwned   Company[] @relation("CompanyOwner")
+  // 1:M shortcuts
+  projectsAsClient           Project[] @relation("ProjectClientUser")
+  companiesAsServiceProvider Company[] @relation("CompanyServiceProviderUser")
 
   // Explicit M:N junctions
   userProjects  UserProject[]
   userCompanies UserCompany[]
+
+  // Multi-role memberships
+  userRoleMemberships UserRoleMembership[]
 
   @@unique([countryCode, phone], map: "User_cc_phone_unique")
   @@map("User")
@@ -273,16 +287,19 @@ model Company {
   address        String?
   pin            String?
   notes          String?
-  userId         String?       @db.Uuid
+  userId         String?       @db.Uuid // service-provider user FK
   createdAt      DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime      @default(now()) @db.Timestamptz(6)
 
   state    State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
   district District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
 
-  owner         User?         @relation("CompanyOwner", fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
-  projects      Project[]     @relation("ProjectClientCompany")
-  userCompanies UserCompany[] // junction backref
+  // Renamed relation: primary service-provider user
+  serviceProvider User? @relation("CompanyServiceProviderUser", fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
+
+  projects            Project[]            @relation("ProjectClientCompany")
+  userCompanies       UserCompany[] // junction backref
+  userRoleMemberships UserRoleMembership[] // role memberships scoped to this company
 
   @@map("Company")
 }
@@ -324,8 +341,9 @@ model Project {
   state         State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
   district      District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
 
-  projectTags  ProjectTag[]
-  userProjects UserProject[] // junction backref
+  projectTags         ProjectTag[]
+  userProjects        UserProject[] // junction backref
+  userRoleMemberships UserRoleMembership[] // role memberships scoped to this project
 
   @@map("Project")
 }
@@ -378,4 +396,26 @@ model UserCompany {
   @@index([userId])
   @@index([companyId])
   @@map("UserCompany")
+}
+
+// ================== Multi-role membership (new) ================== */
+
+model UserRoleMembership {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  role      UserRole
+  scopeType RoleScope
+  companyId String?   @db.Uuid
+  projectId String?   @db.Uuid
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: Cascade)
+  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade, onUpdate: Cascade)
+  project Project? @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, role])
+  @@index([companyId])
+  @@index([projectId])
+  @@map("UserRoleMembership")
 }
