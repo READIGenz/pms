@@ -121,6 +121,9 @@ console.log('role: ', norm);
   }
 }
 
+const isClientRole = (role?: string) =>
+  (role || '').toString().trim().replace(/[_\s-]+/g, '').toLowerCase() === 'client';
+
 export default function Login() {
   // Prefill username from MRU
   const initialLogin = (() => {
@@ -557,46 +560,60 @@ console.log('Verify Response :', data);
             )}
 
             {step === 'choose-role' && (
-              <div className="space-y-3">
-                <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ''}! Please choose how you’d like to continue:
-                </div>
-                <div className="space-y-2">
-                  {roleOptions.map((r) => (
-                    <label
-                      key={r.id}
-                      className={
-                        'flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-emerald-50 dark:hover:bg-neutral-800 ' +
-                        (selectedMembershipId === r.id ? 'border-emerald-500' : 'dark:border-neutral-800')
-                      }
-                    >
-                      <input
-                        type="radio"
-                        name="roleOption"
-                        checked={selectedMembershipId === r.id}
-                        onChange={() => setSelectedMembershipId(r.id)}
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium dark:text-white">{r.label}</div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400">
-                          {r.scopeType === 'Company' && r.company ? `Company: ${r.company.name} (${r.company.role})` : null}
-                          {r.scopeType === 'Project' && r.project ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}` : null}
-                          {r.scopeType === 'Global' ? 'Global scope' : null}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                <div className="flex gap-3">
-                  <button className={btnPrimary} onClick={assumeRole} disabled={busy || !selectedMembershipId}>
-                    {busy ? 'Continuing…' : 'Continue'}
-                  </button>
-                  <button className={btnSecondary} onClick={() => setStep('enter')}>
-                    Cancel
-                  </button>
-                </div>
+  <div className="space-y-3">
+    <div className="text-sm text-gray-700 dark:text-gray-300">
+      Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ''}! Please choose how you’d like to continue:
+    </div>
+    <div className="space-y-2">
+      {roleOptions.map((r) => {
+        const roleIsClient = isClientRole(r.role as string);
+                const displayLabel = roleIsClient ? 'Client' : r.label; // << only "Client" text
+
+        return (
+          <label
+            key={r.id}
+            className={
+              'flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-emerald-50 dark:hover:bg-neutral-800 ' +
+              (selectedMembershipId === r.id ? 'border-emerald-500' : 'dark:border-neutral-800')
+            }
+          >
+            <input
+              type="radio"
+              name="roleOption"
+              checked={selectedMembershipId === r.id}
+              onChange={() => setSelectedMembershipId(r.id)}
+            />
+            <div className="flex-1">
+              <div className="font-medium dark:text-white">{displayLabel}</div>
+
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                {/* Show company for service providers */}
+                {r.scopeType === 'Company' && r.company
+                  ? `Company: ${r.company.name} (${r.company.role})`
+                  : null}
+
+                {/* Hide project details when role is Client */}
+                {r.scopeType === 'Project' && r.project && !roleIsClient
+                  ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}`
+                  : null}
+
+                {r.scopeType === 'Global' ? 'Global scope' : null}
               </div>
-            )}
+            </div>
+          </label>
+        );
+      })}
+    </div>
+    <div className="flex gap-3">
+      <button className={btnPrimary} onClick={assumeRole} disabled={busy || !selectedMembershipId}>
+        {busy ? 'Continuing…' : 'Continue'}
+      </button>
+      <button className={btnSecondary} onClick={() => setStep('enter')}>
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
 
             {err && <div className="text-red-600 text-sm">{err}</div>}
           </div>
