@@ -1,7 +1,7 @@
 // src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './views/Login';
-import AdminHome from './views/admin/adminHome';
+import AdminHome from './views/admin/AdminHome';
 import Users from './views/admin/Users';
 import Projects from './views/admin/Projects';
 import Companies from './views/admin/Companies';
@@ -36,16 +36,19 @@ export default function App() {
         <Route path="/login" element={<Login />} />
 
         {/* Admin area */}
-        <Route path="/adminHome" element={<RequireAuth><AdminHome /></RequireAuth>}>
-          <Route path="users" element={<Users />} />
+         <Route
+          path="/admin"
+          element={<RequireAuth><AdminHome /></RequireAuth>}
+          >
+            <Route index element={<div className="p-4">Dashboard</div>} />
+            <Route path="users" element={<Users />} />
           <Route path="projects" element={<Projects />} />
           <Route path="companies" element={<Companies />} />
           <Route path="assignments" element={<Assignments />} />
           <Route path="permissions" element={<Permissions />} />
           <Route path="permission-explorer" element={<PermissionExplorer />} />
           {/* when no child path picked */}
-          <Route index element={<div className="p-4">Dashboard</div>} />
-        </Route>
+          </Route>
 
         {/* Role-based homes */}
         <Route path="/clientHome" element={<RequireAuth><ClientHome /></RequireAuth>} />

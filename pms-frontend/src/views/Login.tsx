@@ -263,7 +263,7 @@ console.log('Verify Response :', data);
     const payload = token ? decodeJwtPayload(token) : null;
     const isAdmin = !!(payload && payload.isSuperAdmin) || !!(data as any).user?.isSuperAdmin;
 
-    if (isAdmin) return forceNavigate('/adminHome');
+    if (isAdmin) return forceNavigate('/admin');
 
     const roleInJwt = payload?.userRole || payload?.role;
     if (roleInJwt) return forceNavigate(mapRoleToPath(String(roleInJwt)));
