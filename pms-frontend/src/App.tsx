@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './views/Login';
 import AdminHome from './views/admin/AdminHome';
 import Users from './views/admin/Users';
+import UserCreate from "./views/admin/UserCreate";
+import UserEdit from "./views/admin/UserEdit";
 import Projects from './views/admin/Projects';
 import Companies from './views/admin/Companies';
 import Assignments from './views/admin/Assignments';
@@ -39,22 +41,27 @@ export default function App() {
         <Route path="/login" element={<Login />} />
 
         {/* Admin area */}
-         <Route
+        <Route
           path="/admin"
           element={<RequireAuth><AdminHome /></RequireAuth>}
-          >
-            <Route index element={<div className="p-4">Dashboard</div>} />
-            <Route path="users" element={<Users />} />
+        >
+          <Route index element={<div className="p-4">Dashboard</div>} />
+          <Route path="users" element={<Users />} />
+          <Route path="users/:id" element={<Users />} />
+          <Route path="users/new" element={<UserCreate />} />
+
+          <Route path="users/:id/edit" element={<UserEdit />} />
+
           <Route path="projects" element={<Projects />} />
           <Route path="companies" element={<Companies />} />
           <Route path="assignments" element={<Assignments />} />
           <Route path="permissions" element={<Permissions />} />
           <Route path="permission-explorer" element={<PermissionExplorer />} />
-          <Route path='activityLib' element={<ActivityLib/>}/>
+          <Route path='activityLib' element={<ActivityLib />} />
           <Route path="materialLib" element={<MaterialLib />} />
           <Route path="checkListLib" element={<ChecklistLib />} />
           {/* when no child path picked */}
-          </Route>
+        </Route>
 
         {/* Role-based homes */}
         <Route path="/clientHome" element={<RequireAuth><ClientHome /></RequireAuth>} />
