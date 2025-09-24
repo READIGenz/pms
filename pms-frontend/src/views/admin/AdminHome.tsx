@@ -86,8 +86,8 @@ export default function AdminHome() {
                 <SideLink to="projects" label="Projects" />
                 <SideLink to="companies" label="Companies" />
                 <SideLink to="assignments" label="Assignments" />
-                <SideLink to="permissions" label="Permissions" />
-                <SideLink to="permission-explorer" label="Permission Explorer" />
+                <SideLink to="permissions" label="Role Templates and Project Overrides" />
+                <SideLink to="permission-explorer" label="User Permission Explorer" />
               </div>
             </div>
           </aside>
