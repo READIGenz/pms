@@ -99,15 +99,12 @@ function clearSavedLogins() {
 }
 
 // Map role (handles Admin/Client/Ava-PMT/Ava_PMT/PMC/…)
-
 function mapRoleToPath(role: string): string {
   const norm = (role || '')
     .toString()
     .trim()
     .replace(/[_\s-]+/g, '') // Ava-PMT / Ava_PMT → avapmt
     .toLowerCase();
-    console.log('role: ', role);
-console.log('role: ', norm);
   switch (norm) {
     case 'admin': return '/adminHome';
     case 'client': return '/clientHome';
@@ -117,7 +114,6 @@ console.log('role: ', norm);
     case 'consultant': return '/consultantHome';
     case 'supplier': return '/supplierHome';
     default: return '/landing';
-  
   }
 }
 
@@ -143,6 +139,22 @@ export default function Login() {
   const [pendingUser, setPendingUser] = useState<any | null>(null);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
+
+  // ---- NEW: de-duplicate Client role to a single option ----
+  const roleOptionsDeduped = useMemo(() => {
+    let clientTaken = false;
+    return (roleOptions || []).reduce<RoleOption[]>((acc, r) => {
+      const isClient = isClientRole(r.role as string);
+      if (isClient) {
+        if (clientTaken) return acc; // drop duplicates
+        clientTaken = true;
+        acc.push({ ...r, label: 'Client' }); // normalize label
+        return acc;
+      }
+      acc.push(r);
+      return acc;
+    }, []);
+  }, [roleOptions]);
 
   // saved usernames UI
   const [savedLogins, setSavedLogins] = useState<string[]>(() => readSavedLogins());
@@ -217,118 +229,115 @@ export default function Login() {
 
   // POST /auth/otp/verify  { login, code }
   const verify = async () => {
-  setErr(null);
-  try {
-    setBusy(true);
-    const { data } = await api.post<VerifyResponse>('/auth/otp/verify', { login, code });
-console.log('Verify Response :', data);
-    if (!data?.ok) {
-      setErr((data as any)?.error || 'Invalid OTP');
-      return;
+    setErr(null);
+    try {
+      setBusy(true);
+      const { data } = await api.post<VerifyResponse>('/auth/otp/verify', { login, code });
+      if (!data?.ok) {
+        setErr((data as any)?.error || 'Invalid OTP');
+        return;
+      }
+
+      // Try to capture any token the backend might give us (even in choose-role)
+      const bootstrapToken =
+        (data as any).token ||
+        (data as any).jwt?.token ||
+        (data as any).jwtToken ||
+        null;
+
+      if (bootstrapToken) {
+        localStorage.setItem('token', bootstrapToken);
+      }
+
+      localStorage.setItem('user', JSON.stringify((data as any).user || {}));
+      if (remember) {
+        addSavedLogin(login);
+        setSavedLogins(readSavedLogins());
+      }
+
+      if ((data as any).chooseRole === true) {
+        // Stash a short-lived OTP session for the assume-role step if no token yet
+        sessionStorage.setItem(
+          'otpSession',
+          JSON.stringify({ login, otp: code, token: bootstrapToken })
+        );
+
+        setPendingUser((data as any).user);
+        setRoleOptions(((data as any).roles || []) as RoleOption[]);
+        setSelectedMembershipId(null);
+        setStep('choose-role');
+        return;
+      }
+
+      // Final token path → route
+      const token = (data as any).token || bootstrapToken;
+      const payload = token ? decodeJwtPayload(token) : null;
+      const isAdmin = !!(payload && payload.isSuperAdmin) || !!(data as any).user?.isSuperAdmin;
+
+      if (isAdmin) return forceNavigate('/admin');
+
+      const roleInJwt = payload?.userRole || payload?.role;
+      if (roleInJwt) return forceNavigate(mapRoleToPath(String(roleInJwt)));
+
+      return forceNavigate('/landing');
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || 'Failed to verify OTP');
+    } finally {
+      setBusy(false);
     }
-
-    // Try to capture any token the backend might give us (even in choose-role)
-    const bootstrapToken =
-      (data as any).token ||
-      (data as any).jwt?.token ||
-      (data as any).jwtToken ||
-      null;
-
-    if (bootstrapToken) {
-      localStorage.setItem('token', bootstrapToken);
-    }
-
-    localStorage.setItem('user', JSON.stringify((data as any).user || {}));
-    if (remember) {
-      addSavedLogin(login);
-      setSavedLogins(readSavedLogins());
-    }
-
-    if ((data as any).chooseRole === true) {
-      // Stash a short-lived OTP session for the assume-role step if no token yet
-      sessionStorage.setItem(
-        'otpSession',
-        JSON.stringify({ login, otp: code, token: bootstrapToken })
-      );
-
-      setPendingUser((data as any).user);
-      setRoleOptions(((data as any).roles || []) as RoleOption[]);
-      setSelectedMembershipId(null);
-      setStep('choose-role');
-      return;
-    }
-
-    // Final token path → route
-    const token = (data as any).token || bootstrapToken;
-    const payload = token ? decodeJwtPayload(token) : null;
-    const isAdmin = !!(payload && payload.isSuperAdmin) || !!(data as any).user?.isSuperAdmin;
-
-    if (isAdmin) return forceNavigate('/admin');
-
-    const roleInJwt = payload?.userRole || payload?.role;
-    if (roleInJwt) return forceNavigate(mapRoleToPath(String(roleInJwt)));
-
-    return forceNavigate('/landing');
-  } catch (e: any) {
-    setErr(e?.response?.data?.error || 'Failed to verify OTP');
-  } finally {
-    setBusy(false);
-  }
-};
-
+  };
 
   const assumeRole = async () => {
-  if (!selectedMembershipId) {
-    setErr('Select a role to continue.');
-    return;
-  }
-
-  const storedToken = localStorage.getItem('token');
-  const otpSessionRaw = sessionStorage.getItem('otpSession');
-  const otpSession = otpSessionRaw ? JSON.parse(otpSessionRaw) as { login?: string; otp?: string; token?: string | null } : null;
-
-  // Prefer any available token (localStorage or interim one from otpSession)
-  const bearer = storedToken || otpSession?.token || null;
-
-  try {
-    setBusy(true);
-
-    // Build payload; include login+otp only when we have no bearer
-    const body: any = { membershipId: selectedMembershipId };
-    if (!bearer && otpSession?.login && otpSession?.otp) {
-      body.login = otpSession.login;
-      body.otp = otpSession.otp;
-    }
-
-    const { data } = await api.post<AssumeRoleResponse>(
-      '/auth/assume-role',
-      body,
-      bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : undefined
-    );
-
-    if (!data || data.ok !== true) {
-      const serverMsg = (data && 'error' in data && data.error) || 'Failed to assume role';
-      setErr(serverMsg);
+    if (!selectedMembershipId) {
+      setErr('Select a role to continue.');
       return;
     }
 
-    // Success → persist final token and route
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user || {}));
-    sessionStorage.removeItem('otpSession');
+    const storedToken = localStorage.getItem('token');
+    const otpSessionRaw = sessionStorage.getItem('otpSession');
+    const otpSession = otpSessionRaw ? JSON.parse(otpSessionRaw) as { login?: string; otp?: string; token?: string | null } : null;
 
-    const target = mapRoleToPath(String(data.role.role));
-    forceNavigate(target);
-  } catch (e: any) {
-    const msg = e?.response?.status === 401
-      ? 'Unauthorized. Your session may have expired. Please try again.'
-      : (e?.response?.data?.error || 'Failed to assume role');
-    setErr(msg);
-  } finally {
-    setBusy(false);
-  }
-};
+    // Prefer any available token (localStorage or interim one from otpSession)
+    const bearer = storedToken || otpSession?.token || null;
 
+    try {
+      setBusy(true);
+
+      // Build payload; include login+otp only when we have no bearer
+      const body: any = { membershipId: selectedMembershipId };
+      if (!bearer && otpSession?.login && otpSession?.otp) {
+        body.login = otpSession.login;
+        body.otp = otpSession.otp;
+      }
+
+      const { data } = await api.post<AssumeRoleResponse>(
+        '/auth/assume-role',
+        body,
+        bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : undefined
+      );
+
+      if (!data || data.ok !== true) {
+        const serverMsg = (data && 'error' in data && data.error) || 'Failed to assume role';
+        setErr(serverMsg);
+        return;
+      }
+
+      // Success → persist final token and route
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user || {}));
+      sessionStorage.removeItem('otpSession');
+
+      const target = mapRoleToPath(String(data.role.role));
+      forceNavigate(target);
+    } catch (e: any) {
+      const msg = e?.response?.status === 401
+        ? 'Unauthorized. Your session may have expired. Please try again.'
+        : (e?.response?.data?.error || 'Failed to assume role');
+      setErr(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Input classes
   const inputBase =
@@ -560,60 +569,60 @@ console.log('Verify Response :', data);
             )}
 
             {step === 'choose-role' && (
-  <div className="space-y-3">
-    <div className="text-sm text-gray-700 dark:text-gray-300">
-      Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ''}! Please choose how you’d like to continue:
-    </div>
-    <div className="space-y-2">
-      {roleOptions.map((r) => {
-        const roleIsClient = isClientRole(r.role as string);
-                const displayLabel = roleIsClient ? 'Client' : r.label; // << only "Client" text
+              <div className="space-y-3">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ''}! Please choose how you’d like to continue:
+                </div>
+                <div className="space-y-2">
+                  {roleOptionsDeduped.map((r) => {
+                    const roleIsClient = isClientRole(r.role as string);
+                    const displayLabel = roleIsClient ? 'Client' : r.label;
 
-        return (
-          <label
-            key={r.id}
-            className={
-              'flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-emerald-50 dark:hover:bg-neutral-800 ' +
-              (selectedMembershipId === r.id ? 'border-emerald-500' : 'dark:border-neutral-800')
-            }
-          >
-            <input
-              type="radio"
-              name="roleOption"
-              checked={selectedMembershipId === r.id}
-              onChange={() => setSelectedMembershipId(r.id)}
-            />
-            <div className="flex-1">
-              <div className="font-medium dark:text-white">{displayLabel}</div>
+                    return (
+                      <label
+                        key={r.id}
+                        className={
+                          'flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-emerald-50 dark:hover:bg-neutral-800 ' +
+                          (selectedMembershipId === r.id ? 'border-emerald-500' : 'dark:border-neutral-800')
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="roleOption"
+                          checked={selectedMembershipId === r.id}
+                          onChange={() => setSelectedMembershipId(r.id)}
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium dark:text-white">{displayLabel}</div>
 
-              <div className="text-xs text-gray-600 dark:text-gray-400">
-                {/* Show company for service providers */}
-                {r.scopeType === 'Company' && r.company
-                  ? `Company: ${r.company.name} (${r.company.role})`
-                  : null}
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            {/* company info for service providers */}
+                            {r.scopeType === 'Company' && r.company
+                              ? `Company: ${r.company.name} (${r.company.role})`
+                              : null}
 
-                {/* Hide project details when role is Client */}
-                {r.scopeType === 'Project' && r.project && !roleIsClient
-                  ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}`
-                  : null}
+                            {/* hide project details for Client */}
+                            {r.scopeType === 'Project' && r.project && !roleIsClient
+                              ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}`
+                              : null}
 
-                {r.scopeType === 'Global' ? 'Global scope' : null}
+                            {r.scopeType === 'Global' ? 'Global scope' : null}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-3">
+                  <button className={btnPrimary} onClick={assumeRole} disabled={busy || !selectedMembershipId}>
+                    {busy ? 'Continuing…' : 'Continue'}
+                  </button>
+                  <button className={btnSecondary} onClick={() => setStep('enter')}>
+                    Cancel
+                  </button>
+                </div>
               </div>
-            </div>
-          </label>
-        );
-      })}
-    </div>
-    <div className="flex gap-3">
-      <button className={btnPrimary} onClick={assumeRole} disabled={busy || !selectedMembershipId}>
-        {busy ? 'Continuing…' : 'Continue'}
-      </button>
-      <button className={btnSecondary} onClick={() => setStep('enter')}>
-        Cancel
-      </button>
-    </div>
-  </div>
-)}
+            )}
 
             {err && <div className="text-red-600 text-sm">{err}</div>}
           </div>
