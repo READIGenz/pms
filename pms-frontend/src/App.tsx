@@ -8,6 +8,9 @@ import Companies from './views/admin/Companies';
 import Assignments from './views/admin/Assignments';
 import Permissions from './views/admin/Permissions';
 import PermissionExplorer from './views/admin/PermissionExplorer';
+import ActivityLib from './views/admin/ActivityLib';
+import MaterialLib from './views/admin/MaterialLib';
+import ChecklistLib from './views/admin/ChecklistLib';
 
 // Role homes (create these files or swap with your actual components)
 import ClientHome from './views/client/clientHome';
@@ -47,6 +50,9 @@ export default function App() {
           <Route path="assignments" element={<Assignments />} />
           <Route path="permissions" element={<Permissions />} />
           <Route path="permission-explorer" element={<PermissionExplorer />} />
+          <Route path='activityLib' element={<ActivityLib/>}/>
+          <Route path="materialLib" element={<MaterialLib />} />
+          <Route path="checkListLib" element={<ChecklistLib />} />
           {/* when no child path picked */}
           </Route>
 
