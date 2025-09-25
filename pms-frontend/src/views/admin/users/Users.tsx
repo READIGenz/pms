@@ -1,7 +1,7 @@
 // pms-frontend/src/views/admin/Users.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { api } from "../../api/client";
+import { api } from "../../../api/client";
 
 // --- JWT helper ---
 function decodeJwtPayload(token: string): any | null {

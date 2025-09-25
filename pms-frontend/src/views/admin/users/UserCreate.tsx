@@ -1,7 +1,7 @@
 // pms-frontend/src/views/admin/UserCreate.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../../api/client";
+import { api } from "../../../api/client";
 
 /** Reference-data types */
 type StateOpt = { stateId: string; name: string; code: string };

@@ -2,9 +2,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './views/Login';
 import AdminHome from './views/admin/AdminHome';
-import Users from './views/admin/Users';
-import UserCreate from "./views/admin/UserCreate";
-import UserEdit from "./views/admin/UserEdit";
+import Users from './views/admin/users/Users';
+import UserCreate from "./views/admin/users/UserCreate";
+import UserEdit from "./views/admin/users/UserEdit";
 import Projects from './views/admin/Projects';
 import Companies from './views/admin/Companies';
 import Assignments from './views/admin/Assignments';
