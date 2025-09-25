@@ -22,7 +22,7 @@ const isIsoLike = (v: any) =>
 const fmtBool = (v: any) => (v === null || v === undefined ? "" : v ? "✓" : "✗");
 const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
 
-// --- NEW: photo helpers ---
+// --- Photo helpers ---
 function resolvePhotoUrl(path?: string | null): string | null {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
@@ -84,6 +84,25 @@ export default function Users() {
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<DisplayRow[]>([]);
   const [rawById, setRawById] = useState<Record<string, RawUser>>({});
+
+  // ---- Filters (role/state/zone) ----
+  // role filters are tri-state: all | yes | no
+  const [isClientFilter, setIsClientFilter] = useState<"all" | "yes" | "no">("all");
+  const [isServiceProviderFilter, setIsServiceProviderFilter] = useState<"all" | "yes" | "no">("all");
+  const [stateFilter, setStateFilter] = useState<string>(""); // empty => all
+  const [zoneFilter, setZoneFilter] = useState<string>("");   // empty => all
+
+  // derive options from loaded data
+  const stateOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach(r => { if (r.state?.trim()) s.add(r.state.trim()); });
+    return Array.from(s).sort((a,b)=>a.localeCompare(b));
+  }, [rows]);
+  const zoneOptions = useMemo(() => {
+    const z = new Set<string>();
+    rows.forEach(r => { if (r.zone?.trim()) z.add(r.zone.trim()); });
+    return Array.from(z).sort((a,b)=>a.localeCompare(b));
+  }, [rows]);
 
   // search (debounced)
   const [q, setQ] = useState("");
@@ -184,14 +203,36 @@ export default function Users() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
-  // client-side filter
+  // ----- Apply filters then search -----
+  const filteredByControls = useMemo(() => {
+    return rows.filter((r) => {
+      // role: isClient
+      if (isClientFilter !== "all") {
+        const v = r.isClient === true ? "yes" : r.isClient === false ? "no" : "no";
+        if (v !== isClientFilter) return false;
+      }
+      // role: isServiceProvider
+      if (isServiceProviderFilter !== "all") {
+        const v = r.isServiceProvider === true ? "yes" : r.isServiceProvider === false ? "no" : "no";
+        if (v !== isServiceProviderFilter) return false;
+      }
+      // state
+      if (stateFilter && r.state.trim() !== stateFilter.trim()) return false;
+      // zone
+      if (zoneFilter && r.zone.trim() !== zoneFilter.trim()) return false;
+
+      return true;
+    });
+  }, [rows, isClientFilter, isServiceProviderFilter, stateFilter, zoneFilter]);
+
+  // client-side text search on top of filters
   const filtered = useMemo(() => {
     const needle = qDebounced.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((r) =>
+    if (!needle) return filteredByControls;
+    return filteredByControls.filter((r) =>
       Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(needle))
     );
-  }, [rows, qDebounced]);
+  }, [filteredByControls, qDebounced]);
 
   // sorting
   const cmp = (a: any, b: any) => {
@@ -291,6 +332,13 @@ export default function Users() {
     if (location.pathname !== base) nav(base, { replace: true });
   };
 
+  // helper to know if filters are already clear
+  const filtersAreDefault =
+    isClientFilter === "all" &&
+    isServiceProviderFilter === "all" &&
+    !stateFilter &&
+    !zoneFilter;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
       <div className="mx-auto max-w-7xl">
@@ -303,6 +351,69 @@ export default function Users() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            {/* --- role/state/zone filters --- */}
+            <select
+              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              title="Filter: Client?"
+              value={isClientFilter}
+              onChange={(e) => { setIsClientFilter(e.target.value as any); setPage(1); }}
+            >
+              <option value="all">Client: All</option>
+              <option value="yes">Client: Yes</option>
+              <option value="no">Client: No</option>
+            </select>
+
+            <select
+              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              title="Filter: Service Provider?"
+              value={isServiceProviderFilter}
+              onChange={(e) => { setIsServiceProviderFilter(e.target.value as any); setPage(1); }}
+            >
+              <option value="all">ServiceProv: All</option>
+              <option value="yes">ServiceProv: Yes</option>
+              <option value="no">ServiceProv: No</option>
+            </select>
+
+            <select
+              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              title="Filter by State"
+              value={stateFilter}
+              onChange={(e) => { setStateFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">State: All</option>
+              {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <div className="flex items-center gap-2">
+              <select
+                className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                title="Filter by Zone"
+                value={zoneFilter}
+                onChange={(e) => { setZoneFilter(e.target.value); setPage(1); }}
+              >
+                <option value="">Zone: All</option>
+                {zoneOptions.map(z => <option key={z} value={z}>{z}</option>)}
+              </select>
+
+              {/* --- NEW: Clear button next to Zone dropdown --- */}
+              <button
+                type="button"
+                className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm"
+                title="Clear all filters"
+                onClick={() => {
+                  setIsClientFilter("all");
+                  setIsServiceProviderFilter("all");
+                  setStateFilter("");
+                  setZoneFilter("");
+                  setPage(1);
+                }}
+                disabled={filtersAreDefault}
+              >
+                Clear
+              </button>
+            </div>
+            {/* --- /filters --- */}
+
             <input
               className="border rounded px-3 py-2 w-56 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
               placeholder="Search…"

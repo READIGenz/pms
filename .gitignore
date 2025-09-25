@@ -6,6 +6,7 @@ Git_Reset.txt
 Postgres_Permission.txt
 vite.config2.ts
 Users1.tsx
+Users2.tsx
 # ---- OS / Editor junk ----
 .DS_Store
 Thumbs.db
