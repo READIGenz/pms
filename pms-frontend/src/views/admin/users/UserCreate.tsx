@@ -1,4 +1,4 @@
-// pms-frontend/src/views/admin/UserCreate.tsx
+// pms-frontend/src/views/admin/users/UserCreate.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
@@ -202,7 +202,7 @@ export default function UserCreate() {
           <div>
             <h1 className="text-2xl font-semibold dark:text-white">Create User</h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Fill the blocks below and save to the database.
+              Fill the details below and save. First Name and Mobile number are mandatory fields.
             </p>
           </div>
           <div className="flex gap-2">

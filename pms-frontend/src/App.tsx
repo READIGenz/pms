@@ -5,8 +5,12 @@ import AdminHome from './views/admin/AdminHome';
 import Users from './views/admin/users/Users';
 import UserCreate from "./views/admin/users/UserCreate";
 import UserEdit from "./views/admin/users/UserEdit";
-import Projects from './views/admin/Projects';
-import Companies from './views/admin/Companies';
+import Projects from './views/admin/projects/Projects';
+import ProjectCreate from "./views/admin/projects/ProjectCreate";
+import ProjectEdit from "./views/admin/projects/ProjectEdit";
+import Companies from './views/admin/companies/Companies';
+import CompanyCreate from './views/admin/companies/CompanyCreate';
+import CompanyEdit from './views/admin/companies/CompanyEdit';
 import Assignments from './views/admin/Assignments';
 import Permissions from './views/admin/Permissions';
 import PermissionExplorer from './views/admin/PermissionExplorer';
@@ -21,6 +25,7 @@ import ContractorHome from './views/contractor/contractorHome';
 import ConsultantHome from './views/consultant/consultantHome';
 import SupplierHome from './views/supplier/supplierHome';
 import PMCHome from './views/pmc/pmcHome';
+
 
 // Optional generic landing
 function Landing() {
@@ -49,11 +54,18 @@ export default function App() {
           <Route path="users" element={<Users />} />
           <Route path="users/:id" element={<Users />} />
           <Route path="users/new" element={<UserCreate />} />
-
           <Route path="users/:id/edit" element={<UserEdit />} />
 
           <Route path="projects" element={<Projects />} />
+          <Route path="projects/:id" element={<Projects />} />
+          <Route path="projects/new" element={<ProjectCreate />} />
+          <Route path="projects/:id/edit" element={<ProjectEdit />} />
+
           <Route path="companies" element={<Companies />} />
+          <Route path="companies/:id" element={<Companies />} />
+          <Route path="companies/new" element={<CompanyCreate />} />
+          <Route path="companies/:id/edit" element={<CompanyEdit />} />
+          
           <Route path="assignments" element={<Assignments />} />
           <Route path="permissions" element={<Permissions />} />
           <Route path="permission-explorer" element={<PermissionExplorer />} />

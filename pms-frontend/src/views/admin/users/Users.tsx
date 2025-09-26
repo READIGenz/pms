@@ -1,4 +1,4 @@
-// pms-frontend/src/views/admin/Users.tsx
+// pms-frontend/src/views/admin/users/Users.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../../../api/client";
@@ -18,7 +18,6 @@ function decodeJwtPayload(token: string): any | null {
 
 const isIsoLike = (v: any) =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
-
 const fmtBool = (v: any) => (v === null || v === undefined ? "" : v ? "✓" : "✗");
 const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
 
@@ -52,11 +51,14 @@ type DisplayRow = {
   updated: string;
   _id: string;
 };
-
-// We also keep a raw user map for the modal (has state, memberships, timestamps, etc.)
 type RawUser = any;
 
-// ----- Column definition in the exact order required -----
+// ----- Ref types -----
+type StateRef = { stateId: string; name: string; code: string };
+type DistrictRef = { districtId: string; name: string; stateId: string };
+type CompanyRef = { companyId: string; name: string; companyRole: string; status: string };
+
+// ----- Column definition (order) -----
 const headings: { key: keyof DisplayRow; label: string }[] = [
   { key: "action",            label: "Action" },
   { key: "code",              label: "Code" },
@@ -79,32 +81,41 @@ export default function Users() {
   const location = useLocation();
   const modalUserId = params.id || null;
 
-  // state
+  // --- data state ---
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<DisplayRow[]>([]);
   const [rawById, setRawById] = useState<Record<string, RawUser>>({});
 
+  // --- refs state (from /admin/*) ---
+  const [statesRef, setStatesRef] = useState<StateRef[]>([]);
+  const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
+  const [companiesRef, setCompaniesRef] = useState<CompanyRef[]>([]);
+  const [refsErr, setRefsErr] = useState<string | null>(null);
+
   // ---- Filters (role/state/zone) ----
-  // role filters are tri-state: all | yes | no
   const [isClientFilter, setIsClientFilter] = useState<"all" | "yes" | "no">("all");
   const [isServiceProviderFilter, setIsServiceProviderFilter] = useState<"all" | "yes" | "no">("all");
-  const [stateFilter, setStateFilter] = useState<string>(""); // empty => all
-  const [zoneFilter, setZoneFilter] = useState<string>("");   // empty => all
+  const [stateFilter, setStateFilter] = useState<string>(""); // state NAME
+  const [zoneFilter, setZoneFilter] = useState<string>("");
 
-  // derive options from loaded data
+  // --- derive options from refs/data ---
   const stateOptions = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach(r => { if (r.state?.trim()) s.add(r.state.trim()); });
-    return Array.from(s).sort((a,b)=>a.localeCompare(b));
-  }, [rows]);
+    // Prefer authoritative /admin/states names; fall back to discovered-from-users
+    const names = statesRef.map(s => s.name).filter(Boolean);
+    if (names.length > 0) return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
+    const fallback = new Set<string>();
+    rows.forEach(r => { if (r.state?.trim()) fallback.add(r.state.trim()); });
+    return Array.from(fallback).sort((a,b)=>a.localeCompare(b));
+  }, [statesRef, rows]);
+
   const zoneOptions = useMemo(() => {
     const z = new Set<string>();
     rows.forEach(r => { if (r.zone?.trim()) z.add(r.zone.trim()); });
     return Array.from(z).sort((a,b)=>a.localeCompare(b));
   }, [rows]);
 
-  // search (debounced)
+  // --- debounced search ---
   const [q, setQ] = useState("");
   const [qDebounced, setQDebounced] = useState("");
   useEffect(() => {
@@ -112,7 +123,7 @@ export default function Users() {
     return () => clearTimeout(id);
   }, [q]);
 
-  // sort & pagination
+  // --- sort & pagination ---
   const [sortKey, setSortKey] = useState<keyof DisplayRow | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
@@ -127,18 +138,64 @@ export default function Users() {
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
 
-  // --- Load users (with memberships for projects/companies) ---
-  const load = async () => {
+  // --- Load refs (states, districts, companies) with graceful degradation ---
+  const loadRefs = async (districtsForStateName?: string) => {
+    setRefsErr(null);
+    const results = await Promise.allSettled([
+      api.get("/admin/states"),
+      api.get("/admin/companies"),
+    ]);
+
+    // states
+    if (results[0].status === "fulfilled") {
+      const sdata: any = results[0].value.data;
+      setStatesRef(Array.isArray(sdata) ? sdata : (sdata?.states || []));
+    } else {
+      const status = (results[0] as any)?.reason?.response?.status;
+      setStatesRef([]);
+      setRefsErr(
+        status === 404
+          ? "Not Found (showing discovered state names instead)"
+          : ((results[0] as any)?.reason?.response?.data?.error || "Failed to load reference data.")
+      );
+    }
+
+    // companies
+    if (results[1].status === "fulfilled") {
+      const cdata: any = results[1].value.data;
+      setCompaniesRef(Array.isArray(cdata) ? cdata : (cdata?.companies || []));
+    } else {
+      // keep message focused on states fallback if that already set; otherwise set a general refs error
+      if (!refsErr) {
+        setRefsErr(
+          (results[1] as any)?.reason?.response?.data?.error || "Failed to load reference data."
+        );
+      }
+    }
+
+    // districts (optional, only if states endpoint worked)
+    try {
+      let stateId: string | undefined;
+      if (districtsForStateName && statesRef.length > 0) {
+        const match = statesRef.find(s => s.name?.trim() === districtsForStateName.trim());
+        stateId = match?.stateId;
+      }
+      const { data: dResp } = await api.get("/admin/districts", { params: stateId ? { stateId } : undefined });
+      const dlist = Array.isArray(dResp) ? dResp : (dResp?.districts || []);
+      setDistrictsRef(dlist);
+    } catch (e: any) {
+      // districts failure should not be fatal
+      setDistrictsRef([]);
+    }
+  };
+
+  // --- Users (with memberships) ---
+  const loadUsers = async () => {
     setErr(null);
     setLoading(true);
     try {
-      const { data } = await api.get("/admin/users", {
-        params: { includeMemberships: "1" },
-      });
-
-      const list: any[] = Array.isArray(data)
-        ? data
-        : (data?.users && Array.isArray(data.users) ? data.users : []);
+      const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" }});
+      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.users) ? data.users : []);
 
       const rawMap: Record<string, RawUser> = {};
       const normalized: DisplayRow[] = list.map((u) => {
@@ -149,18 +206,10 @@ export default function Users() {
 
         const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
         const projectTitles = Array.from(
-          new Set(
-            memberships
-              .map((m) => m?.project?.title)
-              .filter((s: any) => typeof s === "string" && s.trim())
-          )
+          new Set(memberships.map(m => m?.project?.title).filter((s:any)=>typeof s==="string" && s.trim()))
         );
         const companyNames = Array.from(
-          new Set(
-            memberships
-              .map((m) => m?.company?.name)
-              .filter((s: any) => typeof s === "string" && s.trim())
-          )
+          new Set(memberships.map(m => m?.company?.name).filter((s:any)=>typeof s==="string" && s.trim()))
         );
 
         const row: DisplayRow = {
@@ -187,10 +236,9 @@ export default function Users() {
       setPage(1);
     } catch (e: any) {
       const s = e?.response?.status;
-      const msg =
-        s === 401
-          ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to load users.";
+      const msg = s === 401
+        ? "Unauthorized (401). Please sign in again."
+        : e?.response?.data?.error || e?.message || "Failed to load users.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -201,38 +249,45 @@ export default function Users() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  // initial loads
+  useEffect(() => { loadRefs(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { loadUsers(); /* eslint-disable-next-line */ }, []);
+
+  // If state filter changes and we have refs, refresh districts for that state name (safe no-op on failure)
+  useEffect(() => {
+    if (statesRef.length === 0) return; // no authoritative states; keep fallback behavior
+    loadRefs(stateFilter || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stateFilter]);
 
   // ----- Apply filters then search -----
   const filteredByControls = useMemo(() => {
     return rows.filter((r) => {
-      // role: isClient
       if (isClientFilter !== "all") {
         const v = r.isClient === true ? "yes" : r.isClient === false ? "no" : "no";
         if (v !== isClientFilter) return false;
       }
-      // role: isServiceProvider
       if (isServiceProviderFilter !== "all") {
         const v = r.isServiceProvider === true ? "yes" : r.isServiceProvider === false ? "no" : "no";
         if (v !== isServiceProviderFilter) return false;
       }
-      // state
       if (stateFilter && r.state.trim() !== stateFilter.trim()) return false;
-      // zone
       if (zoneFilter && r.zone.trim() !== zoneFilter.trim()) return false;
-
       return true;
     });
   }, [rows, isClientFilter, isServiceProviderFilter, stateFilter, zoneFilter]);
 
   // client-side text search on top of filters
+  const [sortKeyState, setSortKeyState] = useState<keyof DisplayRow | null>(null);
+  const [qState, setQState] = useState("");
+  useEffect(() => setQState(qDebounced), [qDebounced]);
   const filtered = useMemo(() => {
-    const needle = qDebounced.trim().toLowerCase();
+    const needle = qState.trim().toLowerCase();
     if (!needle) return filteredByControls;
     return filteredByControls.filter((r) =>
       Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(needle))
     );
-  }, [filteredByControls, qDebounced]);
+  }, [filteredByControls, qState]);
 
   // sorting
   const cmp = (a: any, b: any) => {
@@ -248,7 +303,6 @@ export default function Users() {
     return String(a).localeCompare(String(b));
   };
 
-  const [sortKeyState, setSortKeyState] = useState<keyof DisplayRow | null>(null);
   const sorted = useMemo(() => {
     const key = sortKey ?? sortKeyState;
     if (!key || key === "action") return filtered;
@@ -291,7 +345,7 @@ export default function Users() {
     URL.revokeObjectURL(url);
   };
 
-  // ------------- Modal: open if route has :id -------------
+  // ------------- Modal -------------
   const selectedRaw: RawUser | null = modalUserId ? rawById[modalUserId] ?? null : null;
   const modalData = (() => {
     if (!selectedRaw) return null;
@@ -299,12 +353,8 @@ export default function Users() {
     const name = [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
     const mobile = [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
     const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-    const projectTitles = Array.from(
-      new Set(memberships.map((m) => m?.project?.title).filter((s: any) => typeof s === "string" && s.trim()))
-    );
-    const companyNames = Array.from(
-      new Set(memberships.map((m) => m?.company?.name).filter((s: any) => typeof s === "string" && s.trim()))
-    );
+    const projectTitles = Array.from(new Set(memberships.map((m) => m?.project?.title).filter((s:any)=>typeof s==="string" && s.trim())));
+    const companyNames = Array.from(new Set(memberships.map((m) => m?.company?.name).filter((s:any)=>typeof s==="string" && s.trim())));
     return {
       code: u.code ?? "",
       name,
@@ -319,7 +369,6 @@ export default function Users() {
       status: u.userStatus ?? "",
       created: u.createdAt ?? "",
       updated: u.updatedAt ?? "",
-      // NEW: photo bits we’ll use in header
       profilePhoto: u.profilePhoto ?? null,
       firstName: u.firstName,
       middleName: u.middleName,
@@ -332,7 +381,6 @@ export default function Users() {
     if (location.pathname !== base) nav(base, { replace: true });
   };
 
-  // helper to know if filters are already clear
   const filtersAreDefault =
     isClientFilter === "all" &&
     isServiceProviderFilter === "all" &&
@@ -349,9 +397,14 @@ export default function Users() {
             <p className="text-sm text-gray-600 dark:text-gray-300">
               User's details can be viewed and updated.
             </p>
+            {refsErr && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {refsErr}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* --- role/state/zone filters --- */}
+            {/* role/state/zone filters */}
             <select
               className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
               title="Filter: Client?"
@@ -395,7 +448,6 @@ export default function Users() {
                 {zoneOptions.map(z => <option key={z} value={z}>{z}</option>)}
               </select>
 
-              {/* --- NEW: Clear button next to Zone dropdown --- */}
               <button
                 type="button"
                 className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm"
@@ -412,7 +464,6 @@ export default function Users() {
                 Clear
               </button>
             </div>
-            {/* --- /filters --- */}
 
             <input
               className="border rounded px-3 py-2 w-56 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
@@ -429,7 +480,7 @@ export default function Users() {
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
             </select>
             <button
-              onClick={load}
+              onClick={() => { loadRefs(stateFilter || undefined); loadUsers(); }}
               className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
               disabled={loading}
               title="Reload"
@@ -565,7 +616,7 @@ export default function Users() {
           </div>
         </div>
 
-        {/* -------- Modal (opens when route is /admin/users/:id) -------- */}
+        {/* -------- Modal -------- */}
         {modalData && (
           <div className="fixed inset-0 z-40">
             <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />

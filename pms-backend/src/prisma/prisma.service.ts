@@ -1,3 +1,4 @@
+// src/prisma/prisma.service.ts
 import { INestApplication, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 

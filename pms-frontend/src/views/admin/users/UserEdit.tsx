@@ -1,4 +1,4 @@
-// pms-frontend/src/views/admin/UserEdit.tsx
+// pms-frontend/src/views/admin/users/UserEdit.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
@@ -61,6 +61,7 @@ export default function UserEdit() {
   const [districts, setDistricts] = useState<DistrictOpt[]>([]);
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
+  const [refsErr, setRefsErr] = useState<string | null>(null);
 
   // ---------- UI ----------
   const [loading, setLoading] = useState(true);
@@ -73,25 +74,55 @@ export default function UserEdit() {
     if (!token) nav("/login", { replace: true });
   }, [nav]);
 
-  // --- Load reference data (states/projects/companies) ---
-  useEffect(() => {
-    (async () => {
-      try {
-        const [{ data: s }, { data: p }, { data: c }] = await Promise.all([
-          api.get("/admin/states"),
-          api.get("/admin/projects", { params: { status: "Active" } }),
-          api.get("/admin/companies"),
-        ]);
-        setStates(Array.isArray(s) ? s : s?.states || []);
-        setProjects(Array.isArray(p) ? p : p?.projects || []);
-        setCompanies(Array.isArray(c) ? c : c?.companies || []);
-      } catch (e: any) {
-        setErr(e?.response?.data?.error || "Failed to load reference data.");
+  // --- Load reference data (states/projects/companies) using refs controller ---
+  const loadRefs = async () => {
+    setRefsErr(null);
+    const results = await Promise.allSettled([
+      api.get("/admin/states"),
+      api.get("/admin/projects", { params: { status: "Active" } }),
+      api.get("/admin/companies"),
+    ]);
+
+    // states
+    if (results[0].status === "fulfilled") {
+      const s: any = results[0].value.data;
+      setStates(Array.isArray(s) ? s : (s?.states || []));
+    } else {
+      const status = (results[0] as any)?.reason?.response?.status;
+      setStates([]);
+      setRefsErr(
+        status === 404
+          ? "States API not found (list may be incomplete)."
+          : ((results[0] as any)?.reason?.response?.data?.error || "Failed to load states.")
+      );
+    }
+
+    // projects
+    if (results[1].status === "fulfilled") {
+      const p: any = results[1].value.data;
+      setProjects(Array.isArray(p) ? p : (p?.projects || []));
+    } else {
+      if (!refsErr) {
+        setRefsErr((results[1] as any)?.reason?.response?.data?.error || "Failed to load projects.");
       }
-    })();
+    }
+
+    // companies
+    if (results[2].status === "fulfilled") {
+      const c: any = results[2].value.data;
+      setCompanies(Array.isArray(c) ? c : (c?.companies || []));
+    } else {
+      if (!refsErr) {
+        setRefsErr((results[2] as any)?.reason?.response?.data?.error || "Failed to load companies.");
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadRefs();
   }, []);
 
-  // --- Load user by id (needs backend GET /admin/users/:id with memberships) ---
+  // --- Load user by id (GET /admin/users/:id?includeMemberships=1) ---
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -142,7 +173,7 @@ export default function UserEdit() {
     })();
   }, [id]);
 
-  // Districts by state
+  // Districts by state (from refs controller) — runs whenever stateId is set/changes
   useEffect(() => {
     if (!stateId) {
       setDistricts([]);
@@ -152,11 +183,19 @@ export default function UserEdit() {
     (async () => {
       try {
         const { data } = await api.get("/admin/districts", { params: { stateId } });
-        setDistricts(Array.isArray(data) ? data : data?.districts || []);
+        const list = Array.isArray(data) ? data : (data?.districts || []);
+        setDistricts(list);
+        // if current selected district doesn't belong to this state, clear it
+        if (list.length && districtId) {
+          const found = list.some((d: { districtId: string; }) => d.districtId === districtId);
+          if (!found) setDistrictId("");
+        }
       } catch (e: any) {
-        setErr(e?.response?.data?.error || "Failed to load districts.");
+        setDistricts([]);
+        setRefsErr(e?.response?.data?.error || "Failed to load districts.");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateId]);
 
   const namePreview = useMemo(
@@ -227,7 +266,7 @@ export default function UserEdit() {
         }
       }
 
-      // 3) Save affiliations
+      // 3) Save affiliations (projects/companies)
       await api.post(`/admin/users/${id}/affiliations`, {
         isClient,
         projectIds: isClient ? selectedProjectIds : [],
@@ -243,6 +282,19 @@ export default function UserEdit() {
     }
   };
 
+  // Useful labels for the selects (in case selected value isn't in the list yet)
+  const stateLabel = useMemo(() => {
+    if (!stateId) return "";
+    const s = states.find(x => x.stateId === stateId);
+    return s ? `${s.name} (${s.code})` : "(unknown state)";
+  }, [stateId, states]);
+
+  const districtLabel = useMemo(() => {
+    if (!districtId) return "";
+    const d = districts.find(x => x.districtId === districtId);
+    return d ? d.name : "(unknown district)";
+  }, [districtId, districts]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
       <div className="mx-auto max-w-5xl">
@@ -253,6 +305,9 @@ export default function UserEdit() {
             <p className="text-sm text-gray-600 dark:text-gray-300">
               Update the blocks below and save changes.
             </p>
+            {refsErr && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{refsErr}</p>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -358,13 +413,26 @@ export default function UserEdit() {
                   label="State / UT"
                   value={stateId}
                   setValue={(v) => { setStateId(v); setDistrictId(""); }}
-                  options={["", ...states.map(s => ({ value: s.stateId, label: `${s.name} (${s.code})` }))]}
+                  options={[
+                    "",
+                    ...states.map(s => ({ value: s.stateId, label: `${s.name} (${s.code})` })),
+                    // If current stateId not in states (e.g. refs failed but user has a value), show a fallback option
+                    ...(stateId && !states.some(s => s.stateId === stateId)
+                      ? [{ value: stateId, label: stateLabel }]
+                      : []),
+                  ]}
                 />
                 <Select
                   label="District"
                   value={districtId}
                   setValue={setDistrictId}
-                  options={["", ...districts.map(d => ({ value: d.districtId, label: d.name }))]}
+                  options={[
+                    "",
+                    ...districts.map(d => ({ value: d.districtId, label: d.name })),
+                    ...(districtId && !districts.some(d => d.districtId === districtId)
+                      ? [{ value: districtId, label: districtLabel }]
+                      : []),
+                  ]}
                   disabled={!stateId}
                 />
                 <Text label="City/Town" value={cityTown} setValue={setCityTown} />
