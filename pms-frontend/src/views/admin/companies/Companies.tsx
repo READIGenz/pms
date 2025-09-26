@@ -1,4 +1,3 @@
-// pms-frontend/src/views/admin/companies/Companies.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
@@ -16,11 +15,18 @@ function decodeJwtPayload(token: string): any | null {
   }
 }
 
-/* ========================= utils/format ========================= */
+/* ========================= utils/format & helpers ========================= */
 const isIsoLike = (v: any) =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
-const fmtBool = (v: any) => (v === null || v === undefined ? "" : v ? "✓" : "✗");
-const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
+
+const fmtDate = (v: any) =>
+  isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? "");
+
+function formatCell(v: any): string {
+  if (v === null || v === undefined) return "";
+  if (isIsoLike(v)) return fmtDate(v);
+  return String(v ?? "");
+}
 
 function isPlainObject(x: any) {
   return x && typeof x === "object" && !Array.isArray(x);
@@ -34,131 +40,113 @@ function flatten(obj: any, prefix = ""): Record<string, any> {
   });
   return out;
 }
-function formatCell(v: any): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "boolean") return fmtBool(v);
-  if (Array.isArray(v)) {
-    return v
-      .map((x) => (isPlainObject(x) ? JSON.stringify(x) : String(x ?? "")))
-      .join("; ");
-  }
-  if (isPlainObject(v)) return JSON.stringify(v);
-  if (isIsoLike(v)) return fmtDate(v);
-  return String(v ?? "");
-}
 
 /* ========================= types ========================= */
-type DisplayRow = Record<string, any> & { _id: string; action?: string };
-type RawCompany = any;
+type RawCompany = {
+  companyId: string;
+  companyCode?: string | null;
+  name?: string | null;
+  status?: string | null;
+  website?: string | null;
+  companyRole?: string | null;
 
-type StateRef = { stateId: string; name: string; code: string };
-type DistrictRef = { districtId: string; name: string; stateId: string };
-type UserRef = { userId: string; name: string };
+  gstin?: string | null;
+  pan?: string | null;
+  cin?: string | null;
 
-/* ========================= Column spec (fixed order labels) ========================= */
-const COLUMN_SPEC = [
-  { key: "action",            label: "Action" },
-  { key: "name",              label: "Company Name" },
-  { key: "status",            label: "Status" },
-  { key: "companyRole",       label: "Role" },
-  { key: "gstin",             label: "GSTIN" },
-  { key: "pan",               label: "PAN" },
-  { key: "cin",               label: "CIN" },
-  { key: "website",           label: "Website" },
-  { key: "primaryContact",    label: "Primary Contact" },
-  { key: "contactMobile",     label: "Mobile" },
-  { key: "contactEmail",      label: "Email" },
-  { key: "state.name",        label: "State" },
-  { key: "district.name",     label: "District" },
-  { key: "address",           label: "Address" },
-  { key: "pin",               label: "PIN" },
-  { key: "serviceProvider.name", label: "Service Provider" },
-  { key: "createdAt",         label: "Created" },
-  { key: "updatedAt",         label: "Updated" },
-  { key: "notes",             label: "Notes" },
-] as const;
-type ColumnKey = typeof COLUMN_SPEC[number]["key"];
-const COLUMN_LABELS: Record<ColumnKey | string, string> =
-  Object.fromEntries(COLUMN_SPEC.map(c => [c.key, c.label]));
+  primaryContact?: string | null;
+  contactMobile?: string | null;
+  contactEmail?: string | null;
 
-/* ========================= ALWAYS-SHOW company keys ========================= */
-const ALL_COMPANY_KEYS: string[] = [
-  // identity / audit
-  "companyId",
-  "name",
-  "status",
-  "companyRole",
-  "createdAt",
-  "updatedAt",
+  address?: string | null;
+  stateId?: string | null;
+  districtId?: string | null;
+  pin?: string | null;
 
-  // statutory / site
-  "gstin",
-  "pan",
-  "cin",
-  "website",
+  notes?: string | null;
 
-  // contacts
-  "primaryContact",
-  "contactMobile",
-  "contactEmail",
+  updatedAt?: string | null;
 
-  // location (ids + friendly names)
-  "stateId",
-  "districtId",
-  "state.name",
-  "district.name",
-  "address",
-  "pin",
+  // Relations (if controller includes them)
+  state?: { stateId: string; name: string; code?: string } | null;
+  district?: { districtId: string; name: string; stateId?: string } | null;
+};
 
-  // service provider relation
-  "userId",
-  "serviceProvider.name",
+type DisplayRow = {
+  _id: string;          // stable key for row
+  action?: string;
+  companyCode?: string | null;
+  name?: string | null;
+  companyRole?: string | null;
+  city?: string | null;   // district.name
+  state?: string | null;  // state.name
+  status?: string | null;
+  updatedAt?: string | null;
+};
 
-  // misc
-  "notes",
+type ColKey =
+  | "action"
+  | "companyCode"
+  | "name"
+  | "companyRole"
+  | "city"
+  | "state"
+  | "status"
+  | "updatedAt";
+
+/* ========================= fixed columns (order matters) ========================= */
+const COLS: { key: ColKey; label: string }[] = [
+  { key: "action",       label: "Action" },
+  { key: "companyCode",  label: "Company Code" },
+  { key: "name",         label: "Company Name" },
+  { key: "companyRole",  label: "Primary Specialisation" },
+  { key: "city",         label: "City" },   // district.name
+  { key: "state",        label: "State" },  // state.name
+  { key: "status",       label: "Status" },
+  { key: "updatedAt",    label: "Updated" },
 ];
 
-/* ========================= View modal field spec ========================= */
+/* ========================= View modal sections ========================= */
 type RowSpec = { key: string; label: string; span?: 1 | 2 };
 type SectionSpec = { title: string; rows: RowSpec[] };
 
-const VIEW_COLS: readonly SectionSpec[] = [
+/** Same grouping as Create/Edit pages */
+const VIEW_SECTIONS: readonly SectionSpec[] = [
   {
     title: "Summary",
     rows: [
-      { key: "name",            label: "Company Name", span: 2 },
-      { key: "status",          label: "Status" },
-      { key: "companyRole",     label: "Role" },
-      { key: "website",         label: "Website", span: 2 },
-      { key: "gstin",           label: "GSTIN" },
-      { key: "pan",             label: "PAN" },
-      { key: "cin",             label: "CIN" },
+      { key: "name",          label: "Company Name", span: 2 },
+      { key: "status",        label: "Status" },
+      { key: "companyRole",   label: "Primary Specialisation" },
+      { key: "website",       label: "Website", span: 2 },
+      { key: "companyCode",   label: "Company Code" },
+      { key: "updatedAt",     label: "Last Updated" },
     ],
   },
   {
-    title: "Contacts",
+    title: "Registration and Contact",
     rows: [
-      { key: "primaryContact",  label: "Primary Contact" },
-      { key: "serviceProvider.name", label: "Service Provider User" },
-      { key: "contactMobile",   label: "Mobile" },
-      { key: "contactEmail",    label: "Email" },
+      { key: "gstin",          label: "GSTIN" },
+      { key: "pan",            label: "PAN" },
+      { key: "cin",            label: "CIN" },
+      { key: "primaryContact", label: "Primary Contact" },
+      { key: "contactMobile",  label: "Contact Mobile" },
+      { key: "contactEmail",   label: "Contact Email" },
     ],
   },
   {
     title: "Location",
     rows: [
-      { key: "address",         label: "Address", span: 2 },
-      { key: "state.name",      label: "State / UT" },
-      { key: "district.name",   label: "District" },
-      { key: "pin",             label: "PIN Code" },
+      { key: "address",        label: "Address", span: 2 },
+      { key: "state.name",     label: "State / UT" },
+      { key: "district.name",  label: "District" },
+      { key: "pin",            label: "PIN Code" },
     ],
   },
   {
-    title: "Notes & Audit",
+    title: "Notes and Description",
     rows: [
-      { key: "notes",           label: "Notes", span: 2 },
-      { key: "createdAt",       label: "Created At" },
-      { key: "updatedAt",       label: "Updated At" },
+      { key: "notes",          label: "Notes", span: 2 },
     ],
   },
 ];
@@ -176,17 +164,10 @@ export default function Companies() {
   const [rows, setRows] = useState<DisplayRow[]>([]);
   const [rawById, setRawById] = useState<Record<string, RawCompany>>({});
 
-  // --- refs ---
-  const [statesRef, setStatesRef] = useState<StateRef[]>([]);
-  const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
-  const [refsErr, setRefsErr] = useState<string | null>(null);
-
-  // ---- Filters ----
+  // --- filters/search/sort/pagination ---
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
-  const [stateFilter, setStateFilter] = useState<string>("");
 
-  // --- debounced search ---
   const [q, setQ] = useState("");
   const [qDebounced, setQDebounced] = useState("");
   useEffect(() => {
@@ -194,9 +175,9 @@ export default function Companies() {
     return () => clearTimeout(id);
   }, [q]);
 
-  // --- sort & pagination ---
-  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -209,76 +190,44 @@ export default function Companies() {
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
 
-  /* ========================= Load Refs ========================= */
-  const loadRefs = async (forStateName?: string) => {
-    setRefsErr(null);
-    const results = await Promise.allSettled([
-      api.get("/admin/states"),
-    ]);
-
-    if (results[0].status === "fulfilled") {
-      const s: any = results[0].value.data;
-      setStatesRef(Array.isArray(s) ? s : (s?.states || []));
-    } else {
-      const status = (results[0] as any)?.reason?.response?.status;
-      setStatesRef([]);
-      setRefsErr(
-        status === 404
-          ? "States reference not found (filters may be limited)."
-          : ((results[0] as any)?.reason?.response?.data?.error || "Failed to load reference data.")
-      );
-    }
-
-    // districts (optional)
-    try {
-      let stateId: string | undefined;
-      if (forStateName && statesRef.length > 0) {
-        const match = statesRef.find(s => s.name?.trim() === forStateName.trim());
-        stateId = match?.stateId;
-      }
-      const { data: dResp } = await api.get("/admin/districts", { params: stateId ? { stateId } : undefined });
-      const dlist = Array.isArray(dResp) ? dResp : (dResp?.districts || []);
-      setDistrictsRef(dlist);
-    } catch {
-      setDistrictsRef([]);
-    }
-  };
-
   /* ========================= Load Companies ========================= */
   const loadCompanies = async () => {
     setErr(null);
     setLoading(true);
     try {
       const { data } = await api.get("/admin/companies");
-      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.companies) ? data.companies : []);
+      // Accept either [] or { companies: [] }
+      const list: RawCompany[] = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.companies) ? data.companies : []);
 
+      // Build raw map for modal use
       const rawMap: Record<string, RawCompany> = {};
+      list.forEach((c) => { rawMap[c.companyId] = c; });
+
+      // Normalize to show names for state/district
       const normalized: DisplayRow[] = list.map((c) => {
-        rawMap[c.companyId] = c;
+        // Prefer related names; fallback to blank if missing
+        const stateName =
+          (c as any)?.state?.name ??
+          (typeof (c as any)?.state === "string" ? (c as any).state : "") ??
+          "";
 
-        const svcName =
-          c?.serviceProvider?.firstName
-            ? [c.serviceProvider.firstName, c.serviceProvider.lastName].filter(Boolean).join(" ")
-            : (c?.serviceProvider?.name ?? "");
-
-        const flat = flatten({
-          ...c,
-          state: c?.state ? { name: c.state?.name ?? "" } : undefined,
-          district: c?.district ? { name: c.district?.name ?? "" } : undefined,
-          serviceProvider: c?.serviceProvider ? { name: svcName } : undefined,
-        });
-
-        if (!("state.name" in flat) && typeof (flat as any).state === "string" && (flat as any).state.trim()) {
-          (flat as any)["state.name"] = (flat as any).state;
-        }
-        if (!("district.name" in flat) && typeof (flat as any).district === "string" && (flat as any).district.trim()) {
-          (flat as any)["district.name"] = (flat as any).district;
-        }
+        const districtName =
+          (c as any)?.district?.name ??
+          (typeof (c as any)?.district === "string" ? (c as any).district : "") ??
+          "";
 
         return {
+          _id: c.companyId,
           action: "",
-          _id: c.companyId || c.id || crypto.randomUUID(),
-          ...flat,
+          companyCode: c.companyCode ?? "",
+          name: c.name ?? "",
+          companyRole: c.companyRole ?? "",
+          city: districtName,
+          state: stateName,
+          status: c.status ?? "",
+          updatedAt: c.updatedAt ?? "",
         };
       });
 
@@ -301,36 +250,7 @@ export default function Companies() {
     }
   };
 
-  useEffect(() => { loadRefs(); /* eslint-disable-next-line */ }, []);
   useEffect(() => { loadCompanies(); /* eslint-disable-next-line */ }, []);
-
-  useEffect(() => {
-    if (statesRef.length === 0) return;
-    loadRefs(stateFilter || undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stateFilter]);
-
-  /* ========================= Columns (ALWAYS-SHOW + extras) ========================= */
-  const dynamicColumns = useMemo(() => {
-    const keysPresent = new Set<string>();
-    rows.forEach(r => Object.keys(r).forEach(k => keysPresent.add(k)));
-
-    // Start with Action first
-    const ordered: string[] = ["action"];
-
-    // Add canonical company keys regardless of presence
-    for (const k of ALL_COMPANY_KEYS) {
-      if (!ordered.includes(k)) ordered.push(k);
-    }
-
-    // Append any extra fields actually returned by API
-    const skip = new Set(ordered.concat(["_id"]));
-    const extras = Array.from(keysPresent)
-      .filter(k => !skip.has(k))
-      .sort((a, b) => a.localeCompare(b));
-
-    return ordered.concat(extras);
-  }, [rows]);
 
   /* ========================= Filter options ========================= */
   const statusOptions = useMemo(() => {
@@ -345,37 +265,33 @@ export default function Companies() {
     return Array.from(s).sort((a,b)=>a.localeCompare(b));
   }, [rows]);
 
-  const stateOptions = useMemo(() => {
-    const names = statesRef.map(s => s.name).filter(Boolean);
-    if (names.length > 0) return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
-    const fallback = new Set<string>();
-    rows.forEach(r => { const v = (r["state.name"] ?? r?.state ?? "").toString().trim(); if (v) fallback.add(v); });
-    return Array.from(fallback).sort((a,b)=>a.localeCompare(b));
-  }, [statesRef, rows]);
-
   /* ========================= Filter, Search, Sort ========================= */
-  const filteredByControls = useMemo(() => {
+  const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (statusFilter && String(r.status ?? "").trim() !== statusFilter.trim()) return false;
       if (roleFilter && String(r.companyRole ?? "").trim() !== roleFilter.trim()) return false;
-      if (stateFilter) {
-        const name = (r["state.name"] ?? r?.state ?? "").toString().trim();
-        if (name !== stateFilter.trim()) return false;
-      }
       return true;
     });
-  }, [rows, statusFilter, roleFilter, stateFilter]);
+  }, [rows, statusFilter, roleFilter]);
 
   const [qState, setQState] = useState("");
   useEffect(() => setQState(qDebounced), [qDebounced]);
 
   const searched = useMemo(() => {
     const needle = qState.trim().toLowerCase();
-    if (!needle) return filteredByControls;
-    return filteredByControls.filter((r) =>
-      Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(needle))
+    if (!needle) return filtered;
+    return filtered.filter((r) =>
+      [
+        r.companyCode,
+        r.name,
+        r.companyRole,
+        r.city,
+        r.state,
+        r.status,
+        r.updatedAt,
+      ].some((v) => String(v ?? "").toLowerCase().includes(needle))
     );
-  }, [filteredByControls, qState]);
+  }, [filtered, qState]);
 
   const cmp = (a: any, b: any) => {
     if (a === b) return 0;
@@ -384,7 +300,6 @@ export default function Companies() {
     const aTime = (typeof a === "string" && isIsoLike(a)) ? new Date(a).getTime() : NaN;
     const bTime = (typeof b === "string" && isIsoLike(b)) ? new Date(b).getTime() : NaN;
     if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-    if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
     const an = Number(a); const bn = Number(b);
     if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
     return String(a).localeCompare(String(b));
@@ -416,13 +331,11 @@ export default function Companies() {
   const onEdit = (id: string) => nav(`/admin/companies/${id}/edit`);
 
   const exportCsv = () => {
-    const cols = dynamicColumns;
-    const header = cols.map(c => COLUMN_LABELS[c] ?? c.replace(/\./g, " · ")).join(",");
-
+    const header = COLS.map(c => c.label).join(",");
     const lines = [
       header,
       ...sorted.map((r) =>
-        cols.map((c) => JSON.stringify(c === "action" ? "" : (r as any)[c] ?? "")).join(",")
+        COLS.map((c) => JSON.stringify(c.key === "action" ? "" : (r as any)[c.key] ?? "")).join(",")
       ),
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -432,7 +345,9 @@ export default function Companies() {
     URL.revokeObjectURL(url);
   };
 
-  /* ========================= Modal ========================= */
+  const filtersAreDefault = !statusFilter && !roleFilter;
+
+  /* ========================= Modal state ========================= */
   const selectedRaw: RawCompany | null = modalCompanyId ? rawById[modalCompanyId] ?? null : null;
   const modalFlat = selectedRaw ? flatten(selectedRaw) : null;
 
@@ -440,8 +355,6 @@ export default function Companies() {
     const base = "/admin/companies";
     if (location.pathname !== base) nav(base, { replace: true });
   };
-
-  const filtersAreDefault = !statusFilter && !roleFilter && !stateFilter;
 
   /* ========================= Render ========================= */
   return (
@@ -454,14 +367,9 @@ export default function Companies() {
             <p className="text-sm text-gray-600 dark:text-gray-300">
               Browse all companies.
             </p>
-            {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr}
-              </p>
-            )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* Filters */}
+            {/* Filters like Users.tsx */}
             <select
               className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
               title="Filter by Status"
@@ -471,6 +379,7 @@ export default function Companies() {
               <option value="">Status: All</option>
               {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+
             <select
               className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
               title="Filter by Role"
@@ -480,21 +389,12 @@ export default function Companies() {
               <option value="">Role: All</option>
               {roleOptions.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter by State"
-              value={stateFilter}
-              onChange={(e) => { setStateFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">State: All</option>
-              {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
 
             <button
               type="button"
               className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm"
               title="Clear all filters"
-              onClick={() => { setStatusFilter(""); setRoleFilter(""); setStateFilter(""); setPage(1); }}
+              onClick={() => { setStatusFilter(""); setRoleFilter(""); setPage(1); }}
               disabled={filtersAreDefault}
             >
               Clear
@@ -515,7 +415,7 @@ export default function Companies() {
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
             </select>
             <button
-              onClick={() => { loadRefs(stateFilter || undefined); loadCompanies(); }}
+              onClick={() => loadCompanies()}
               className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
               disabled={loading}
               title="Reload"
@@ -556,8 +456,7 @@ export default function Companies() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
                   <tr>
-                    {dynamicColumns.map((key) => {
-                      const label = COLUMN_LABELS[key] ?? key.replace(/\./g, " · ");
+                    {COLS.map(({ key, label }) => {
                       const sortable = key !== "action";
                       const active = (sortKey ?? null) === key;
                       const dir = active ? sortDir : undefined;
@@ -574,9 +473,7 @@ export default function Companies() {
                             if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
                             else { setSortDir(d => d === "asc" ? "desc" : "asc"); }
                           }}
-                          aria-sort={
-                            sortable ? (active ? (dir === "asc" ? "ascending" : "descending") : "none") : undefined
-                          }
+                          aria-sort={sortable ? (active ? (dir === "asc" ? "ascending" : "descending") : "none") : undefined}
                         >
                           <span className="inline-flex items-center gap-1">
                             {label}
@@ -594,11 +491,11 @@ export default function Companies() {
                 <tbody>
                   {paged.map((row, idx) => (
                     <tr
-                      key={row._id ?? idx}
+                      key={row._id || idx}
                       className={idx % 2 ? "bg-white dark:bg-neutral-900" : "bg-gray-50/40 dark:bg-neutral-900/60"}
                     >
-                      {dynamicColumns.map((c) => {
-                        if (c === "action") {
+                      {COLS.map(({ key }) => {
+                        if (key === "action") {
                           return (
                             <td key={`${row._id}-action`} className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                               <div className="flex gap-2">
@@ -620,13 +517,14 @@ export default function Companies() {
                             </td>
                           );
                         }
+                        const value = (row as any)[key];
                         return (
                           <td
-                            key={`${row._id}-${c}`}
+                            key={`${row._id}-${key}`}
                             className="px-3 py-2 border-b dark:border-neutral-800 whitespace-pre-wrap break-words max-w-[28rem]"
-                            title={formatCell((row as any)[c])}
+                            title={formatCell(value)}
                           >
-                            {formatCell((row as any)[c])}
+                            {formatCell(value)}
                           </td>
                         );
                       })}
@@ -656,12 +554,12 @@ export default function Companies() {
           </div>
         </div>
 
-        {/* -------- Modal (opens when route is /admin/companies/:id) -------- */}
+        {/* -------- View Modal (opens when route is /admin/companies/:id) -------- */}
         {modalFlat && (
           <div className="fixed inset-0 z-40">
             <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-6xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
+              <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
                   <div className="min-w-0">
@@ -669,40 +567,46 @@ export default function Companies() {
                       <h3 className="text-lg font-semibold dark:text-white truncate">
                         {modalFlat.name || "Untitled Company"}
                       </h3>
+                      {modalFlat.companyCode && (
+                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 border dark:border-neutral-700">
+                          {modalFlat.companyCode}
+                        </span>
+                      )}
                       {modalFlat.status && (
                         <span className="text-xs px-2 py-0.5 rounded border bg-gray-100 dark:bg-neutral-800 dark:border-neutral-700">
                           {modalFlat.status}
                         </span>
                       )}
-                      {modalFlat.companyRole && (
-                        <span className="text-xs px-2 py-0.5 rounded border bg-gray-100 dark:bg-neutral-800 dark:border-neutral-700">
-                          {modalFlat.companyRole}
-                        </span>
-                      )}
                     </div>
                   </div>
-                  <button
-                    className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    onClick={closeModal}
-                  >
-                    Close
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      onClick={closeModal}
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
 
-                {/* Body: 4 columns */}
+                {/* Body: sections like Create/Edit */}
                 <div className="p-4 text-sm">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                    {VIEW_COLS.map((section) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-4">
+                    {VIEW_SECTIONS.map((section) => (
                       <div key={section.title} className="bg-gray-50/60 dark:bg-neutral-900 rounded-xl border dark:border-neutral-800 p-4">
                         <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-3">
                           {section.title}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {section.rows.map(({ key, label, span }) => {
+                            // Provide fallbacks for state/district if backend returned plain IDs/strings
                             let raw: any = (modalFlat as any)[key];
                             if (raw == null) {
-                              if (key === "state.name" && (modalFlat as any).state) raw = (modalFlat as any).state;
-                              if (key === "district.name" && (modalFlat as any).district) raw = (modalFlat as any).district;
+                              if (key === "state.name") {
+                                raw = (modalFlat as any)?.state?.name || (modalFlat as any)?.state || "";
+                              } else if (key === "district.name") {
+                                raw = (modalFlat as any)?.district?.name || (modalFlat as any)?.district || "";
+                              }
                             }
                             return (
                               <div key={key} className={span === 2 ? "sm:col-span-2" : ""}>
@@ -728,7 +632,7 @@ export default function Companies() {
             </div>
           </div>
         )}
-        {/* -------- /Modal -------- */}
+        {/* -------- /View Modal -------- */}
       </div>
     </div>
   );
@@ -739,7 +643,9 @@ function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col">
       <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
-      <div className="mt-0.5 font-medium dark:text-white break-words">{value || "—"}</div>
+      <div className="mt-0.5 font-medium dark:text-white break-words">
+        {value || "—"}
+      </div>
     </div>
   );
 }

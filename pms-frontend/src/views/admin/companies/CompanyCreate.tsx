@@ -20,22 +20,31 @@ function decodeJwtPayload(token: string): any | null {
    Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
 const STATUS_OPTIONS = ["Active", "Inactive"] as const;
 const ROLE_OPTIONS = [
-  "IH-PMT",
+  "Ava_PMT",
   "Contractor",
   "Consultant",
   "PMC",
   "Supplier"
-  
 ] as const;
 
 type CompanyStatus = typeof STATUS_OPTIONS[number];
 type CompanyRole = typeof ROLE_OPTIONS[number];
+
+/* Prefix mapping for companyCode */
+const ROLE_PREFIX: Record<CompanyRole, string> = {
+  "Ava_PMT": "PMT",
+  Contractor: "CON",
+  Consultant: "CNS",
+  PMC: "PMC",
+  Supplier: "SUP",
+};
 
 /* ========================= types ========================= */
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
 type CompanyForm = {
+  companyCode: string; // kept internal; NOT shown in UI
   name: string;
   status: CompanyStatus | "";
   website: string;
@@ -76,6 +85,7 @@ export default function CompanyCreate() {
 
   /* ---- form ---- */
   const [form, setForm] = useState<CompanyForm>({
+    companyCode: "", // internal only
     name: "",
     status: "",
     website: "",
@@ -137,12 +147,11 @@ export default function CompanyCreate() {
     })();
   }, [form.stateId]);
 
-  /* ========================= handlers ========================= */
+  /* ========================= helpers ========================= */
   const set = <K extends keyof CompanyForm>(key: K, val: CompanyForm[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
 
   const normalize = (payload: Record<string, any>) => {
-    // PAN/GSTIN uppercase; PIN & mobile digits only; website ensure scheme.
     if (payload.pan) payload.pan = String(payload.pan).toUpperCase().trim();
     if (payload.gstin) payload.gstin = String(payload.gstin).toUpperCase().trim();
     if (payload.contactMobile) payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
@@ -151,6 +160,7 @@ export default function CompanyCreate() {
       const w = String(payload.website).trim();
       payload.website = /^https?:\/\//i.test(w) ? w : (w ? `https://${w}` : "");
     }
+    if (payload.companyCode) payload.companyCode = String(payload.companyCode).toUpperCase().trim();
     return payload;
   };
 
@@ -158,6 +168,7 @@ export default function CompanyCreate() {
     if (!p.name) throw new Error("Company Name is required.");
     if (!p.status) throw new Error("Status is required.");
     if (!p.companyRole) throw new Error("Primary Specialisation (Role) is required.");
+    // companyCode is internal; we won't block the user if it's missing—onSubmit ensures it exists.
 
     if (p.contactEmail && !/^\S+@\S+\.\S+$/.test(p.contactEmail))
       throw new Error("Contact Email seems invalid.");
@@ -171,21 +182,96 @@ export default function CompanyCreate() {
       throw new Error("PAN must be 10 characters (ABCDE1234F).");
   };
 
+  const parseSeq = (code: string, prefix: string): number | null => {
+    const m = new RegExp(`^${prefix}-(\\d{4})$`, "i").exec(code || "");
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  const nextCodeFromList = (role: CompanyRole, list: any[]): string => {
+    const prefix = ROLE_PREFIX[role];
+    let maxSeq = 0;
+    for (const c of list) {
+      const code = c?.companyCode ?? c?.company_code ?? "";
+      const n = parseSeq(String(code), prefix);
+      if (n != null && n > maxSeq) maxSeq = n;
+    }
+    const next = (maxSeq + 1);
+    return `${prefix}-${String(next).padStart(4, "0")}`;
+  };
+
+  const fetchAndGenerateCode = async (role: CompanyRole): Promise<string> => {
+    const prefix = ROLE_PREFIX[role];
+    try {
+      // If backend supports filter by role, pass it; otherwise fetch all and filter here.
+      const { data } = await api.get("/admin/companies", { params: { companyRole: role } }).catch(async () => {
+        const fallback = await api.get("/admin/companies");
+        return { data: fallback.data };
+      });
+
+      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.companies) ? data.companies : []);
+      const roleList = list.filter((c) => String(c?.companyRole ?? "").trim() === role);
+      return nextCodeFromList(role, roleList);
+    } catch {
+      // If anything fails, start sequence at 0001 for the role
+      return `${prefix}-0001`;
+    }
+  };
+
+  /* Auto-generate companyCode when role changes (internal only) */
+  useEffect(() => {
+    (async () => {
+      if (!form.companyRole) return;
+      const proposed = await fetchAndGenerateCode(form.companyRole as CompanyRole);
+      setForm((f) => ({ ...f, companyCode: proposed.toUpperCase() }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.companyRole]);
+
+  /* ========================= submit ========================= */
   const onSubmit = async () => {
     setErr(null);
     setSubmitting(true);
     try {
-      // Build payload exactly as Prisma model fields (backend expects these keys)
-      const payload: Record<string, any> = {};
-      Object.entries(form).forEach(([k, v]) => {
-        payload[k] = typeof v === "string" ? v.trim() : v;
-      });
+      // Ensure companyCode exists even if role just got selected and generation hasn't finished yet
+      let code = form.companyCode;
+      if (!code && form.companyRole) {
+        code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
+        setForm((f) => ({ ...f, companyCode: code }));
+      }
 
-      normalize(payload);
-      validate(payload);
+      let attempts = 0;
+      while (attempts < 2) {
+        const payload: Record<string, any> = {};
+        Object.entries({ ...form, companyCode: code }).forEach(([k, v]) => {
+          payload[k] = typeof v === "string" ? v.trim() : v;
+        });
 
-      await api.post("/admin/companies", payload);
-      nav("/admin/companies", { replace: true });
+        normalize(payload);
+        validate(payload);
+
+        try {
+          await api.post("/admin/companies", payload);
+          nav("/admin/companies", { replace: true });
+          return;
+        } catch (e: any) {
+          // Unique collision handling on companyCode -> regenerate once and retry
+          const status = e?.response?.status;
+          const msg = e?.response?.data?.error || e?.message || "";
+          const isUniqueFail =
+            status === 409 ||
+            (status === 400 && /unique|duplicate|Company_companyCode_key/i.test(msg)) ||
+            /unique|duplicate|Company_companyCode_key/i.test(msg);
+
+          if (isUniqueFail && form.companyRole && attempts === 0) {
+            attempts += 1;
+            code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
+            setForm((f) => ({ ...f, companyCode: code }));
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw new Error("Could not assign a unique Company Code. Please try again.");
     } catch (e: any) {
       const s = e?.response?.status;
       const msg =
@@ -203,6 +289,7 @@ export default function CompanyCreate() {
   };
 
   const canSubmit = useMemo(() => {
+    // No UI dependency on companyCode
     return !!(form.name && form.status && form.companyRole) && !submitting;
   }, [form.name, form.status, form.companyRole, submitting]);
 
@@ -333,6 +420,30 @@ export default function CompanyCreate() {
             rows={4}
           />
         </Section>
+        {/* ---- Bottom action bar (sticky) ---- */}
+<div className="sticky bottom-0 mt-6">
+  <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
+    <div className="mx-auto max-w-5xl px-4 py-3">
+      <div className="flex justify-end gap-2">
+        <button
+          className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+          onClick={() => nav("/admin/companies")}
+          type="button"
+        >
+          Cancel
+        </button>
+        <button
+          className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+        >
+          {submitting ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
       </div>
     </div>
   );

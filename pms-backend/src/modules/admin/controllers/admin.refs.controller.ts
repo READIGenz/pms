@@ -25,7 +25,7 @@ export class AdminRefsController {
     return { ok: true, districts };
   }
 
-  @Get('companies')
+  @Get('companies-brief')
   async listCompanies() {
     const companies = await this.prisma.company.findMany({
       select: { companyId: true, name: true, companyRole: true, status: true },

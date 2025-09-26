@@ -87,7 +87,7 @@ export default function ProjectEdit() {
       try {
         const [{ data: s }, { data: c }, { data: tg }] = await Promise.all([
           api.get("/admin/states"),
-          api.get("/admin/companies"),
+          api.get("/admin/companies-brief"),
           (async () => {
             try       { const { data } = await api.get("/admin/ref/project-tags"); return data; }
             catch { try { const { data } = await api.get("/admin/project-tags"); return data; }

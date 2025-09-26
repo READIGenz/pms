@@ -182,7 +182,7 @@ export default function Projects() {
     setRefsErr(null);
     const results = await Promise.allSettled([
       api.get("/admin/states"),
-      api.get("/admin/companies"),
+      api.get("/admin/companies-brief"),
     ]);
 
     if (results[0].status === "fulfilled") {
@@ -228,7 +228,7 @@ export default function Projects() {
       // Accept either [] or {projects: []}
       const { data } = await api.get("/admin/projects");
       const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.projects) ? data.projects : []);
-
+console.log({data});
       const rawMap: Record<string, RawProject> = {};
       const normalized: DisplayRow[] = list.map((p) => {
         rawMap[p.projectId] = p;

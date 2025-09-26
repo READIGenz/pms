@@ -80,7 +80,7 @@ export default function UserEdit() {
     const results = await Promise.allSettled([
       api.get("/admin/states"),
       api.get("/admin/projects", { params: { status: "Active" } }),
-      api.get("/admin/companies"),
+      api.get("/admin/companies-brief"),
     ]);
 
     // states

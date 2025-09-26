@@ -143,7 +143,7 @@ export default function Users() {
     setRefsErr(null);
     const results = await Promise.allSettled([
       api.get("/admin/states"),
-      api.get("/admin/companies"),
+      api.get("/admin/companies-brief"),
     ]);
 
     // states

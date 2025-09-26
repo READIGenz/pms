@@ -286,19 +286,21 @@ model Company {
   address        String?
   pin            String?
   notes          String?
-  userId         String?       @db.Uuid // service-provider user FK
+  userId         String?       @db.Uuid
+
+  // NEW
+  companyCode    String?        @unique
+
   createdAt      DateTime      @default(now()) @db.Timestamptz(6)
-updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
 
   state    State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
   district District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
-
-  // Renamed relation: primary service-provider user
   serviceProvider User? @relation("CompanyServiceProviderUser", fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
 
   projects            Project[]            @relation("ProjectClientCompany")
-  userCompanies       UserCompany[] // junction backref
-  userRoleMemberships UserRoleMembership[] // role memberships scoped to this company
+  userCompanies       UserCompany[]
+  userRoleMemberships UserRoleMembership[]
 
   @@map("Company")
 }

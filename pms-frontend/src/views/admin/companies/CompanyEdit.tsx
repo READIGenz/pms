@@ -1,6 +1,5 @@
-// pms-frontend/src/views/admin/companies/Companies.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
 
 /* ========================= JWT helper ========================= */
@@ -16,563 +15,656 @@ function decodeJwtPayload(token: string): any | null {
   }
 }
 
-/* ========================= utils/format ========================= */
-const isIsoLike = (v: any) =>
-  typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
-const fmtBool = (v: any) => (v === null || v === undefined ? "" : v ? "✓" : "✗");
-const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
+/* ========================= Prisma-like enums =========================
+   Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
+const STATUS_OPTIONS = ["Active", "Inactive"] as const;
+const ROLE_OPTIONS = [
+  "Ava_PMT",
+  "Contractor",
+  "Consultant",
+  "PMC",
+  "Supplier",
+] as const;
 
-function isPlainObject(x: any) {
-  return x && typeof x === "object" && !Array.isArray(x);
-}
-function flatten(obj: any, prefix = ""): Record<string, any> {
-  const out: Record<string, any> = {};
-  Object.entries(obj || {}).forEach(([k, v]) => {
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (isPlainObject(v)) Object.assign(out, flatten(v, key));
-    else out[key] = v;
-  });
-  return out;
-}
-function formatCell(v: any): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "boolean") return fmtBool(v);
-  if (Array.isArray(v)) {
-    return v
-      .map((x) => (isPlainObject(x) ? JSON.stringify(x) : String(x ?? "")))
-      .join("; ");
-  }
-  if (isPlainObject(v)) return JSON.stringify(v);
-  if (isIsoLike(v)) return fmtDate(v);
-  return String(v ?? "");
-}
+type CompanyStatus = typeof STATUS_OPTIONS[number];
+type CompanyRole = typeof ROLE_OPTIONS[number];
+
+/* Prefix mapping for companyCode */
+const ROLE_PREFIX: Record<CompanyRole, string> = {
+  Ava_PMT: "PMT",
+  Contractor: "CON",
+  Consultant: "CNS",
+  PMC: "PMC",
+  Supplier: "SUP",
+};
 
 /* ========================= types ========================= */
-type DisplayRow = Record<string, any> & { _id: string; action?: string };
-type RawCompany = any;
-
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
-/* ========================= pinned columns ========================= */
-/** Keep important columns up front; everything else is discovered dynamically */
-const pinOrder = [
-  "action",
-  "name",
-  "status",
-  "companyRole",
-  "website",
-  "primaryContact",          // if your schema uses primaryContactName, we surface it below
-  "primaryContactName",
-  "contactMobile",
-  "contactEmail",
-  "address",
-  "state.name",
-  "district.name",
-  "pin",
-  "gstin",
-  "pan",
-  "cin",
-  "createdAt",
-  "updatedAt",
-  "companyId",
-];
+type CompanyForm = {
+  companyCode: string; // internal; not shown
+  name: string;
+  status: CompanyStatus | "";
+  website: string;
+  companyRole: CompanyRole | "";
 
-/* ========================= component ========================= */
-export default function CompanyEdit() {
+  gstin: string;
+  pan: string;
+  cin: string;
+
+  primaryContact: string;
+  contactMobile: string;
+  contactEmail: string;
+
+  address: string;
+  stateId: string;
+  districtId: string;
+  pin: string;
+
+  notes: string;
+};
+
+export default function EditCompany() {
   const nav = useNavigate();
-  const params = useParams<{ id?: string }>();
-  const location = useLocation();
-  const modalCompanyId = params.id || null;
+  const { id: companyId } = useParams<{ id: string }>();
 
-  // --- data state ---
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [rows, setRows] = useState<DisplayRow[]>([]);
-  const [rawById, setRawById] = useState<Record<string, RawCompany>>({});
+  /* ---- Admin gate ---- */
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      nav("/login", { replace: true });
+      return;
+    }
+    const payload = decodeJwtPayload(token);
+    const isAdmin = !!(
+      payload &&
+      (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin")
+    );
+    if (!isAdmin) nav("/landing", { replace: true });
+  }, [nav]);
 
-  // --- refs (for filters/tooltips) ---
+  /* ---- refs ---- */
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
   const [refsErr, setRefsErr] = useState<string | null>(null);
 
-  // ---- Filters ----
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [roleFilter, setRoleFilter] = useState<string>("");
+  /* ---- form ---- */
+  const [form, setForm] = useState<CompanyForm>({
+    companyCode: "",
+    name: "",
+    status: "",
+    website: "",
 
-  // --- debounced search ---
-  const [q, setQ] = useState("");
-  const [qDebounced, setQDebounced] = useState("");
+    companyRole: "",
+
+    gstin: "",
+    pan: "",
+    cin: "",
+
+    primaryContact: "",
+    contactMobile: "",
+    contactEmail: "",
+
+    address: "",
+    stateId: "",
+    districtId: "",
+    pin: "",
+
+    notes: "",
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  /* ========================= load reference data ========================= */
   useEffect(() => {
-    const id = setTimeout(() => setQDebounced(q), 250);
-    return () => clearTimeout(id);
-  }, [q]);
+    (async () => {
+      setRefsErr(null);
+      try {
+        const { data: sResp } = await api.get("/admin/states");
+        const s: any[] = Array.isArray(sResp) ? sResp : sResp?.states || [];
+        setStatesRef(s);
+      } catch (e: any) {
+        setStatesRef([]);
+        setRefsErr(
+          e?.response?.data?.error || e?.message || "Failed to load reference data."
+        );
+      }
+    })();
+  }, []);
 
-  // --- sort & pagination ---
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-
-  /* ========================= Auth gate (Admin) ========================= */
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) { nav("/login", { replace: true }); return; }
-    const payload = decodeJwtPayload(token);
-    const isAdmin = !!(payload && (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin"));
-    if (!isAdmin) nav("/landing", { replace: true });
-  }, [nav]);
-
-  /* ========================= Load Refs ========================= */
-  const loadRefs = async () => {
-    setRefsErr(null);
-    try {
-      const { data: s } = await api.get("/admin/states");
-      setStatesRef(Array.isArray(s) ? s : (s?.states || []));
-    } catch (e: any) {
-      const status = e?.response?.status;
-      setStatesRef([]);
-      setRefsErr(
-        status === 404
-          ? "States reference not found (filters may be limited)."
-          : e?.response?.data?.error || "Failed to load reference data."
-      );
-    }
-
-    try {
-      const { data: dResp } = await api.get("/admin/districts");
-      setDistrictsRef(Array.isArray(dResp) ? dResp : (dResp?.districts || []));
-    } catch {
+    if (!form.stateId) {
       setDistrictsRef([]);
+      setForm((f) => ({ ...f, districtId: "" }));
+      return;
+    }
+    (async () => {
+      try {
+        const { data } = await api.get("/admin/districts", {
+          params: { stateId: form.stateId },
+        });
+        const dlist = Array.isArray(data) ? data : data?.districts || [];
+        setDistrictsRef(dlist);
+        if (!dlist.some((d: DistrictRef) => d.districtId === form.districtId)) {
+          setForm((f) => ({ ...f, districtId: "" }));
+        }
+      } catch {
+        setDistrictsRef([]);
+        setForm((f) => ({ ...f, districtId: "" }));
+      }
+    })();
+  }, [form.stateId]);
+
+  /* ========================= load company ========================= */
+  useEffect(() => {
+    if (!companyId) return;
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const { data } = await api.get(`/admin/companies/${companyId}`);
+        const c = Array.isArray(data) ? data[0] : data?.company || data;
+
+        // Handle both flat and nested (include) shapes from backend:
+        const stateId =
+          c?.stateId || c?.state?.stateId || c?.state?.id || "";
+        const districtId =
+          c?.districtId || c?.district?.districtId || c?.district?.id || "";
+
+        setForm({
+          companyCode: c?.companyCode ?? "",
+          name: c?.name ?? "",
+          status: (c?.status ?? "") as CompanyStatus | "",
+          website: c?.website ?? "",
+
+          companyRole: (c?.companyRole ?? "") as CompanyRole | "",
+
+          gstin: c?.gstin ?? "",
+          pan: c?.pan ?? "",
+          cin: c?.cin ?? "",
+
+          primaryContact: c?.primaryContact ?? "",
+          contactMobile: c?.contactMobile ?? "",
+          contactEmail: c?.contactEmail ?? "",
+
+          address: c?.address ?? "",
+          stateId,
+          districtId,
+          pin: c?.pin ?? "",
+
+          notes: c?.notes ?? "",
+        });
+      } catch (e: any) {
+        const s = e?.response?.status;
+        const msg =
+          s === 404
+            ? "Company not found."
+            : e?.response?.data?.error || e?.message || "Failed to load company.";
+        setErr(msg);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [companyId]);
+
+  /* ========================= helpers ========================= */
+  const set = <K extends keyof CompanyForm>(key: K, val: CompanyForm[K]) =>
+    setForm((f) => ({ ...f, [key]: val }));
+
+  const normalize = (payload: Record<string, any>) => {
+    if (payload.pan)
+      payload.pan = String(payload.pan).toUpperCase().trim();
+    if (payload.gstin)
+      payload.gstin = String(payload.gstin).toUpperCase().trim();
+    if (payload.contactMobile)
+      payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
+    if (payload.pin)
+      payload.pin = String(payload.pin).replace(/\D+/g, "");
+    if (payload.website) {
+      const w = String(payload.website).trim();
+      payload.website = /^https?:\/\//i.test(w) ? w : w ? `https://${w}` : "";
+    }
+    if (payload.companyCode)
+      payload.companyCode = String(payload.companyCode).toUpperCase().trim();
+    return payload;
+  };
+
+  const validate = (p: Record<string, any>) => {
+    if (!p.name) throw new Error("Company Name is required.");
+    if (!p.status) throw new Error("Status is required.");
+    if (!p.companyRole)
+      throw new Error("Primary Specialisation (Role) is required.");
+
+    if (p.contactEmail && !/^\S+@\S+\.\S+$/.test(p.contactEmail))
+      throw new Error("Contact Email seems invalid.");
+    if (p.contactMobile && !/^\d{10}$/.test(p.contactMobile))
+      throw new Error("Mobile must be a 10-digit number.");
+    if (p.pin && !/^\d{6}$/.test(p.pin))
+      throw new Error("PIN must be a 6-digit number.");
+    if (p.gstin && !/^[0-9A-Z]{15}$/.test(p.gstin))
+      throw new Error("GSTIN must be 15 characters (A–Z, 0–9).");
+    if (p.pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(p.pan))
+      throw new Error("PAN must be 10 characters (ABCDE1234F).");
+  };
+
+  const parseSeq = (code: string, prefix: string): number | null => {
+    const m = new RegExp(`^${prefix}-(\\d{4})$`, "i").exec(code || "");
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  const nextCodeFromList = (role: CompanyRole, list: any[]): string => {
+    const prefix = ROLE_PREFIX[role];
+    let maxSeq = 0;
+    for (const c of list) {
+      const code = c?.companyCode ?? c?.company_code ?? "";
+      const n = parseSeq(String(code), prefix);
+      if (n != null && n > maxSeq) maxSeq = n;
+    }
+    const next = maxSeq + 1;
+    return `${prefix}-${String(next).padStart(4, "0")}`;
+  };
+
+  // For edit: keep existing companyCode unless role changed *and*
+  // you want to auto-regenerate. We'll regenerate only if code is
+  // empty or its prefix no longer matches the role.
+  const fetchAndMaybeRegenerateCode = async (
+    role: CompanyRole,
+    existingCode: string
+  ): Promise<string> => {
+    const prefix = ROLE_PREFIX[role];
+    const hasPrefix = new RegExp(`^${prefix}-\\d{4}$`, "i").test(existingCode || "");
+    if (existingCode && hasPrefix) return existingCode.toUpperCase();
+
+    try {
+      const { data } = await api
+        .get("/admin/companies", { params: { companyRole: role } })
+        .catch(async () => {
+          const fallback = await api.get("/admin/companies");
+          return { data: fallback.data };
+        });
+
+      const list: any[] = Array.isArray(data) ? data : data?.companies || [];
+      const roleList = list.filter(
+        (c) => String(c?.companyRole ?? "").trim() === role
+      );
+      return nextCodeFromList(role, roleList).toUpperCase();
+    } catch {
+      return `${prefix}-0001`;
     }
   };
 
-  /* ========================= Load Companies ========================= */
-  const loadCompanies = async () => {
+  // If role changes, ensure code is valid for that role
+  useEffect(() => {
+    (async () => {
+      if (!form.companyRole) return;
+      const code = await fetchAndMaybeRegenerateCode(
+        form.companyRole as CompanyRole,
+        form.companyCode
+      );
+      if (code !== form.companyCode) {
+        setForm((f) => ({ ...f, companyCode: code }));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.companyRole]);
+
+  /* ========================= submit (PATCH) ========================= */
+  const onSubmit = async () => {
+    if (!companyId) return;
     setErr(null);
-    setLoading(true);
+    setSubmitting(true);
     try {
-      // Accept either [] or {companies: []}
-      const { data } = await api.get("/admin/companies");
-      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.companies) ? data.companies : []);
-
-      const rawMap: Record<string, RawCompany> = {};
-      const normalized: DisplayRow[] = list.map((c) => {
-        rawMap[c.companyId] = c;
-        const flat = flatten({
-          ...c,
-          // If backend exposes nested state/district objects, flatten will surface state.name etc.
-        });
-
-        // surface fallbacks if backend returned plain strings
-        if (!("state.name" in flat) && typeof (flat as any).state === "string" && (flat as any).state.trim()) {
-          (flat as any)["state.name"] = (flat as any).state;
-        }
-        if (!("district.name" in flat) && typeof (flat as any).district === "string" && (flat as any).district.trim()) {
-          (flat as any)["district.name"] = (flat as any).district;
-        }
-
-        // allow either primaryContact or primaryContactName to show
-        if (!("primaryContact" in flat) && "primaryContactName" in flat) {
-          (flat as any).primaryContact = (flat as any).primaryContactName;
-        }
-
-        return {
-          action: "",
-          _id: c.companyId || c.id || crypto.randomUUID(),
-          ...flat,
-        };
+      const payload: Record<string, any> = {};
+      Object.entries(form).forEach(([k, v]) => {
+        payload[k] = typeof v === "string" ? v.trim() : v;
       });
 
-      setRawById(rawMap);
-      setRows(normalized);
-      setPage(1);
+      normalize(payload);
+      validate(payload);
+
+      // Do not send empty IDs as strings; backend expects null to clear
+      if (!payload.stateId) payload.stateId = null;
+      if (!payload.districtId) payload.districtId = null;
+
+      await api.patch(`/admin/companies/${companyId}`, payload);
+      nav("/admin/companies", { replace: true });
     } catch (e: any) {
       const s = e?.response?.status;
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to load companies.";
+          : e?.response?.data?.error || e?.message || "Failed to update company.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
         setTimeout(() => nav("/login", { replace: true }), 250);
       }
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  useEffect(() => { loadRefs(); /* eslint-disable-next-line */ }, []);
-  useEffect(() => { loadCompanies(); /* eslint-disable-next-line */ }, []);
+  const canSubmit = useMemo(() => {
+    return !!(form.name && form.status && form.companyRole) && !submitting;
+  }, [form.name, form.status, form.companyRole, submitting]);
 
-  /* ========================= Columns (dynamic) ========================= */
-  const dynamicColumns = useMemo(() => {
-    const allKeys = new Set<string>();
-    rows.forEach((r) => Object.keys(r).forEach((k) => allKeys.add(k)));
-    allKeys.delete("_id"); // internal
-    // Build order: pinned first if present, then the rest sorted
-    const pinned = pinOrder.filter((k) => allKeys.has(k));
-    pinned.forEach((k) => allKeys.delete(k));
-    const rest = Array.from(allKeys).sort((a, b) => a.localeCompare(b));
-    return ["action", ...pinned.filter(k => k !== "action"), ...rest];
-  }, [rows]);
-
-  /* ========================= Derive filter options ========================= */
-  const statusOptions = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach(r => { const v = (r.status ?? "").toString().trim(); if (v) s.add(v); });
-    return Array.from(s).sort((a,b)=>a.localeCompare(b));
-  }, [rows]);
-
-  const roleOptions = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach(r => { const v = (r.companyRole ?? "").toString().trim(); if (v) s.add(v); });
-    return Array.from(s).sort((a,b)=>a.localeCompare(b));
-  }, [rows]);
-
-  /* ========================= Filter, Search, Sort ========================= */
-  const filteredByControls = useMemo(() => {
-    return rows.filter((r) => {
-      if (statusFilter && String(r.status ?? "").trim() !== statusFilter.trim()) return false;
-      if (roleFilter && String(r.companyRole ?? "").trim() !== roleFilter.trim()) return false;
-      return true;
-    });
-  }, [rows, statusFilter, roleFilter]);
-
-  const [qState, setQState] = useState("");
-  useEffect(() => setQState(qDebounced), [qDebounced]);
-
-  const searched = useMemo(() => {
-    const needle = qState.trim().toLowerCase();
-    if (!needle) return filteredByControls;
-    return filteredByControls.filter((r) =>
-      Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(needle))
-    );
-  }, [filteredByControls, qState]);
-
-  const cmp = (a: any, b: any) => {
-    if (a === b) return 0;
-    if (a === null || a === undefined) return -1;
-    if (b === null || b === undefined) return 1;
-    const aTime = (typeof a === "string" && isIsoLike(a)) ? new Date(a).getTime() : NaN;
-    const bTime = (typeof b === "string" && isIsoLike(b)) ? new Date(b).getTime() : NaN;
-    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-    if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
-    const an = Number(a); const bn = Number(b);
-    if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
-    return String(a).localeCompare(String(b));
-  };
-
-  const sorted = useMemo(() => {
-    if (!sortKey || sortKey === "action") return searched;
-    const copy = [...searched];
-    copy.sort((ra, rb) => {
-      const delta = cmp((ra as any)[sortKey], (rb as any)[sortKey]);
-      return sortDir === "asc" ? delta : -delta;
-    });
-    return copy;
-  }, [searched, sortKey, sortDir]);
-
-  /* ========================= Pagination ========================= */
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pageSafe = Math.min(Math.max(1, page), totalPages);
-  const paged = useMemo(() => {
-    const start = (pageSafe - 1) * pageSize;
-    return sorted.slice(start, start + pageSize);
-  }, [sorted, pageSafe, pageSize]);
-
-  useEffect(() => { if (page > totalPages) setPage(totalPages); /* eslint-disable-next-line */ }, [totalPages]);
-
-  /* ========================= Actions & CSV ========================= */
-  const onView = (id: string) => nav(`/admin/companies/${id}`);
-  const onEdit = (id: string) => nav(`/admin/companies/${id}/edit`);
-
-  const exportCsv = () => {
-    const cols = dynamicColumns;
-    const header = cols.map(c => c.replace(/\./g, " · ")).join(",");
-    const lines = [
-      header,
-      ...sorted.map((r) =>
-        cols.map((c) => JSON.stringify(c === "action" ? "" : (r as any)[c] ?? "")).join(",")
-      ),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "companies.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  /* ========================= Modal (view-only) ========================= */
-  const selectedRaw: RawCompany | null = modalCompanyId ? rawById[modalCompanyId] ?? null : null;
-  const modalFlat = selectedRaw ? flatten(selectedRaw) : null;
-
-  const closeModal = () => {
-    const base = "/admin/companies";
-    if (location.pathname !== base) nav(base, { replace: true });
-  };
-
-  const filtersAreDefault = !statusFilter && !roleFilter;
-
-  /* ========================= Render ========================= */
+  /* ========================= ui ========================= */
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Companies</h1>
+            <h1 className="text-2xl font-semibold dark:text-white">Edit Company</h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Browse all companies. Every field returned by the API is listed in the table; pinned fields first.
+              Update company details and save changes.
             </p>
-            {refsErr && (
+            {(refsErr || err) && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr}
+                {refsErr || err}
               </p>
             )}
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            {/* Filters */}
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter by Status"
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">Status: All</option>
-              {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter by Specialisation"
-              value={roleFilter}
-              onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">Specialisation: All</option>
-              {roleOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-
+          <div className="flex gap-2">
             <button
+              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              onClick={() => nav("/admin/companies")}
               type="button"
-              className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm"
-              title="Clear all filters"
-              onClick={() => {
-                setStatusFilter("");
-                setRoleFilter("");
-                setPage(1);
-                setQ("");
-              }}
-              disabled={filtersAreDefault && !q}
             >
-              Clear
+              Cancel
             </button>
+            <button
+              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              onClick={onSubmit}
+              disabled={!canSubmit}
+            >
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
 
-            <input
-              className="border rounded px-3 py-2 w-56 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              placeholder="Search…"
-              value={q}
-              onChange={(e) => { setQ(e.target.value); setPage(1); }}
+        {loading ? (
+          <div className="mb-4 p-3 rounded-lg text-sm text-gray-700 bg-white dark:bg-neutral-900 border dark:border-neutral-800">
+            Loading company…
+          </div>
+        ) : null}
+
+        {err && (
+          <div className="mb-4 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+            {err}
+          </div>
+        )}
+
+        {/* ============ Summary ============ */}
+        <Section title="Summary">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Company Name"
+              value={form.name}
+              onChange={(v) => set("name", v)}
+              placeholder="e.g., Acme Infra Pvt Ltd"
+              required
             />
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              title="Rows per page"
-            >
-              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
-            </select>
-            <button
-              onClick={() => { loadRefs(); loadCompanies(); }}
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-              disabled={loading}
-              title="Reload"
-            >
-              {loading ? "Loading…" : "Refresh"}
-            </button>
-            <button
-              onClick={() => nav("/admin/companies/new")}
-              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white"
-              title="Create a new company"
-            >
-              + New Company
-            </button>
-            <button
-              onClick={exportCsv}
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 dark:text-white"
-              title="Export filtered result as CSV"
-            >
-              Export CSV
-            </button>
+            <SelectStrict
+              label="Status"
+              value={form.status}
+              onChange={(v) => set("status", v as CompanyStatus)}
+              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+              placeholder="Select status"
+            />
+            <SelectStrict
+              label="Primary Specialisation (Role)"
+              value={form.companyRole}
+              onChange={(v) => set("companyRole", v as CompanyRole)}
+              options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))}
+              placeholder="Select role"
+            />
+            <Input
+              label="Website"
+              value={form.website}
+              onChange={(v) => set("website", v)}
+              placeholder="https://example.com"
+              type="url"
+            />
           </div>
-        </div>
+        </Section>
 
-        {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 overflow-hidden">
-          {err && (
-            <div className="p-4 text-red-700 dark:text-red-400 text-sm border-b dark:border-neutral-800">
-              {err}
-            </div>
-          )}
-
-          <div className="overflow-auto" style={{ maxHeight: "65vh" }}>
-            {loading ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">Fetching companies…</div>
-            ) : rows.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">No companies found.</div>
-            ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
-                  <tr>
-                    {dynamicColumns.map((key) => {
-                      const label = key.replace(/\./g, " · ");
-                      const sortable = key !== "action";
-                      const active = (sortKey ?? null) === key;
-                      const dir = active ? sortDir : undefined;
-                      return (
-                        <th
-                          key={key}
-                          className={
-                            "text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
-                            (sortable ? "cursor-pointer" : "")
-                          }
-                          title={sortable ? `Sort by ${label}` : undefined}
-                          onClick={() => {
-                            if (!sortable) return;
-                            if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
-                            else { setSortDir(d => d === "asc" ? "desc" : "asc"); }
-                          }}
-                          aria-sort={
-                            sortable ? (active ? (dir === "asc" ? "ascending" : "descending") : "none") : undefined
-                          }
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            {label}
-                            {sortable && (
-                              <span className="text-xs opacity-70">
-                                {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
-                              </span>
-                            )}
-                          </span>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.map((row, idx) => (
-                    <tr
-                      key={row._id ?? idx}
-                      className={idx % 2 ? "bg-white dark:bg-neutral-900" : "bg-gray-50/40 dark:bg-neutral-900/60"}
-                    >
-                      {dynamicColumns.map((c) => {
-                        if (c === "action") {
-                          return (
-                            <td key={`${row._id}-action`} className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                              <div className="flex gap-2">
-                                <button
-                                  className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                  onClick={() => onView(row._id)}
-                                  title="View"
-                                >
-                                  View
-                                </button>
-                                <button
-                                  className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                  onClick={() => onEdit(row._id)}
-                                  title="Edit"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                            </td>
-                          );
-                        }
-                        return (
-                          <td
-                            key={`${row._id}-${c}`}
-                            className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
-                            title={formatCell((row as any)[c])}
-                          >
-                            {formatCell((row as any)[c])}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+        {/* ============ Registration & Contact ============ */}
+        <Section title="Registration and Contact">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Input
+              label="GSTIN"
+              value={form.gstin}
+              onChange={(v) => set("gstin", v.toUpperCase())}
+              placeholder="15-digit GSTIN"
+            />
+            <Input
+              label="PAN"
+              value={form.pan}
+              onChange={(v) => set("pan", v.toUpperCase())}
+              placeholder="ABCDE1234F"
+            />
+            <Input
+              label="CIN"
+              value={form.cin}
+              onChange={(v) => set("cin", v.toUpperCase())}
+              placeholder="L12345DL2010PLC123456"
+            />
           </div>
-
-          {/* Pagination footer */}
-          <div className="flex items-center justify-between px-3 py-2 text-sm border-t dark:border-neutral-800">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
-              <b>{paged.length}</b> of <b>{total}</b> records
-            </div>
-            <div className="flex items-center gap-1">
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(1)} disabled={pageSafe <= 1} title="First">« First</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} title="Previous">‹ Prev</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} title="Next">Next ›</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(totalPages)} disabled={pageSafe >= totalPages} title="Last">Last »</button>
-            </div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Input
+              label="Primary Contact"
+              value={form.primaryContact}
+              onChange={(v) => set("primaryContact", v)}
+              placeholder="Full name"
+            />
+            <Input
+              label="Contact Mobile"
+              value={form.contactMobile}
+              onChange={(v) => set("contactMobile", v.replace(/\D+/g, ""))}
+              placeholder="10-digit mobile"
+            />
+            <Input
+              label="Contact Email"
+              value={form.contactEmail}
+              onChange={(v) => set("contactEmail", v)}
+              placeholder="name@company.com"
+              type="email"
+            />
           </div>
-        </div>
+        </Section>
 
-        {/* -------- Modal (opens when route is /admin/companies/:id) -------- */}
-        {modalFlat && (
-          <div className="fixed inset-0 z-40">
-            <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
-            <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
-                  <h3 className="text-lg font-semibold dark:text-white">
-                    {modalFlat.name || "Company details"}
-                  </h3>
-                  <button
-                    className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    onClick={closeModal}
-                  >
-                    Close
-                  </button>
-                </div>
+        {/* ============ Location ============ */}
+        <Section title="Location">
+          <div className="grid grid-cols-1 gap-4">
+            <Input
+              label="Address"
+              value={form.address}
+              onChange={(v) => set("address", v)}
+              placeholder="Flat / Building, Street, Area"
+            />
+          </div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <SelectStrict
+              label="State / UT"
+              value={form.stateId}
+              onChange={(v) => set("stateId", v)}
+              options={statesRef.map((s) => ({
+                value: s.stateId,
+                label: s.name || s.code || s.stateId,
+              }))}
+              placeholder="Select state"
+            />
+            <SelectStrict
+              label="District"
+              value={form.districtId}
+              onChange={(v) => set("districtId", v)}
+              options={districtsRef.map((d) => ({
+                value: d.districtId,
+                label: d.name || d.districtId,
+              }))}
+              placeholder={form.stateId ? "Select district" : "Select state first"}
+              disabled={!form.stateId}
+            />
+            <Input
+              label="PIN"
+              value={form.pin}
+              onChange={(v) => set("pin", v.replace(/\D+/g, ""))}
+              placeholder="6-digit PIN"
+            />
+          </div>
+        </Section>
 
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  {Object.entries(modalFlat).map(([k, v]) => (
-                    <Field key={k} label={k.replace(/\./g, " · ")} value={formatCell(v)} />
-                  ))}
-                </div>
+        {/* ============ Notes & Description ============ */}
+        <Section title="Notes and Description">
+          <TextArea
+            label="Notes"
+            value={form.notes}
+            onChange={(v) => set("notes", v)}
+            placeholder="Any internal notes or a brief description…"
+            rows={4}
+          />
+        </Section>
 
-                <div className="px-4 py-3 border-t dark:border-neutral-800 text-right">
-                  <button
-                    className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={closeModal}
-                  >
-                    Done
-                  </button>
-                </div>
+        {/* ---- Bottom action bar (sticky) ---- */}
+        <div className="sticky bottom-0 mt-6">
+          <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
+            <div className="mx-auto max-w-5xl px-4 py-3">
+              <div className="flex justify-end gap-2">
+                <button
+                  className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  onClick={() => nav("/admin/companies")}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                  onClick={onSubmit}
+                  disabled={!canSubmit}
+                >
+                  {submitting ? "Saving…" : "Save"}
+                </button>
               </div>
             </div>
           </div>
-        )}
-        {/* -------- /Modal -------- */}
+        </div>
+        {/* ---- /Bottom action bar ---- */}
       </div>
     </div>
   );
 }
 
-/* ========================= Small modal field ========================= */
-function Field({ label, value }: { label: string; value: any }) {
+/* ========================= small UI bits ========================= */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
-      <div className="mt-0.5 font-medium dark:text-white break-words">{value || ""}</div>
+    <div className="mb-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-3">
+        {title}
+      </div>
+      {children}
     </div>
+  );
+}
+
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+        {required ? " *" : ""}
+      </span>
+      <input
+        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        type={type}
+        required={required}
+      />
+    </label>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+      </span>
+      <textarea
+        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring resize-y"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+      />
+    </label>
+  );
+}
+
+function SelectStrict({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder = "Select…",
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+      </span>
+      <select
+        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring disabled:opacity-60"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

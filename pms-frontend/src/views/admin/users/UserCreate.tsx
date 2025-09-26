@@ -69,7 +69,7 @@ export default function UserCreate() {
         const [{ data: s }, { data: p }, { data: c }] = await Promise.all([
           api.get("/admin/states"),
           api.get("/admin/projects", { params: { status: "Active" } }), // adjust as needed
-          api.get("/admin/companies"),
+          api.get("/admin/companies-brief"),
         ]);
         setStates(Array.isArray(s) ? s : s?.states || []);
         setProjects(Array.isArray(p) ? p : p?.projects || []);
