@@ -572,11 +572,14 @@ export default function Companies() {
                           {modalFlat.companyCode}
                         </span>
                       )}
-                      {modalFlat.status && (
-                        <span className="text-xs px-2 py-0.5 rounded border bg-gray-100 dark:bg-neutral-800 dark:border-neutral-700">
-                          {modalFlat.status}
-                        </span>
-                      )}
+                     <Badge
+                        kind="status"
+                        value={modalFlat.status}
+                      />
+                      <Badge
+                        kind="health"
+                        value={modalFlat.health}
+                      />
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -649,3 +652,35 @@ function Field({ label, value }: { label: string; value: any }) {
     </div>
   );
 }
+function Badge({ kind, value }: { kind: "status" | "health"; value?: string }) {
+  const v = (value || "").toString();
+  if (!v) return null;
+
+  let cls = "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700";
+  if (kind === "status") {
+    const map: Record<string, string> = {
+      Draft: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+      Active: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+      Inactive: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+      OnHold: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+      Completed: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+      Archived: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
+    };
+    cls = map[v] || cls;
+  } else if (kind === "health") {
+    const map: Record<string, string> = {
+      Green: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+      Amber: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+      Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+      Unknown: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+    };
+    cls = map[v] || cls;
+  }
+
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded border ${cls}`}>
+      {v}
+    </span>
+  );
+}
+

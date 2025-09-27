@@ -34,6 +34,20 @@ function initialsFrom(first?: string, middle?: string, last?: string) {
   return (letters[0] || "") + (letters[1] || "");
 }
 
+// --- UI helper: status pill color ---
+function statusBadgeClass(status?: string | null) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active")
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  if (s === "inactive" || s === "disabled")
+    return "bg-gray-100 text-gray-800 dark:bg-neutral-800/80 dark:text-gray-300 border-gray-200/60 dark:border-neutral-700/60";
+  if (s === "blocked" || s === "suspended")
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (s === "deleted")
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+}
+
 // ----- Types for the rendered table row -----
 type DisplayRow = {
   action: string;
@@ -96,12 +110,11 @@ export default function Users() {
   // ---- Filters (role/state/zone) ----
   const [isClientFilter, setIsClientFilter] = useState<"all" | "yes" | "no">("all");
   const [isServiceProviderFilter, setIsServiceProviderFilter] = useState<"all" | "yes" | "no">("all");
-  const [stateFilter, setStateFilter] = useState<string>(""); // state NAME
+  const [stateFilter, setStateFilter] = useState<string>("");
   const [zoneFilter, setZoneFilter] = useState<string>("");
 
   // --- derive options from refs/data ---
   const stateOptions = useMemo(() => {
-    // Prefer authoritative /admin/states names; fall back to discovered-from-users
     const names = statesRef.map(s => s.name).filter(Boolean);
     if (names.length > 0) return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
     const fallback = new Set<string>();
@@ -165,7 +178,6 @@ export default function Users() {
       const cdata: any = results[1].value.data;
       setCompaniesRef(Array.isArray(cdata) ? cdata : (cdata?.companies || []));
     } else {
-      // keep message focused on states fallback if that already set; otherwise set a general refs error
       if (!refsErr) {
         setRefsErr(
           (results[1] as any)?.reason?.response?.data?.error || "Failed to load reference data."
@@ -173,7 +185,7 @@ export default function Users() {
       }
     }
 
-    // districts (optional, only if states endpoint worked)
+    // districts (optional)
     try {
       let stateId: string | undefined;
       if (districtsForStateName && statesRef.length > 0) {
@@ -183,8 +195,7 @@ export default function Users() {
       const { data: dResp } = await api.get("/admin/districts", { params: stateId ? { stateId } : undefined });
       const dlist = Array.isArray(dResp) ? dResp : (dResp?.districts || []);
       setDistrictsRef(dlist);
-    } catch (e: any) {
-      // districts failure should not be fatal
+    } catch {
       setDistrictsRef([]);
     }
   };
@@ -255,7 +266,7 @@ export default function Users() {
 
   // If state filter changes and we have refs, refresh districts for that state name (safe no-op on failure)
   useEffect(() => {
-    if (statesRef.length === 0) return; // no authoritative states; keep fallback behavior
+    if (statesRef.length === 0) return;
     loadRefs(stateFilter || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateFilter]);
@@ -395,7 +406,7 @@ export default function Users() {
           <div>
             <h1 className="text-2xl font-semibold dark:text-white">Users</h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              User's details can be viewed and updated.
+              User&apos;s details can be viewed and updated.
             </p>
             {refsErr && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
@@ -622,7 +633,7 @@ export default function Users() {
             <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
-                {/* Header with PHOTO */}
+                {/* Header with PHOTO + Name + Code + Status */}
                 <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
                   <div className="flex items-center gap-3">
                     {(() => {
@@ -641,8 +652,34 @@ export default function Users() {
                         </div>
                       );
                     })()}
-                    <h3 className="text-lg font-semibold dark:text-white">{modalData.name || "User details"}</h3>
+
+                    <div className="flex flex-col">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-semibold dark:text-white">
+                          {modalData.name || "User details"}
+                        </h3>
+
+                        {modalData.code ? (
+                          <span
+                            className="text-xs px-2 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-700 dark:text-gray-200"
+                            title="User Code"
+                          >
+                            {modalData.code}
+                          </span>
+                        ) : null}
+
+                        {modalData.status ? (
+                          <span
+                            className={"text-xs px-2 py-0.5 rounded border " + statusBadgeClass(modalData.status)}
+                            title="User Status"
+                          >
+                            {modalData.status}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
+
                   <button
                     className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
                     onClick={closeModal}
