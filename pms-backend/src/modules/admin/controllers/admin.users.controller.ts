@@ -83,8 +83,16 @@ export class AdminUsersController {
         userRoleMemberships: includeMemberships === '1'
           ? {
               select: {
-                id: true, role: true, scopeType: true, companyId: true, projectId: true,
-                isDefault: true, createdAt: true,
+                id: true,
+                role: true,
+                scopeType: true,
+                companyId: true,
+                projectId: true,
+                isDefault: true,
+                createdAt: true,
+                updatedAt: true,      // now available in schema
+                validFrom: true,
+                validTo: true,
                 company: { select: { companyId: true, name: true } },
                 project: { select: { projectId: true, title: true, code: true } },
               },
@@ -120,8 +128,16 @@ export class AdminUsersController {
         userRoleMemberships: includeMemberships === '1'
           ? {
               select: {
-                id: true, role: true, scopeType: true, companyId: true, projectId: true,
-                isDefault: true, createdAt: true,
+                id: true,
+                role: true,
+                scopeType: true,
+                companyId: true,
+                projectId: true,
+                isDefault: true,
+                createdAt: true,
+                updatedAt: true,      // now available in schema
+                validFrom: true,
+                validTo: true,
                 company: { select: { companyId: true, name: true, companyRole: true } },
                 project: { select: { projectId: true, title: true, code: true } },
               },
@@ -249,7 +265,7 @@ export class AdminUsersController {
 
     const mapCompanyRoleToUserRole = (cr: CompanyRole | null): any => {
       switch (cr) {
-        case 'Ava_PMT': return 'Ava_PMT';
+        case 'IH_PMT': return 'IH_PMT';
         case 'Contractor': return 'Contractor';
         case 'Consultant': return 'Consultant';
         case 'PMC': return 'PMC';

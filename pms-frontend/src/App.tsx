@@ -11,7 +11,7 @@ import ProjectEdit from "./views/admin/projects/ProjectEdit";
 import Companies from './views/admin/companies/Companies';
 import CompanyCreate from './views/admin/companies/CompanyCreate';
 import CompanyEdit from './views/admin/companies/CompanyEdit';
-import Assignments from './views/admin/Assignments';
+import Assignments from './views/admin/assignments/Assignments';
 import Permissions from './views/admin/Permissions';
 import PermissionExplorer from './views/admin/PermissionExplorer';
 import ActivityLib from './views/admin/ActivityLib';
@@ -20,7 +20,7 @@ import ChecklistLib from './views/admin/ChecklistLib';
 
 // Role homes (create these files or swap with your actual components)
 import ClientHome from './views/client/clientHome';
-import AvaPmtHome from './views/avapmt/avapmtHome';
+import IHPmtHome from './views/ihpmt/ihpmtHome';
 import ContractorHome from './views/contractor/contractorHome';
 import ConsultantHome from './views/consultant/consultantHome';
 import SupplierHome from './views/supplier/supplierHome';
@@ -77,7 +77,7 @@ export default function App() {
 
         {/* Role-based homes */}
         <Route path="/clientHome" element={<RequireAuth><ClientHome /></RequireAuth>} />
-        <Route path="/avapmtHome" element={<RequireAuth><AvaPmtHome /></RequireAuth>} />
+        <Route path="/ihpmtHome" element={<RequireAuth><IHPmtHome /></RequireAuth>} />
         <Route path="/contractorHome" element={<RequireAuth><ContractorHome /></RequireAuth>} />
         <Route path="/consultantHome" element={<RequireAuth><ConsultantHome /></RequireAuth>} />
         <Route path="/supplierHome" element={<RequireAuth><SupplierHome /></RequireAuth>} />

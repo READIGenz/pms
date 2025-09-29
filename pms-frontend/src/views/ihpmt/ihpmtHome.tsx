@@ -1,14 +1,14 @@
-// pms-frontend/src/views/ava_pmt/ava_pmtHome.tsx
+// pms-frontend/src/views/ihpmt/ihpmtHome.tsx
 import { useEffect } from 'react';
 import { Outlet, useLocation, Navigate, NavLink } from 'react-router-dom';
 
-export default function avapmtHome() {
+export default function ihpmtHome() {
   // client-side guard
   const token = localStorage.getItem('token');
   const loc = useLocation();
 
   useEffect(() => {
-    document.title = 'Trinity PMS — Ava PMT';
+    document.title = 'Trinity PMS — IH PMT';
   }, []);
 
   if (!token) return <Navigate to="/login" state={{ from: loc }} replace />;
@@ -49,7 +49,7 @@ export default function avapmtHome() {
               </svg>
             </div>
             <div>
-              <div className="text-xl font-bold tracking-tight dark:text-white">Trinity PMS — Ava-PMT</div>
+              <div className="text-xl font-bold tracking-tight dark:text-white">Trinity PMS — IH-PMT</div>
               <div className="text-xs text-gray-600 dark:text-gray-300">Empowering Projects</div>
             </div>
           </div>

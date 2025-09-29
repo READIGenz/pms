@@ -7,7 +7,7 @@ type Step = 'enter' | 'otp' | 'choose-role';
 
 type RoleOption = {
   id: string;
-  role: 'Admin' | 'Client' | 'Ava-PMT' | 'Ava_PMT' | 'Contractor' | 'Consultant' | 'PMC' | 'Supplier';
+  role: 'Admin' | 'Client' | 'IH-PMT' | 'IH_PMT' | 'Contractor' | 'Consultant' | 'PMC' | 'Supplier';
   scopeType: 'Global' | 'Company' | 'Project';
   scopeId: string | null;
   label: string;
@@ -98,17 +98,17 @@ function clearSavedLogins() {
   writeSavedLogins([]);
 }
 
-// Map role (handles Admin/Client/Ava-PMT/Ava_PMT/PMC/…)
+// Map role (handles Admin/Client/IH-PMT/IH_PMT/PMC/…)
 function mapRoleToPath(role: string): string {
   const norm = (role || '')
     .toString()
     .trim()
-    .replace(/[_\s-]+/g, '') // Ava-PMT / Ava_PMT → avapmt
+    .replace(/[_\s-]+/g, '') // IH-PMT / IH_PMT → ihpmt
     .toLowerCase();
   switch (norm) {
     case 'admin': return '/adminHome';
     case 'client': return '/clientHome';
-    case 'avapmt': return '/avapmtHome';
+    case 'ihpmt': return '/ihpmtHome';
     case 'pmc': return '/pmcHome';
     case 'contractor': return '/contractorHome';
     case 'consultant': return '/consultantHome';

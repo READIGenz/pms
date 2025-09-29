@@ -64,7 +64,7 @@ export class AuthService {
     const jwtPayload: any = {
       sub: user.userId,
       isSuperAdmin: !!user.isSuperAdmin,
-      role: m.role,                    // e.g. "Client", "Ava-PMT"…
+      role: m.role,                    // e.g. "Client", "IH-PMT"…
       scopeType: m.scopeType,          // Global | Company | Project
       companyId: m.companyId ?? null,
       projectId: m.projectId ?? null,

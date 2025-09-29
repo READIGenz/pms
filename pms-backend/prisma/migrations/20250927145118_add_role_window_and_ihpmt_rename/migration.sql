@@ -11,10 +11,10 @@ CREATE TYPE "UserStatus" AS ENUM ('Active', 'Inactive');
 CREATE TYPE "CompanyStatus" AS ENUM ('Active', 'Inactive');
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('Admin', 'Client', 'Ava-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier');
+CREATE TYPE "UserRole" AS ENUM ('Admin', 'Client', 'IH-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier');
 
 -- CreateEnum
-CREATE TYPE "CompanyRole" AS ENUM ('Ava-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier');
+CREATE TYPE "CompanyRole" AS ENUM ('IH-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier');
 
 -- CreateEnum
 CREATE TYPE "StateType" AS ENUM ('State', 'UT');
@@ -56,7 +56,7 @@ CREATE TABLE "State" (
     "name" TEXT NOT NULL,
     "type" "StateType" NOT NULL,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
     CONSTRAINT "State_pkey" PRIMARY KEY ("stateId")
 );
@@ -67,7 +67,7 @@ CREATE TABLE "District" (
     "name" TEXT NOT NULL,
     "stateId" UUID NOT NULL,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
     CONSTRAINT "District_pkey" PRIMARY KEY ("districtId")
 );
@@ -96,7 +96,7 @@ CREATE TABLE "User" (
     "passwordHash" TEXT,
     "isSuperAdmin" BOOLEAN DEFAULT false,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
     "userRole" "UserRole",
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("userId")
@@ -121,8 +121,9 @@ CREATE TABLE "Company" (
     "pin" TEXT,
     "notes" TEXT,
     "userId" UUID,
+    "companyCode" TEXT,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
     CONSTRAINT "Company_pkey" PRIMARY KEY ("companyId")
 );
@@ -158,7 +159,7 @@ CREATE TABLE "Project" (
     "floors" INTEGER,
     "description" TEXT,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
     CONSTRAINT "Project_pkey" PRIMARY KEY ("projectId")
 );
@@ -206,6 +207,10 @@ CREATE TABLE "UserRoleMembership" (
     "companyId" UUID,
     "projectId" UUID,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "validFrom" DATE NOT NULL,
+    "validTo" DATE NOT NULL,
+    "createdBy" UUID,
+    "notes" TEXT,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "UserRoleMembership_pkey" PRIMARY KEY ("id")
@@ -239,6 +244,9 @@ CREATE UNIQUE INDEX "Company_pan_key" ON "Company"("pan");
 CREATE UNIQUE INDEX "Company_cin_key" ON "Company"("cin");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Company_companyCode_key" ON "Company"("companyCode");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Project_code_key" ON "Project"("code");
 
 -- CreateIndex
@@ -261,6 +269,15 @@ CREATE INDEX "UserRoleMembership_companyId_idx" ON "UserRoleMembership"("company
 
 -- CreateIndex
 CREATE INDEX "UserRoleMembership_projectId_idx" ON "UserRoleMembership"("projectId");
+
+-- CreateIndex
+CREATE INDEX "urm_project_role_window_idx" ON "UserRoleMembership"("projectId", "role", "validFrom", "validTo");
+
+-- CreateIndex
+CREATE INDEX "urm_user_role_window_idx" ON "UserRoleMembership"("userId", "role", "validFrom", "validTo");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "urm_unique_user_project_role_window" ON "UserRoleMembership"("userId", "projectId", "role", "validFrom", "validTo");
 
 -- AddForeignKey
 ALTER TABLE "District" ADD CONSTRAINT "District_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("stateId") ON DELETE CASCADE ON UPDATE CASCADE;
