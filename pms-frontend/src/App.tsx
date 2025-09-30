@@ -26,7 +26,6 @@ import ConsultantHome from './views/consultant/consultantHome';
 import SupplierHome from './views/supplier/supplierHome';
 import PMCHome from './views/pmc/pmcHome';
 
-
 // Optional generic landing
 function Landing() {
   return <div className="p-6">Welcome</div>;
@@ -65,8 +64,11 @@ export default function App() {
           <Route path="companies/:id" element={<Companies />} />
           <Route path="companies/new" element={<CompanyCreate />} />
           <Route path="companies/:id/edit" element={<CompanyEdit />} />
-          
-          <Route path="assignments" element={<Assignments />} />
+
+          {/* 👇 NEW: assignments use a param route; base redirects to 'clients' */}
+          <Route path="assignments" element={<Navigate to="clients" replace />} />
+          <Route path="assignments/:role" element={<Assignments />} />
+
           <Route path="permissions" element={<Permissions />} />
           <Route path="permission-explorer" element={<PermissionExplorer />} />
           <Route path='activityLib' element={<ActivityLib />} />

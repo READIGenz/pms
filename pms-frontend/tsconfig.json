@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2021",
-    "lib": ["ES2021", "DOM"],
+    "module": "esnext",              // <— enables dynamic imports
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "strict": true,
