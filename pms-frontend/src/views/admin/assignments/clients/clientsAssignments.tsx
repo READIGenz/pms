@@ -470,6 +470,22 @@ export default function ClientsAssignments() {
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const hasActiveFilters =
+    q.trim() !== "" ||
+    statusFilter !== "all" ||
+    stateFilter !== "" ||
+    districtFilter !== "";
+    //companyFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    //setCompanyFilter("");
+    setPage(1);
+  };
+
   // ---- Tile 4 data: flatten "Client" memberships with a project
   type AssignmentRow = {
     userId: string;
@@ -573,7 +589,7 @@ export default function ClientsAssignments() {
 
       {/* Tile 1 — Projects */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Projects" data-tile-name="Projects">
-        <TileHeader title="Tile 1 — Projects" subtitle="Choose the project to assign." />
+        <TileHeader title="Projects" subtitle="Choose the project to assign." />
         <div className="max-w-xl">
           <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Project</label>
           <select
@@ -593,7 +609,7 @@ export default function ClientsAssignments() {
 
       {/* Tile 2 — Roles & Options (Client) */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Roles & Options" data-tile-name="Roles & Options">
-        <TileHeader title="Tile 2 — Roles & Options" subtitle="Pick from moved users & set validity." />
+        <TileHeader title="Roles & Options" subtitle="Pick from moved users & set validity." />
 
         <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* moved users list */}
@@ -706,7 +722,7 @@ export default function ClientsAssignments() {
 
       {/* Tile 3 — Browse Clients */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Browse Clients" data-tile-name="Browse Clients">
-        <TileHeader title="Tile 3 — Browse Clients" subtitle="Search and filter; sort columns; paginate. Use ‘Move’ to add clients to Tile 2." />
+        <TileHeader title="Browse Clients" subtitle="Search and filter; sort columns; paginate. Use ‘Move’ to add clients to Tile 2." />
 
         {/* Controls */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-3 mb-3">
@@ -785,6 +801,14 @@ export default function ClientsAssignments() {
                   title="Toggle sort direction"
                 >
                   {sortDir === "asc" ? "▲" : "▼"}
+                </button>
+                <button
+                  className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  onClick={clearFilters}
+                  disabled={!hasActiveFilters}
+                  title="Clear all filters"
+                >
+                  Clear
                 </button>
               </div>
             </div>
@@ -910,7 +934,7 @@ export default function ClientsAssignments() {
 
       {/* Tile 4 — Client Assignments */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4" aria-label="Tile: Client Assignments" data-tile-name="Client Assignments">
-        <TileHeader title="Tile 4 — Client Assignments" subtitle="All clients who have been assigned to projects." />
+        <TileHeader title="Client Assignments" subtitle="All clients who have been assigned to projects." />
 
         <div className="border rounded-xl dark:border-neutral-800 overflow-hidden">
           <div className="overflow-auto" style={{ maxHeight: "55vh" }}>

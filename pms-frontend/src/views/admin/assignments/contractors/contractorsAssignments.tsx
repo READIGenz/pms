@@ -188,6 +188,22 @@ export default function ContractorsAssignments() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [allUsers]);
 
+  const hasActiveFilters =
+    q.trim() !== "" ||
+    statusFilter !== "all" ||
+    stateFilter !== "" ||
+    districtFilter !== "" ||
+    companyFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    setCompanyFilter("");
+    setPage(1);
+  };
+
   useEffect(() => {
     if (companyFilter && !companyOptions.includes(companyFilter)) {
       setCompanyFilter("");
@@ -807,6 +823,15 @@ export default function ContractorsAssignments() {
                 >
                   {sortDir === "asc" ? "▲" : "▼"}
                 </button>
+                <button
+                  className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  onClick={clearFilters}
+                  disabled={!hasActiveFilters}
+                  title="Clear all filters"
+                >
+                  Clear
+                </button>
+
               </div>
             </div>
 
@@ -996,14 +1021,14 @@ export default function ContractorsAssignments() {
                         </div>
                       </td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.userName}>{r.userName}</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.company}>{r.company || "—"}</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800" title={r.projects}>
-  <div className="truncate max-w-[360px]">{r.projects || "—"}</div>
-</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.status || "—"}</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validFrom) || "—"}</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validTo) || "—"}</td>
-<td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateTime(r.updated) || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.company}>{r.company || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800" title={r.projects}>
+                        <div className="truncate max-w-[360px]">{r.projects || "—"}</div>
+                      </td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.status || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validFrom) || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validTo) || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateTime(r.updated) || "—"}</td>
 
                     </tr>
                   ))}

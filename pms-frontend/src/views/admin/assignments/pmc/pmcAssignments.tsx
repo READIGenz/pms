@@ -1,4 +1,4 @@
-// src/views/admin/assignments/pmc/pmcAssignments.tsx
+// src/views/admin/assignments/pms/pmcsAssignments.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
@@ -36,20 +36,20 @@ type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
 // ---------- Local date helpers ----------
-function fmtYMD(d: Date) {
+function formatLocalYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-function today() { return fmtYMD(new Date()); }
+function todayLocalISO() { return formatLocalYMD(new Date()); }
 function addDaysISO(dateISO: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
   const [y, m, d] = dateISO.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   if (Number.isNaN(dt.getTime())) return "";
   dt.setDate(dt.getDate() + days);
-  return fmtYMD(dt);
+  return formatLocalYMD(dt);
 }
 function fmtLocalDateTime(v: any) {
   if (!v) return "";
@@ -60,7 +60,7 @@ function fmtLocalDateOnly(v: any) {
   if (!v) return "";
   if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v) : fmtYMD(d);
+  return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
 }
 
 // ---------- Small utils ----------
@@ -75,10 +75,16 @@ function projectsLabel(u: UserLite): string {
   const set = new Set(mem.map((m) => m?.project?.title).filter(Boolean) as string[]);
   return Array.from(set).join(", ");
 }
+function companiesLabel(u: UserLite): string {
+  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  const set = new Set(mem.map((m) => m?.company?.name).filter(Boolean) as string[]);
+  return Array.from(set).join(", ");
+}
 function isRoleUser(u: UserLite, role: string): boolean {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   return mem.some((m) => String(m?.role || "").toLowerCase() === role.toLowerCase());
 }
+// detect dup for selected project (for this role)
 function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boolean {
   if (!projectId) return false;
   const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
@@ -87,13 +93,13 @@ function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boole
     m?.project?.projectId === projectId
   );
 }
-function validityLabel(validFrom?: string, validTo?: string): string {
+function computeValidityLabel(validFrom?: string, validTo?: string): string {
   const from = fmtLocalDateOnly(validFrom);
   const to = fmtLocalDateOnly(validTo);
   if (!from && !to) return "—";
-  const t = today();
-  if (from && t < from) return "Yet to Start";
-  if (to && t > to) return "Expired";
+  const today = todayLocalISO();
+  if (from && today < from) return "Yet to Start";
+  if (to && today > to) return "Expired";
   return "Valid";
 }
 
@@ -104,7 +110,7 @@ const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) =
   </div>
 );
 
-export default function PmcAssignments() {
+export default function PMCsAssignments() {
   const nav = useNavigate();
 
   // --- Auth gate ---
@@ -117,10 +123,10 @@ export default function PmcAssignments() {
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
-  // Tile 2
+  // Tile 2 (role assignment)
   const [picked, setPicked] = useState<UserLite[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [validFrom, setValidFrom] = useState<string>(today());
+  const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
   const [validTo, setValidTo] = useState<string>("");
 
   const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
@@ -148,23 +154,62 @@ export default function PmcAssignments() {
     return () => { alive = false; };
   }, [selectedProjectId]);
 
-  // Tile 3 — browse users
+  // Tile 3 (browse role users) — using /admin/users for now
+  // If your BE exposes specific tables, swap to role-specific endpoints later.
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
 
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
+  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive">("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
 
-  const [sortKey, setSortKey] = useState<"code"|"name"|"projects"|"mobile"|"email"|"state"|"zone"|"status"|"updated">("name");
-  const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
+  const [sortKey, setSortKey] = useState<"code" | "name" | "company" | "projects" | "mobile" | "email" | "state" | "zone" | "status" | "updated">("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  const companyOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const u of allUsers) {
+      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+      for (const m of mems) {
+        // Only include companies where the membership role is PMC
+        if (String(m?.role || "").toLowerCase() !== "pmc") continue;
+        const name = (m?.company?.name || "").trim();
+        if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allUsers]);
+
+  const hasActiveFilters =
+    q.trim() !== "" ||
+    statusFilter !== "all" ||
+    stateFilter !== "" ||
+    districtFilter !== "" ||
+    companyFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    setCompanyFilter("");
+    setPage(1);
+  };
+
+  useEffect(() => {
+    if (companyFilter && !companyOptions.includes(companyFilter)) {
+      setCompanyFilter("");
+    }
+  }, [companyOptions, companyFilter]);
+
 
   useEffect(() => {
     let alive = true;
@@ -223,6 +268,7 @@ export default function PmcAssignments() {
     action: string;
     code: string;
     name: string;
+    company: string;   // <-- NEW column
     projects: string;
     mobile: string;
     email: string;
@@ -253,32 +299,46 @@ export default function PmcAssignments() {
         const dName = u?.district?.name || "";
         if (dName.trim() !== districtFilter.trim()) return false;
       }
+      if (companyFilter) {
+        const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+        const companyNames = new Set(
+          mems
+            .filter(m => String(m?.role || "").toLowerCase() === "pmc") // enforce role
+            .map(m => (m?.company?.name || "").trim())
+            .filter(Boolean) as string[]
+        );
+        if (!companyNames.has(companyFilter.trim())) return false;
+      }
+
+
       return true;
     });
 
     const needle = q.trim().toLowerCase();
     const searched = needle
       ? filtered.filter((u) => {
-          const hay = [
-            u.code || "",
-            displayName(u),
-            projectsLabel(u),
-            phoneDisplay(u),
-            u.email || "",
-            u?.state?.name || "",
-            u?.district?.name || "",
-            u.operatingZone || "",
-            u.userStatus || "",
-            fmtLocalDateTime(u.updatedAt),
-          ].join(" ").toLowerCase();
-          return hay.includes(needle);
-        })
+        const hay = [
+          u.code || "",
+          displayName(u),
+          companiesLabel(u),       // <-- included in search
+          projectsLabel(u),
+          phoneDisplay(u),
+          u.email || "",
+          u?.state?.name || "",
+          u?.district?.name || "",
+          u.operatingZone || "",
+          u.userStatus || "",
+          fmtLocalDateTime(u.updatedAt),
+        ].join(" ").toLowerCase();
+        return hay.includes(needle);
+      })
       : filtered;
 
     const rows: Row[] = searched.map((u) => ({
       action: "",
       code: u.code || "",
       name: displayName(u),
+      company: companiesLabel(u), // <-- value for new column
       projects: projectsLabel(u),
       mobile: phoneDisplay(u),
       email: u.email || "",
@@ -309,7 +369,8 @@ export default function PmcAssignments() {
     });
 
     return rows;
-  }, [allUsers, statusFilter, stateFilter, districtFilter, q, sortKey, sortDir, movedIds]);
+  }, [allUsers, statusFilter, stateFilter, districtFilter, q,
+    sortKey, sortDir, movedIds, companyFilter]);
 
   const total = rowsAll.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -322,7 +383,12 @@ export default function PmcAssignments() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [totalPages]);
 
   // Submit (assign)
-  const canSubmit = selectedProjectId && selectedIds.size > 0 && validFrom && validTo && !assignLoading;
+  const canSubmit =
+    selectedProjectId &&
+    selectedIds.size > 0 &&
+    validFrom &&
+    validTo &&
+    !assignLoading;
 
   const onAssign = async () => {
     const project = projects.find(p => p.projectId === selectedProjectId);
@@ -364,7 +430,7 @@ export default function PmcAssignments() {
       setAssignLoading(true);
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(`Assigned ${data?.created ?? items.length} PMC(s) to "${projectTitle}".`);
+      alert(`Assigned ${data?.created ?? items.length} pmc(s) to "${projectTitle}".`);
 
       setSelectedIds(new Set());
       setMovedIds(new Set());
@@ -374,7 +440,7 @@ export default function PmcAssignments() {
       try {
         const { data: fresh } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
         setAllUsers(Array.isArray(fresh) ? fresh : (fresh?.users ?? []));
-      } catch {}
+      } catch { }
 
       const el = document.querySelector('[data-tile-name="Browse PMCs"]');
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -387,7 +453,7 @@ export default function PmcAssignments() {
     }
   };
 
-  // Move to Tile 2
+  // Move from Tile 3 to Tile 2
   const onMoveToTile2 = (user: UserLite) => {
     if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
       const projectTitle = projects.find(p => p.projectId === selectedProjectId)?.title || "(Selected Project)";
@@ -426,6 +492,8 @@ export default function PmcAssignments() {
     userName: string;
     projectId: string;
     projectTitle: string;
+    company: string;
+    projects: string;
     status: string;
     validFrom: string;
     validTo: string;
@@ -446,7 +514,7 @@ export default function PmcAssignments() {
         if (!pj?.projectId || !pj?.title) continue;
 
         const vf = fmtLocalDateOnly(
-          m.validFrom ?? (m as any).validFromDate ?? (m as any).from ?? (m as any).startDate ?? (m as any).start ?? (m as any).valid_from ?? (m as any).validFromAt ?? (m as any).valid_from_at
+          m.validFrom ?? (m as any).validFromDate ?? (m as any).from ?? (m as any).startDate ?? (m as any).end ?? (m as any).valid_from ?? (m as any).validFromAt ?? (m as any).valid_from_at
         );
         const vt = fmtLocalDateOnly(
           m.validTo ?? (m as any).validToDate ?? (m as any).to ?? (m as any).endDate ?? (m as any).end ?? (m as any).valid_to ?? (m as any).validToAt ?? (m as any).valid_to_at
@@ -457,10 +525,12 @@ export default function PmcAssignments() {
           userName: displayName(u) || "(No name)",
           projectId: pj.projectId,
           projectTitle: pj.title,
+          company: companiesLabel(u),      // <-- ADD
+          projects: projectsLabel(u),      // <-- ADD
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
-          validity: validityLabel(vf, vt),
+          validity: computeValidityLabel(vf, vt),
           updated: (m?.updatedAt || u.updatedAt || ""),
           membershipId: m?.id ?? null,
           _user: u,
@@ -471,8 +541,8 @@ export default function PmcAssignments() {
     return rows;
   }, [allUsers]);
 
-  const [aSortKey, setASortKey] = useState<"userName"|"projectTitle"|"status"|"validFrom"|"validTo"|"validity"|"updated">("updated");
-  const [aSortDir, setASortDir] = useState<"asc"|"desc">("desc");
+  const [aSortKey, setASortKey] = useState<"userName" | "company" | "projects" | "status" | "validFrom" | "validTo" | "updated">("updated");
+  const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
   const assignedSortedRows = useMemo<AssignmentRow[]>(() => {
     const rows = [...assignedRows];
     const key = aSortKey;
@@ -506,8 +576,8 @@ export default function PmcAssignments() {
   const openView = (row: AssignmentRow) => { setViewRow(row); setViewOpen(true); };
   const openEdit = (row: AssignmentRow) => {
     setEditRow(row);
-    setEditFrom(fmtLocalDateOnly(row.validFrom) || today());
-    setEditTo(fmtLocalDateOnly(row.validTo) || addDaysISO(today(), 1));
+    setEditFrom(fmtLocalDateOnly(row.validFrom) || todayLocalISO());
+    setEditTo(fmtLocalDateOnly(row.validTo) || addDaysISO(todayLocalISO(), 1));
     setEditOpen(true);
   };
 
@@ -610,7 +680,7 @@ export default function PmcAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={validFrom}
-                  min={today()}
+                  min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
@@ -620,7 +690,7 @@ export default function PmcAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={validTo}
-                  min={validFrom || today()}
+                  min={validFrom || todayLocalISO()}
                   onChange={(e) => setValidTo(e.target.value)}
                 />
               </div>
@@ -663,7 +733,7 @@ export default function PmcAssignments() {
             <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Search</label>
             <input
               className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              placeholder="Code, name, project, phone, email…"
+              placeholder="Code, name, company, project, phone, email…"
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }}
             />
@@ -708,6 +778,23 @@ export default function PmcAssignments() {
             </select>
           </div>
 
+          {/* Company */}
+          <div className="lg:w-56">
+            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">
+              Company
+            </label>
+            <select
+              className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              value={companyFilter}
+              onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All Companies</option>
+              {companyOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex-1" />
           <div className="flex items-end gap-2">
             <div>
@@ -720,6 +807,7 @@ export default function PmcAssignments() {
                 >
                   <option value="code">Code</option>
                   <option value="name">Name</option>
+                  <option value="company">Company</option>{/* <-- NEW option */}
                   <option value="projects">Projects</option>
                   <option value="mobile">Mobile</option>
                   <option value="email">Email</option>
@@ -735,6 +823,15 @@ export default function PmcAssignments() {
                 >
                   {sortDir === "asc" ? "▲" : "▼"}
                 </button>
+                <button
+                  className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  onClick={clearFilters}
+                  disabled={!hasActiveFilters}
+                  title="Clear all filters"
+                >
+                  Clear
+                </button>
+
               </div>
             </div>
 
@@ -762,22 +859,23 @@ export default function PmcAssignments() {
             {usersLoading ? (
               <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Loading PMCs…</div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMCs match the selected criteria.</div>
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMSs match the selected criteria.</div>
             ) : (
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
                   <tr>
                     {[
-                      { key: "action",   label: "Action"   },
-                      { key: "code",     label: "Code"     },
-                      { key: "name",     label: "Name"     },
+                      { key: "action", label: "Action" },
+                      { key: "code", label: "Code" },
+                      { key: "name", label: "Name" },
+                      { key: "company", label: "Company" }, // <-- NEW header
                       { key: "projects", label: "Projects" },
-                      { key: "mobile",   label: "Mobile"   },
-                      { key: "email",    label: "Email"    },
-                      { key: "state",    label: "State"    },
-                      { key: "zone",     label: "Zone"     },
-                      { key: "status",   label: "Status"   },
-                      { key: "updated",  label: "Updated"  },
+                      { key: "mobile", label: "Mobile" },
+                      { key: "email", label: "Email" },
+                      { key: "state", label: "State" },
+                      { key: "zone", label: "Zone" },
+                      { key: "status", label: "Status" },
+                      { key: "updated", label: "Updated" },
                     ].map((h) => {
                       const sortable = h.key !== "action";
                       const active = sortKey === (h.key as any);
@@ -808,7 +906,7 @@ export default function PmcAssignments() {
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                         <button
                           className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
-                          title="Move this PMC to selection"
+                          title="Move this pmc to selection"
                           onClick={() => onMoveToTile2(r._raw!)}
                         >
                           Move
@@ -816,6 +914,7 @@ export default function PmcAssignments() {
                       </td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.code}>{r.code}</td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.name}>{r.name}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800" title={r.company}><div className="truncate max-w-[260px]">{r.company}</div></td>{/* NEW cell */}
                       <td className="px-3 py-2 border-b dark:border-neutral-800" title={r.projects}><div className="truncate max-w-[360px]">{r.projects}</div></td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.mobile}>{r.mobile}</td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.email}>{r.email}</td>
@@ -835,10 +934,12 @@ export default function PmcAssignments() {
           {/* Pagination */}
           <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
             <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b> PMCs
+              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b> pmcs
               {stateFilter ? <> · State: <b>{stateFilter}</b></> : null}
               {districtFilter ? <> · District: <b>{districtFilter}</b></> : null}
               {statusFilter !== "all" ? <> · Status: <b>{statusFilter}</b></> : null}
+              {companyFilter ? <> · Company: <b>{companyFilter}</b></> : null}
+
             </div>
             <div className="flex items-center gap-1">
               <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
@@ -868,13 +969,13 @@ export default function PmcAssignments() {
                   <tr>
                     <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">Action</th>
                     {[
-                      { key: "userName",      label: "PMC" },
-                      { key: "projectTitle",  label: "Project" },
-                      { key: "status",        label: "Status" },
-                      { key: "validFrom",     label: "Valid From" },
-                      { key: "validTo",       label: "Valid To" },
-                      { key: "validity",      label: "Validity" },
-                      { key: "updated",       label: "Last Updated" },
+                      { key: "userName", label: "Name" },
+                      { key: "company", label: "Company" },
+                      { key: "projects", label: "Projects" },
+                      { key: "status", label: "Status" },
+                      { key: "validFrom", label: "Valid From" },
+                      { key: "validTo", label: "Valid To" },
+                      { key: "updated", label: "Last Updated" },
                     ].map((h) => {
                       const active = aSortKey === (h.key as any);
                       return (
@@ -896,6 +997,7 @@ export default function PmcAssignments() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
                   {assignedSortedRows.map((r, i) => (
                     <tr key={`${r.userId}-${r.projectId}-${i}`} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
@@ -919,12 +1021,15 @@ export default function PmcAssignments() {
                         </div>
                       </td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.userName}>{r.userName}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.projectTitle}>{r.projectTitle}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.company}>{r.company || "—"}</td>
+                      <td className="px-3 py-2 border-b dark:border-neutral-800" title={r.projects}>
+                        <div className="truncate max-w-[360px]">{r.projects || "—"}</div>
+                      </td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.status || "—"}</td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validFrom) || "—"}</td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validTo) || "—"}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.validity || "—"}</td>
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateTime(r.updated) || "—"}</td>
+
                     </tr>
                   ))}
                 </tbody>
@@ -1020,7 +1125,7 @@ export default function PmcAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editFrom}
-                  min={today()}
+                  min={todayLocalISO()}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
@@ -1034,7 +1139,7 @@ export default function PmcAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editTo}
-                  min={editFrom || today()}
+                  min={editFrom || todayLocalISO()}
                   onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
@@ -1047,9 +1152,9 @@ export default function PmcAssignments() {
               <button
                 className="px-4 py-2 rounded text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
                 onClick={async () => {
-                  const t = today();
+                  const today = todayLocalISO();
                   if (!editFrom || !editTo) { alert("Both Valid From and Valid To are required."); return; }
-                  if (editFrom < t) { alert("Valid From cannot be before today."); return; }
+                  if (editFrom < today) { alert("Valid From cannot be before today."); return; }
                   if (editTo < editFrom) { alert("Valid To must be on or after Valid From."); return; }
                   if (!editRow?.membershipId) { alert("Cannot update: missing membership id."); return; }
                   try {
