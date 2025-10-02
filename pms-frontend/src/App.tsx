@@ -12,7 +12,9 @@ import Companies from './views/admin/companies/Companies';
 import CompanyCreate from './views/admin/companies/CompanyCreate';
 import CompanyEdit from './views/admin/companies/CompanyEdit';
 import Assignments from './views/admin/assignments/Assignments';
-import Permissions from './views/admin/Permissions';
+import Permissions from './views/admin/permissions/Permissions';
+import AdminPermTemplates from './views/admin/permissions/AdminPermTemplates';
+import AdminPermProjectOverrides from './views/admin/permissions/AdminPermProjectOverrides';
 import PermissionExplorer from './views/admin/PermissionExplorer';
 import ActivityLib from './views/admin/ActivityLib';
 import MaterialLib from './views/admin/MaterialLib';
@@ -70,6 +72,9 @@ export default function App() {
           <Route path="assignments/:role" element={<Assignments />} />
 
           <Route path="permissions" element={<Permissions />} />
+          <Route path="permissions/templates" element={<AdminPermTemplates />} />
+          <Route path="permissions/project-overrides" element={<AdminPermProjectOverrides />} />
+          
           <Route path="permission-explorer" element={<PermissionExplorer />} />
           <Route path='activityLib' element={<ActivityLib />} />
           <Route path="materialLib" element={<MaterialLib />} />
