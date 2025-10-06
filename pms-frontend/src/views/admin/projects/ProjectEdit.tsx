@@ -275,7 +275,7 @@ export default function ProjectEdit() {
         catch { /* ignore */ }
       }
 
-      nav(`/admin/projects/${projectId}`, { replace: true }); // back to list+modal or details
+      nav(`/admin/projects/`, { replace: true }); // back to list+modal or details
     } catch (e: any) {
       setErr(e?.response?.data?.error || e?.message || "Failed to save project");
     } finally {

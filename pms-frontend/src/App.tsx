@@ -15,7 +15,7 @@ import Assignments from './views/admin/assignments/Assignments';
 import Permissions from './views/admin/permissions/Permissions';
 import AdminPermTemplates from './views/admin/permissions/AdminPermTemplates';
 import AdminPermProjectOverrides from './views/admin/permissions/AdminPermProjectOverrides';
-import PermissionExplorer from './views/admin/PermissionExplorer';
+import AdminPermUserOverrides from './views/admin/permissionsexplorer/AdminPermUserOverrides';
 import ActivityLib from './views/admin/ActivityLib';
 import MaterialLib from './views/admin/MaterialLib';
 import ChecklistLib from './views/admin/ChecklistLib';
@@ -75,7 +75,7 @@ export default function App() {
           <Route path="permissions/templates" element={<AdminPermTemplates />} />
           <Route path="permissions/project-overrides" element={<AdminPermProjectOverrides />} />
           
-          <Route path="permission-explorer" element={<PermissionExplorer />} />
+          <Route path="permission-explorer" element={<AdminPermUserOverrides />} />
           <Route path='activityLib' element={<ActivityLib />} />
           <Route path="materialLib" element={<MaterialLib />} />
           <Route path="checkListLib" element={<ChecklistLib />} />

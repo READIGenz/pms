@@ -411,6 +411,8 @@ model UserRoleMembership {
   companyId String?   @db.Uuid
   projectId String?   @db.Uuid
   isDefault Boolean   @default(false)
+   /// NEW — matches the Explorer’s concept of “Authorised to Approve”
+  canApprove Boolean  @default(false)
 
   validFrom DateTime? @db.Timestamptz(6) // <- nullable
   validTo   DateTime? @db.Timestamptz(6) // <- nullable
@@ -425,12 +427,13 @@ model UserRoleMembership {
   company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade, onUpdate: Cascade)
   project Project? @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
-  @@index([userId, role])
+   @@index([userId, role])
   @@index([companyId])
   @@index([projectId])
+  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
   @@index([projectId, role, validFrom, validTo], map: "urm_project_role_window_idx")
   @@index([userId, role, validFrom, validTo], map: "urm_user_role_window_idx")
+
   @@map("UserRoleMembership")
 }
 
@@ -457,4 +460,20 @@ model PermissionProjectOverride {
 
   @@unique([projectId, role], map: "ppo_project_role_unique")
   @@map("PermissionProjectOverride")
+}
+
+/// Deny-only overrides at User level for a specific Project.
+/// Null/absent means "inherit".
+model PermissionUserOverride {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String
+  userId    String
+  /// shape: { [moduleCode]: { view?: "inherit"|"deny", raise?:..., review?:..., approve?:..., close?:... } }
+  matrix    Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([projectId, userId], map: "puo_project_user")
+  @@map("PermissionUserOverride")
 }

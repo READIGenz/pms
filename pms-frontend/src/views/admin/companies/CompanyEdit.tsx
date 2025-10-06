@@ -19,19 +19,21 @@ function decodeJwtPayload(token: string): any | null {
    Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
 const STATUS_OPTIONS = ["Active", "Inactive"] as const;
 const ROLE_OPTIONS = [
-  "Ava_PMT",
+  "IH_PMT",
   "Contractor",
   "Consultant",
   "PMC",
   "Supplier",
 ] as const;
+const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : (r ?? ""));
+const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : (r ?? ""));
 
 type CompanyStatus = typeof STATUS_OPTIONS[number];
 type CompanyRole = typeof ROLE_OPTIONS[number];
 
 /* Prefix mapping for companyCode */
 const ROLE_PREFIX: Record<CompanyRole, string> = {
-  Ava_PMT: "PMT",
+  IH_PMT: "PMT",
   Contractor: "CON",
   Consultant: "CNS",
   PMC: "PMC",
@@ -297,19 +299,19 @@ export default function EditCompany() {
   };
 
   // If role changes, ensure code is valid for that role
-  useEffect(() => {
-    (async () => {
-      if (!form.companyRole) return;
-      const code = await fetchAndMaybeRegenerateCode(
-        form.companyRole as CompanyRole,
-        form.companyCode
-      );
-      if (code !== form.companyCode) {
-        setForm((f) => ({ ...f, companyCode: code }));
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.companyRole]);
+  // useEffect(() => {
+  //   (async () => {
+  //     if (!form.companyRole) return;
+  //     const code = await fetchAndMaybeRegenerateCode(
+  //       form.companyRole as CompanyRole,
+  //       form.companyCode
+  //     );
+  //     if (code !== form.companyCode) {
+  //       setForm((f) => ({ ...f, companyCode: code }));
+  //     }
+  //   })();
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [form.companyRole]);
 
   /* ========================= submit (PATCH) ========================= */
   const onSubmit = async () => {
@@ -321,7 +323,7 @@ export default function EditCompany() {
       Object.entries(form).forEach(([k, v]) => {
         payload[k] = typeof v === "string" ? v.trim() : v;
       });
-
+payload.companyRole = toDbRole(payload.companyRole);
       normalize(payload);
       validate(payload);
 
@@ -416,10 +418,12 @@ export default function EditCompany() {
               placeholder="Select status"
             />
             <SelectStrict
-              label="Primary Specialisation (Role)"
+              label="Primary Specialisation (Role). Can not be changed."
               value={form.companyRole}
-              onChange={(v) => set("companyRole", v as CompanyRole)}
-              options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))}
+              //onChange={(v) => set("companyRole", v as CompanyRole)}
+              onChange={/* no-op since it's disabled */ (() => {}) as any}
+              options={ROLE_OPTIONS.map((r) => ({ value: r, label: prettyRole(r) }))}
+              //options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))}
               placeholder="Select role"
             />
             <Input

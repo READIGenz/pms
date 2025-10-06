@@ -22,6 +22,8 @@ const isIsoLike = (v: any) =>
 const fmtDate = (v: any) =>
   isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? "");
 
+const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : (r ?? ""));
+
 function formatCell(v: any): string {
   if (v === null || v === undefined) return "";
   if (isIsoLike(v)) return fmtDate(v);
@@ -96,14 +98,14 @@ type ColKey =
 
 /* ========================= fixed columns (order matters) ========================= */
 const COLS: { key: ColKey; label: string }[] = [
-  { key: "action",       label: "Action" },
-  { key: "companyCode",  label: "Company Code" },
-  { key: "name",         label: "Company Name" },
-  { key: "companyRole",  label: "Primary Specialisation" },
-  { key: "city",         label: "City" },   // district.name
-  { key: "state",        label: "State" },  // state.name
-  { key: "status",       label: "Status" },
-  { key: "updatedAt",    label: "Updated" },
+  { key: "action", label: "Action" },
+  { key: "companyCode", label: "Company Code" },
+  { key: "name", label: "Company Name" },
+  { key: "companyRole", label: "Primary Specialisation" },
+  { key: "city", label: "City" },   // district.name
+  { key: "state", label: "State" },  // state.name
+  { key: "status", label: "Status" },
+  { key: "updatedAt", label: "Updated" },
 ];
 
 /* ========================= View modal sections ========================= */
@@ -115,38 +117,38 @@ const VIEW_SECTIONS: readonly SectionSpec[] = [
   {
     title: "Summary",
     rows: [
-      { key: "name",          label: "Company Name", span: 2 },
-      { key: "status",        label: "Status" },
-      { key: "companyRole",   label: "Primary Specialisation" },
-      { key: "website",       label: "Website", span: 2 },
-      { key: "companyCode",   label: "Company Code" },
-      { key: "updatedAt",     label: "Last Updated" },
+      { key: "name", label: "Company Name", span: 2 },
+      { key: "status", label: "Status" },
+      { key: "companyRole", label: "Primary Specialisation" },
+      { key: "website", label: "Website", span: 2 },
+      { key: "companyCode", label: "Company Code" },
+      { key: "updatedAt", label: "Last Updated" },
     ],
   },
   {
     title: "Registration and Contact",
     rows: [
-      { key: "gstin",          label: "GSTIN" },
-      { key: "pan",            label: "PAN" },
-      { key: "cin",            label: "CIN" },
+      { key: "gstin", label: "GSTIN" },
+      { key: "pan", label: "PAN" },
+      { key: "cin", label: "CIN" },
       { key: "primaryContact", label: "Primary Contact" },
-      { key: "contactMobile",  label: "Contact Mobile" },
-      { key: "contactEmail",   label: "Contact Email" },
+      { key: "contactMobile", label: "Contact Mobile" },
+      { key: "contactEmail", label: "Contact Email" },
     ],
   },
   {
     title: "Location",
     rows: [
-      { key: "address",        label: "Address", span: 2 },
-      { key: "state.name",     label: "State / UT" },
-      { key: "district.name",  label: "District" },
-      { key: "pin",            label: "PIN Code" },
+      { key: "address", label: "Address", span: 2 },
+      { key: "state.name", label: "State / UT" },
+      { key: "district.name", label: "District" },
+      { key: "pin", label: "PIN Code" },
     ],
   },
   {
     title: "Notes and Description",
     rows: [
-      { key: "notes",          label: "Notes", span: 2 },
+      { key: "notes", label: "Notes", span: 2 },
     ],
   },
 ];
@@ -223,7 +225,8 @@ export default function Companies() {
           action: "",
           companyCode: c.companyCode ?? "",
           name: c.name ?? "",
-          companyRole: c.companyRole ?? "",
+          companyRole: prettyRole(c.companyRole), // ← display “IH-PMT”
+          //companyRole: c.companyRole ?? "",
           city: districtName,
           state: stateName,
           status: c.status ?? "",
@@ -256,13 +259,13 @@ export default function Companies() {
   const statusOptions = useMemo(() => {
     const s = new Set<string>();
     rows.forEach(r => { const v = (r.status ?? "").toString().trim(); if (v) s.add(v); });
-    return Array.from(s).sort((a,b)=>a.localeCompare(b));
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
   const roleOptions = useMemo(() => {
     const s = new Set<string>();
     rows.forEach(r => { const v = (r.companyRole ?? "").toString().trim(); if (v) s.add(v); });
-    return Array.from(s).sort((a,b)=>a.localeCompare(b));
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
   /* ========================= Filter, Search, Sort ========================= */
@@ -572,7 +575,7 @@ export default function Companies() {
                           {modalFlat.companyCode}
                         </span>
                       )}
-                     <Badge
+                      <Badge
                         kind="status"
                         value={modalFlat.status}
                       />
@@ -611,6 +614,8 @@ export default function Companies() {
                                 raw = (modalFlat as any)?.district?.name || (modalFlat as any)?.district || "";
                               }
                             }
+                            // prettify role just before rendering
+                            if (key === "companyRole") raw = prettyRole(raw);
                             return (
                               <div key={key} className={span === 2 ? "sm:col-span-2" : ""}>
                                 <Field label={label} value={formatCell(raw)} />

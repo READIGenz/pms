@@ -14,9 +14,18 @@ import {
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { Prisma, CompanyStatus, CompanyRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Res } from '@nestjs/common';
-import type { Response } from 'express';
+// --- normalizers: trim, empty => null, and uppercase when asked ---
+const trimOrNull = (v: unknown): string | null => {
+  if (v == null) return null;
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t.length ? t : null;
+};
 
+const upperOrNull = (v: unknown): string | null => {
+  const t = trimOrNull(v);
+  return t ? t.toUpperCase() : null;
+};
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin/companies')
@@ -326,9 +335,10 @@ if (stateId) where.stateId = stateId;
       website: body.website || undefined,
       companyRole: body.companyRole || undefined,
 
-      gstin: body.gstin || undefined,
-      pan: body.pan || undefined,
-      cin: body.cin || undefined,
+      // ✅ normalize IDs: empty => null, uppercase
+  gstin: upperOrNull(body.gstin) || undefined,
+  pan:   upperOrNull(body.pan)   || undefined,
+  cin:   upperOrNull(body.cin)   || undefined,
 
       primaryContact: body.primaryContact || undefined,
       contactMobile: body.contactMobile || undefined,
@@ -357,53 +367,65 @@ if (stateId) where.stateId = stateId;
   @Patch(':id')
   async updateCompany(@Param('id') companyId: string, @Body() body: any) {
     const data: Prisma.CompanyUpdateInput = {
-      name: body.name,
-      status: (body.status as CompanyStatus) ?? undefined,
-      website: body.website ?? null,
-      companyRole: body.companyRole ?? null,
+  name: body.name, // required check below
+  status: (body.status as CompanyStatus) ?? undefined,
+  website: trimOrNull(body.website),
 
-      gstin: body.gstin ?? null,
-      pan: body.pan ?? null,
-      cin: body.cin ?? null,
+  companyRole: body.companyRole ?? null,
 
-      primaryContact: body.primaryContact ?? null,
-      contactMobile: body.contactMobile ?? null,
-      contactEmail: body.contactEmail ?? null,
+  // ✅ empty string => null, uppercase
+  gstin: upperOrNull(body.gstin),
+  pan:   upperOrNull(body.pan),
+  cin:   upperOrNull(body.cin),
 
-      address: body.address ?? null,
-      pin: body.pin ?? null,
-      notes: body.notes ?? null,
+  primaryContact: trimOrNull(body.primaryContact),
+  contactMobile:  trimOrNull(body.contactMobile),
+  contactEmail:   trimOrNull(body.contactEmail),
 
-      companyCode: body.companyCode !== undefined ? (body.companyCode ?? null) : undefined,
+  address: trimOrNull(body.address),
+  pin:     trimOrNull(body.pin),
+  notes:   trimOrNull(body.notes),
 
-      state:
-        body.stateId !== undefined
-          ? body.stateId
-            ? { connect: { stateId: body.stateId } }
-            : { disconnect: true }
-          : undefined,
-      district:
-        body.districtId !== undefined
-          ? body.districtId
-            ? { connect: { districtId: body.districtId } }
-            : { disconnect: true }
-          : undefined,
-      serviceProvider:
-        body.userId !== undefined
-          ? body.userId
-            ? { connect: { userId: body.userId } }
-            : { disconnect: true }
-          : undefined,
+  companyCode:
+    body.companyCode !== undefined ? trimOrNull(body.companyCode) : undefined,
+
+  state:
+    body.stateId !== undefined
+      ? body.stateId
+        ? { connect: { stateId: body.stateId } }
+        : { disconnect: true }
+      : undefined,
+  district:
+    body.districtId !== undefined
+      ? body.districtId
+        ? { connect: { districtId: body.districtId } }
+        : { disconnect: true }
+      : undefined,
+  serviceProvider:
+    body.userId !== undefined
+      ? body.userId
+        ? { connect: { userId: body.userId } }
+        : { disconnect: true }
+      : undefined,
+};
+
+if (!data.name) return { ok: false, error: 'name is required' };
+
+try {
+  const updated = await this.prisma.company.update({
+    where: { companyId },
+    data,
+    select: { companyId: true, updatedAt: true },
+  });
+  return { ok: true, company: updated };
+} catch (e: any) {
+  if (e?.code === 'P2002') {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: `Duplicate value for unique field(s): ${e?.meta?.target || 'unknown'}`,
     };
-
-    if (!data.name) return { ok: false, error: 'name is required' };
-
-    const updated = await this.prisma.company.update({
-      where: { companyId },
-      data,
-      select: { companyId: true, updatedAt: true },
-    });
-
-    return { ok: true, company: updated };
   }
+  throw e;
 }
+  }}

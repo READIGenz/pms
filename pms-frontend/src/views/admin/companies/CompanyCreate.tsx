@@ -20,19 +20,22 @@ function decodeJwtPayload(token: string): any | null {
    Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
 const STATUS_OPTIONS = ["Active", "Inactive"] as const;
 const ROLE_OPTIONS = [
-  "Ava_PMT",
+  "IH_PMT",
   "Contractor",
   "Consultant",
   "PMC",
   "Supplier"
 ] as const;
 
+const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : (r ?? ""));
+const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : (r ?? ""));
+
 type CompanyStatus = typeof STATUS_OPTIONS[number];
 type CompanyRole = typeof ROLE_OPTIONS[number];
 
 /* Prefix mapping for companyCode */
 const ROLE_PREFIX: Record<CompanyRole, string> = {
-  "Ava_PMT": "PMT",
+  "IH_PMT": "PMT",
   Contractor: "CON",
   Consultant: "CNS",
   PMC: "PMC",
@@ -245,6 +248,7 @@ export default function CompanyCreate() {
         Object.entries({ ...form, companyCode: code }).forEach(([k, v]) => {
           payload[k] = typeof v === "string" ? v.trim() : v;
         });
+        payload.companyRole = toDbRole(payload.companyRole);
 
         normalize(payload);
         validate(payload);
@@ -353,7 +357,8 @@ export default function CompanyCreate() {
               label="Primary Specialisation (Role)"
               value={form.companyRole}
               onChange={(v) => set("companyRole", v as CompanyRole)}
-              options={ROLE_OPTIONS.map(r => ({ value: r, label: r }))}
+              //options={ROLE_OPTIONS.map(r => ({ value: r, label: r }))}
+              options={ROLE_OPTIONS.map(r => ({ value: r, label: prettyRole(r) }))}
               placeholder="Select role"
             />
             <Input
@@ -421,28 +426,28 @@ export default function CompanyCreate() {
           />
         </Section>
         {/* ---- Bottom action bar (sticky) ---- */}
-<div className="sticky bottom-0 mt-6">
-  <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
-    <div className="mx-auto max-w-5xl px-4 py-3">
-      <div className="flex justify-end gap-2">
-        <button
-          className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-          onClick={() => nav("/admin/companies")}
-          type="button"
-        >
-          Cancel
-        </button>
-        <button
-          className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
-          onClick={onSubmit}
-          disabled={!canSubmit}
-        >
-          {submitting ? "Saving…" : "Save"}
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+        <div className="sticky bottom-0 mt-6">
+          <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
+            <div className="mx-auto max-w-5xl px-4 py-3">
+              <div className="flex justify-end gap-2">
+                <button
+                  className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  onClick={() => nav("/admin/companies")}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                  onClick={onSubmit}
+                  disabled={!canSubmit}
+                >
+                  {submitting ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>

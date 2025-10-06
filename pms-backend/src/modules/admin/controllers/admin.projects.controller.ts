@@ -25,10 +25,12 @@ import {
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 
+type AssignmentDto = { userId: string; role: string; canApprove: boolean; companyId?: string | null };
+
 @UseGuards(JwtAuthGuard)
 @Controller('admin/projects')
 export class AdminProjectsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /* ========================= Reference: project tags =========================
      Frontend probes:
@@ -397,5 +399,30 @@ export class AdminProjectsController {
     });
 
     return { ok: true, count: tags.length, tags };
+  }
+
+  /** List role assignments for a project (optionally filter by userId). */
+  @Get(':id/assignments')
+  async listAssignments(
+    @Param('id') projectId: string,
+    @Query('userId') userId?: string,
+  ) {
+    const where: any = { projectId, scopeType: 'Project' };
+    if (userId) where.userId = userId;
+
+    const rows = await this.prisma.userRoleMembership.findMany({
+      where,
+      select: { userId: true, role: true, canApprove: true, companyId: true },
+      orderBy: { userId: 'asc' },
+    });
+
+    const assignments: AssignmentDto[] = rows.map(r => ({
+      userId: r.userId,
+      role: r.role as string,
+      canApprove: !!r.canApprove,
+      companyId: r.companyId ?? null,
+    }));
+
+    return { ok: true, projectId, count: assignments.length, assignments };
   }
 }
