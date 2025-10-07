@@ -404,15 +404,15 @@ model UserCompany {
 // ================== Multi-role membership (with validity window) ================== */
 
 model UserRoleMembership {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @db.Uuid
-  role      UserRole
-  scopeType RoleScope
-  companyId String?   @db.Uuid
-  projectId String?   @db.Uuid
-  isDefault Boolean   @default(false)
-   /// NEW — matches the Explorer’s concept of “Authorised to Approve”
-  canApprove Boolean  @default(false)
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @db.Uuid
+  role       UserRole
+  scopeType  RoleScope
+  companyId  String?   @db.Uuid
+  projectId  String?   @db.Uuid
+  isDefault  Boolean   @default(false)
+  /// NEW — matches the Explorer’s concept of “Authorised to Approve”
+  canApprove Boolean   @default(false)
 
   validFrom DateTime? @db.Timestamptz(6) // <- nullable
   validTo   DateTime? @db.Timestamptz(6) // <- nullable
@@ -427,13 +427,12 @@ model UserRoleMembership {
   company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade, onUpdate: Cascade)
   project Project? @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
 
-   @@index([userId, role])
+  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
+  @@index([userId, role])
   @@index([companyId])
   @@index([projectId])
-  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
   @@index([projectId, role, validFrom, validTo], map: "urm_project_role_window_idx")
   @@index([userId, role, validFrom, validTo], map: "urm_user_role_window_idx")
-
   @@map("UserRoleMembership")
 }
 
@@ -465,7 +464,7 @@ model PermissionProjectOverride {
 /// Deny-only overrides at User level for a specific Project.
 /// Null/absent means "inherit".
 model PermissionUserOverride {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId String
   userId    String
   /// shape: { [moduleCode]: { view?: "inherit"|"deny", raise?:..., review?:..., approve?:..., close?:... } }
@@ -476,4 +475,137 @@ model PermissionUserOverride {
 
   @@unique([projectId, userId], map: "puo_project_user")
   @@map("PermissionUserOverride")
+}
+
+// ============================= Ref Libraries =============================
+enum Discipline {
+  Civil
+  MEP
+  Finishes
+
+  @@map("Discipline")
+}
+
+model RefChecklist {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String     @unique
+  title      String
+  discipline Discipline
+  stageLabel String
+  tags       String[] // free tags
+  status     String     @default("Active")
+  version    Int        @default(1)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+
+  items RefChecklistItem[]
+
+  @@map("RefChecklist")
+}
+
+model RefChecklistItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checklistId String   @db.Uuid
+  seq         Int
+  text        String // raw requirement text
+  requirement String? // e.g., Mandatory/Optional
+  method      String[] // array tags
+  risk        String?
+  tags        String[] // derived tags
+
+  checklist           RefChecklist                   @relation(fields: [checklistId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  suggestedActivities RefChecklistItemActivityLink[]
+  suggestedMaterials  RefChecklistItemMaterialLink[]
+
+  @@index([checklistId])
+  @@map("RefChecklistItem")
+}
+
+model RefChecklistItemActivityLink {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId     String   @db.Uuid
+  activityId String?  @db.Uuid // null until approved/matched
+  label      String
+  tags       String[]
+
+  item     RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  activity RefActivity?     @relation(fields: [activityId], references: [id], onDelete: SetNull)
+
+  @@index([itemId])
+  @@index([activityId])
+  @@map("RefChecklistItemActivityLink")
+}
+
+model RefChecklistItemMaterialLink {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId     String  @db.Uuid
+  materialId String? @db.Uuid // null until approved/matched
+  name       String
+  category   String?
+  properties Json? // { key:value, uom?:string } or array
+
+  item     RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  material RefMaterial?     @relation(fields: [materialId], references: [id], onDelete: SetNull)
+
+  @@index([itemId])
+  @@index([materialId])
+  @@map("RefChecklistItemMaterialLink")
+}
+
+model RefActivity {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String?    @unique
+  title      String
+  discipline Discipline
+  stageLabel String?
+  phase      String[]   @default([])   // e.g., ["Execution", "Handover"]
+  element    String[]   @default([])   // e.g., ["Slab", "Beam"]
+  system     String[] // array tags
+  nature     String[] // array tags
+  method     String[] // array tags
+  status     String     @default("Active")
+  version    Int        @default(1)
+  notes      String?
+  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+
+  materials                    RefActivityMaterial[]
+  RefChecklistItemActivityLink RefChecklistItemActivityLink[]
+
+  @@unique([discipline, stageLabel, title], map: "refactivity_uq_disc_stage_title")
+  @@map("RefActivity")
+}
+
+model RefMaterial {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String?  @unique // optional catalog code/SKU
+  name       String
+  category   String?
+  aliases    String[] // for fuzzy matching (OPC 43, OPC-43, etc.)
+  properties Json? // e.g., [{key:"grade",value:"43",uom:null}]
+  status     String   @default("Active")
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  activityUses                 RefActivityMaterial[]
+  RefChecklistItemMaterialLink RefChecklistItemMaterialLink[]
+
+  // Optional de-dupe: name+category when code is absent
+  @@index([name, category])
+  @@map("RefMaterial")
+}
+
+model RefActivityMaterial {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId String  @db.Uuid
+  materialId String  @db.Uuid
+  note       String?
+
+  activity RefActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  material RefMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@unique([activityId, materialId], map: "refactmat_activity_material_uq")
+  @@index([activityId])
+  @@index([materialId])
+  @@map("RefActivityMaterial")
 }

@@ -16,7 +16,10 @@ import Permissions from './views/admin/permissions/Permissions';
 import AdminPermTemplates from './views/admin/permissions/AdminPermTemplates';
 import AdminPermProjectOverrides from './views/admin/permissions/AdminPermProjectOverrides';
 import AdminPermUserOverrides from './views/admin/permissionsexplorer/AdminPermUserOverrides';
-import ActivityLib from './views/admin/ActivityLib';
+import ActivityLib from './views/admin/ref/activitylib/ActivityLib';
+import ActivityEdit from './views/admin/ref/activitylib/ActivityLibEdit';
+import ActivityCreate from './views/admin/ref/activitylib/ActivityCreate';
+
 import MaterialLib from './views/admin/MaterialLib';
 import ChecklistLib from './views/admin/ChecklistLib';
 
@@ -37,6 +40,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem('token');
   return token ? children : <Navigate to="/login" replace />;
 }
+
 
 export default function App() {
   return (
@@ -74,9 +78,13 @@ export default function App() {
           <Route path="permissions" element={<Permissions />} />
           <Route path="permissions/templates" element={<AdminPermTemplates />} />
           <Route path="permissions/project-overrides" element={<AdminPermProjectOverrides />} />
-          
+
           <Route path="permission-explorer" element={<AdminPermUserOverrides />} />
-          <Route path='activityLib' element={<ActivityLib />} />
+
+          <Route path="ref/activitylib" element={<ActivityLib />} />
+          <Route path="ref/activitylib/:id/edit" element={<ActivityEdit />} />
+          <Route path="ref/activitylib/new" element={<ActivityCreate />} />
+
           <Route path="materialLib" element={<MaterialLib />} />
           <Route path="checkListLib" element={<ChecklistLib />} />
           {/* when no child path picked */}
@@ -98,4 +106,5 @@ export default function App() {
       </Routes>
     </BrowserRouter>
   );
+
 }

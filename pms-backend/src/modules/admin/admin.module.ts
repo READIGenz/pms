@@ -6,8 +6,11 @@ import { AdminCompaniesModule } from './admin.companies.module';
 import { AdminAssignmentsModule } from './admin.assignments.module';
 import { AdminPermissionsModule } from './permissions/permissions.module';
 import { AdminPermissionsExplorerModule } from './permissions-explorer/user-overrides.module';
+import { AdminActivitiesModule } from './ref/admin.activities.module';
 
 @Module({
-  imports: [AdminUsersModule, AdminProjectsModule,AdminCompaniesModule, AdminAssignmentsModule,AdminPermissionsModule, AdminPermissionsExplorerModule],
+  imports: [AdminUsersModule, AdminProjectsModule,AdminCompaniesModule, 
+    AdminAssignmentsModule,AdminPermissionsModule, 
+    AdminPermissionsExplorerModule, AdminActivitiesModule],
 })
 export class AdminModule {}
