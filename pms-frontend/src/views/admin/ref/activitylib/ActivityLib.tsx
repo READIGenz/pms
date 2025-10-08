@@ -211,6 +211,19 @@ export default function ActivityLib() {
     [editing?.title, editing?.discipline]
   );
 
+  type ActivityStats = {
+    total: number;
+    byStatus: Record<ActivityStatus, number>;
+  };
+
+  const defaultStats: ActivityStats = {
+    total: 0,
+    byStatus: { Active: 0, Draft: 0, Inactive: 0, Archived: 0 },
+  };
+
+  const [stats, setStats] = useState<ActivityStats>(defaultStats);
+  const [statsLoading, setStatsLoading] = useState(false);
+
   /* ---- Sorting (client-side) ---- */
   type SortKey =
     | "activity"
@@ -229,6 +242,14 @@ export default function ActivityLib() {
 
   const firstOrDash = (arr?: string[]) => (arr && arr.length ? arr[0] : "—");
   const cmp = (a: any, b: any) => (a < b ? -1 : a > b ? 1 : 0);
+
+  const statusCounts = useMemo(() => {
+    const base = { Active: 0, Draft: 0, Inactive: 0, Archived: 0 } as Record<ActivityStatus, number>;
+    for (const r of rows) {
+      if (r.status in base) base[r.status as ActivityStatus] += 1;
+    }
+    return base;
+  }, [rows]);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -342,6 +363,33 @@ export default function ActivityLib() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, discipline, stage, status, page, pageSize]);
 
+  const fetchStats = async () => {
+  setStatsLoading(true);
+  try {
+    const { data } = await api.get("/admin/ref/activitylib/stats");
+    // Defensive merge (in case backend adds fields later)
+    setStats({
+      total: Number(data?.total ?? 0),
+      byStatus: {
+        Active: Number(data?.byStatus?.Active ?? 0),
+        Draft: Number(data?.byStatus?.Draft ?? 0),
+        Inactive: Number(data?.byStatus?.Inactive ?? 0),
+        Archived: Number(data?.byStatus?.Archived ?? 0),
+      },
+    });
+  } catch (e) {
+    // keep silent on UI; optional: surface a toast if you have one
+    setStats(defaultStats);
+  } finally {
+    setStatsLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
   const fetchOne = async (id: string): Promise<RefActivity | null> => {
     try {
       const { data } = await api.get(`/admin/ref/activities/${id}`);
@@ -437,7 +485,7 @@ export default function ActivityLib() {
   const openNew = () => {
     // setEditing({ ...emptyForm, id: "" });
     // setEditorOpen(true);
-      nav("/admin/ref/activitylib/new");
+    nav("/admin/ref/activitylib/new");
   };
 
   const openEdit = async (id: string) => {
@@ -462,7 +510,8 @@ export default function ActivityLib() {
     setPage(1);
   };
 
-  const refresh = () => fetchList();
+  const refresh = () => {fetchList();  fetchStats();};
+
 
   const exportCsv = () => {
     // Columns shown in table, in the same order
@@ -559,6 +608,34 @@ export default function ActivityLib() {
             {err}
           </div>
         )}
+
+        {/* KPIs (global, ignore pagination/filters) */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+          <div className="rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4">
+            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Active</div>
+            <div className="mt-1 text-2xl font-semibold dark:text-white">
+              {statsLoading ? "…" : stats.byStatus.Active}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4">
+            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Draft</div>
+            <div className="mt-1 text-2xl font-semibold dark:text-white">
+      {statsLoading ? "…" : stats.byStatus.Draft}
+              </div>
+          </div>
+          <div className="rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4">
+            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Inactive</div>
+            <div className="mt-1 text-2xl font-semibold dark:text-white">
+      {statsLoading ? "…" : stats.byStatus.Inactive}
+              </div>
+          </div>
+          <div className="rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4">
+            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Archived</div>
+            <div className="mt-1 text-2xl font-semibold dark:text-white">
+      {statsLoading ? "…" : stats.byStatus.Archived}
+              </div>
+          </div>
+        </div>
 
         {/* Filters (Users-style: tidy grid + Clear) */}
         <Section title="Find">

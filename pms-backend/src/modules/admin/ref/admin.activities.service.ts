@@ -14,6 +14,9 @@ type ListArgs = {
 
 @Injectable()
 export class AdminActivitiesService {
+  // stats() {
+  //   throw new Error('Method not implemented.');
+  // }
   constructor(private prisma: PrismaService) {}
 
   async list({ q, discipline, stageLabel, status, page, pageSize }: ListArgs) {
@@ -76,4 +79,25 @@ export class AdminActivitiesService {
       status: d.status || 'Draft',
     };
   }
+
+  async stats() {
+    const [total, active, draft, inactive, archived] = await Promise.all([
+      this.prisma.refActivity.count(),
+      this.prisma.refActivity.count({ where: { status: 'Active' } }),
+      this.prisma.refActivity.count({ where: { status: 'Draft' } }),
+      this.prisma.refActivity.count({ where: { status: 'Inactive' } }),
+      this.prisma.refActivity.count({ where: { status: 'Archived' } }),
+    ]);
+
+    return {
+      total,
+      byStatus: {
+        Active: active,
+        Draft: draft,
+        Inactive: inactive,
+        Archived: archived,
+    } as Record<'Active' | 'Draft' | 'Inactive' | 'Archived', number>,
+    };
+  }
+
 }

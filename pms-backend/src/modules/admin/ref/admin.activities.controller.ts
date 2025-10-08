@@ -16,11 +16,16 @@ import { CreateRefActivityDto, UpdateRefActivityDto } from './dtos';
 type Discipline = 'Civil' | 'MEP' | 'Finishes';
 type Status = 'Active' | 'Draft' | 'Inactive' | 'Archived';
 
-// Mount the same handlers on BOTH paths to avoid 404s from legacy/typo routes
 @Controller(['admin/ref/activities', 'admin/ref/activitylib'])
 export class AdminActivitiesController {
   constructor(private readonly svc: AdminActivitiesService) {}
 
+  @Get('stats')
+  stats() {
+    // global counts ignoring pagination/filters
+    return this.svc.stats();
+  }
+  
   @Get()
   list(
     @Query('q') q?: string,

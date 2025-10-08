@@ -17,7 +17,7 @@ import AdminPermTemplates from './views/admin/permissions/AdminPermTemplates';
 import AdminPermProjectOverrides from './views/admin/permissions/AdminPermProjectOverrides';
 import AdminPermUserOverrides from './views/admin/permissionsexplorer/AdminPermUserOverrides';
 import ActivityLib from './views/admin/ref/activitylib/ActivityLib';
-import ActivityEdit from './views/admin/ref/activitylib/ActivityLibEdit';
+import ActivityEdit from './views/admin/ref/activitylib/ActivityEdit';
 import ActivityCreate from './views/admin/ref/activitylib/ActivityCreate';
 
 import MaterialLib from './views/admin/MaterialLib';
