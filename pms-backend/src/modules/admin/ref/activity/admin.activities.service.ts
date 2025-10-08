@@ -1,7 +1,7 @@
 // src/modules/admin/ref/admin.activities.service.ts
 
 import { Injectable } from '@nestjs/common';
-import { PrismaService} from '../../../prisma/prisma.service';
+import { PrismaService} from '../../../../prisma/prisma.service';
 
 type ListArgs = {
   q?: string;

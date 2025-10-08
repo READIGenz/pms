@@ -1,4 +1,4 @@
-// pms-frontend/src/views/admin/ref/ActivityLib.tsx
+// pms-frontend/src/views/admin/ref/activitylib/ActivityLib.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { api } from "../../../../api/client";

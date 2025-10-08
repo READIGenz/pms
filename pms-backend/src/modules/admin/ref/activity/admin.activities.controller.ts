@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { AdminActivitiesService } from './admin.activities.service';
-import { CreateRefActivityDto, UpdateRefActivityDto } from './dtos';
+import { CreateRefActivityDto, UpdateRefActivityDto } from './activities.dto';
 
 type Discipline = 'Civil' | 'MEP' | 'Finishes';
 type Status = 'Active' | 'Draft' | 'Inactive' | 'Archived';

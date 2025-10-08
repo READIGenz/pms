@@ -20,7 +20,8 @@ import ActivityLib from './views/admin/ref/activitylib/ActivityLib';
 import ActivityEdit from './views/admin/ref/activitylib/ActivityEdit';
 import ActivityCreate from './views/admin/ref/activitylib/ActivityCreate';
 
-import MaterialLib from './views/admin/MaterialLib';
+import MaterialLib from './views/admin/ref/materiallib/MaterialLib';
+import { MaterialNewPage, MaterialEditPage } from './views/admin/ref/materiallib/MaterialForm';
 import ChecklistLib from './views/admin/ChecklistLib';
 
 // Role homes (create these files or swap with your actual components)
@@ -85,7 +86,10 @@ export default function App() {
           <Route path="ref/activitylib/:id/edit" element={<ActivityEdit />} />
           <Route path="ref/activitylib/new" element={<ActivityCreate />} />
 
-          <Route path="materialLib" element={<MaterialLib />} />
+          <Route path="ref/materiallib" element={<MaterialLib />} />
+          <Route path="ref/materiallib/new" element={<MaterialNewPage />} />
+          <Route path="ref/materiallib/:id/edit" element={<MaterialEditPage />} />
+
           <Route path="checkListLib" element={<ChecklistLib />} />
           {/* when no child path picked */}
         </Route>
