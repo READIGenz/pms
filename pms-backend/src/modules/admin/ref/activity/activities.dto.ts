@@ -12,6 +12,7 @@ export class CreateRefActivityDto {
   @IsArray() nature: string[] = [];
   @IsArray() method: string[] = [];
   @IsOptional() @IsInt() @Min(1) @Max(9999) version?: number = 1;
+  @IsOptional() versionLabel?: string | null;
   @IsOptional() @IsString() notes?: string | null;
   @IsOptional() @IsIn(['Active', 'Draft', 'Inactive', 'Archived']) status?: 'Active' | 'Draft' | 'Inactive' | 'Archived' = 'Draft';
 }

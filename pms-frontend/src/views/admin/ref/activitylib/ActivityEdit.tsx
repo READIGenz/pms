@@ -35,6 +35,7 @@ export type RefActivity = {
   nature: string[];
   method: string[];
   version: number;
+  versionLabel?: string | null;
   notes: string | null;
   status: ActivityStatus;
   updatedAt: string; // ISO
@@ -171,6 +172,8 @@ export default function ActivityEdit() {
           system: Array.isArray(data?.system) ? [...data.system] : [],
           nature: Array.isArray(data?.nature) ? [...data.nature] : [],
           method: Array.isArray(data?.method) ? [...data.method] : [],
+            versionLabel: data?.versionLabel ?? (data?.version != null ? String(data.version) : "1.0.0"),
+
         });
       } catch (e: any) {
         // Like the other file: show error; do not force logout on 401 during GET
@@ -199,32 +202,58 @@ export default function ActivityEdit() {
     try {
       // Normalize like in ActivityLib.normalizeForSubmit
       const out: any = {};
-      const copyFields = [
-        "code",
-        "title",
-        "discipline",
-        "stageLabel",
-        "phase",
-        "element",
-        "system",
-        "nature",
-        "method",
-        "notes",
-        "status",
-        "version",
-      ] as const;
-      copyFields.forEach((k) => (out[k] = (form as any)[k]));
-      ["system", "nature", "method", "phase", "element"].forEach((k) => {
-        out[k] = Array.isArray(out[k]) ? out[k] : [];
-      });
-      ["code", "title", "stageLabel", "notes"].forEach((k) => {
-        if (out[k] != null) out[k] = String(out[k]).trim();
-      });
-      const vNum = Number((form as any).version);
-      out.version = Number.isFinite(vNum) ? vNum : 1;
-      if (out.code === "") out.code = null;
-      if (out.stageLabel === "") out.stageLabel = null;
-      if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
+const copyFields = [
+  "code",
+  "title",
+  "discipline",
+  "stageLabel",
+  "phase",
+  "element",
+  "system",
+  "nature",
+  "method",
+  "notes",
+  "status",
+] as const;
+copyFields.forEach((k) => (out[k] = (form as any)[k]));
+
+["system", "nature", "method", "phase", "element"].forEach((k) => {
+  out[k] = Array.isArray(out[k]) ? out[k] : [];
+});
+["code", "title", "stageLabel", "notes"].forEach((k) => {
+  if (out[k] != null) out[k] = String(out[k]).trim();
+});
+
+// --- NEW: prefer versionLabel; keep legacy numeric for compatibility ---
+const vLabel = (form as any).versionLabel;
+out.versionLabel =
+  typeof vLabel === "string"
+    ? vLabel.trim()
+    : (form.version != null ? String(form.version) : null);
+
+// Optional: keep sending numeric version (backend can ignore or use as legacy)
+const vNum = Number((form as any).version);
+out.version = Number.isFinite(vNum) ? vNum : 1;
+
+// Normalize empties / status
+if (out.code === "") out.code = null;
+if (out.stageLabel === "") out.stageLabel = null;
+if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
+
+// Validate semver label: allow 1 or 1.2 or 1.2.3
+const problems: string[] = [];
+const vl = out.versionLabel?.trim();
+if (vl && !/^\d+(?:\.\d+){0,2}$/.test(vl)) {
+  problems.push("Version must be 1, 1.2, or 1.2.3.");
+}
+if (!out.title) problems.push("Title is required.");
+if (!out.discipline) problems.push("Discipline is required.");
+
+if (problems.length) {
+  setErr(problems.join(" "));
+  setSaving(false);
+  return;
+}
 
       await api.patch(`/admin/ref/activities/${id}`, out);
       nav("/admin/ref/activitylib", { replace: true, state: { refresh: true } });
@@ -319,13 +348,12 @@ export default function ActivityEdit() {
                 placeholder="e.g., RCC-610"
               />
               <Input
-                label="Version"
-                value={String(form.version ?? 1)}
-                onChange={(v) =>
-                  setField("version", Number(String(v).replace(/[^0-9]/g, "")) as any)
-                }
-                placeholder="1"
-              />
+  label="Version (e.g., 1, 1.2, 1.2.3)"
+  value={(form.versionLabel ?? (form.version != null ? String(form.version) : "")) as string}
+  onChange={(v) => setField("versionLabel", v as any)}
+  placeholder="1.2.3"
+/>
+
               <SelectStrict
                 label="Status"
                 value={(form.status as any) ?? "Draft"}

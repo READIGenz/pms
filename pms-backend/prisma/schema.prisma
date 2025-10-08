@@ -577,6 +577,13 @@ model RefActivity {
   method     String[] // array tags
   status     String     @default("Active")
   version    Int        @default(1)
+// --- NEW: human label + sortable parts ---
+  versionLabel String?           // e.g. "1.2.3"
+  versionMajor Int      @default(1)
+  versionMinor Int      @default(0)
+  versionPatch Int      @default(0)
+  // -----------------------------------------
+
   notes      String?
   createdAt  DateTime   @default(now()) @db.Timestamptz(6)
   updatedAt  DateTime   @updatedAt @db.Timestamptz(6)

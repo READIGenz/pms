@@ -123,6 +123,7 @@ export type RefActivity = {
   nature: string[];
   method: string[];
   version: number; // numeric in schema; UI uses text box but coerces to number
+  versionLabel?: string | null;
   notes: string | null;
   status: ActivityStatus; // Active | Draft | Inactive | Archived
   updatedAt: string; // ISO
@@ -185,6 +186,7 @@ export default function ActivityLib() {
     nature: [],
     method: [],
     version: 1,
+    versionLabel: "1.0.0",
     notes: "",
     status: "Draft",
     updatedAt: new Date().toISOString(),
@@ -251,6 +253,13 @@ export default function ActivityLib() {
     return base;
   }, [rows]);
 
+  function parseParts(v?: string | number | null) {
+  const s = v == null ? "" : String(v);
+  const m = s.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+  if (!m) return [0, 0, 0];
+  return [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)];
+}
+
   const sortedRows = useMemo(() => {
     const copy = [...rows];
     copy.sort((A, B) => {
@@ -285,10 +294,13 @@ export default function ActivityLib() {
           av = firstOrDash(A.method);
           bv = firstOrDash(B.method);
           break;
-        case "version":
-          av = Number(A.version ?? 0);
-          bv = Number(B.version ?? 0);
-          break;
+        case "version": {
+  const [a1, a2, a3] = parseParts((A as any).versionLabel ?? A.version);
+  const [b1, b2, b3] = parseParts((B as any).versionLabel ?? B.version);
+  av = a1 * 1e6 + a2 * 1e3 + a3;
+  bv = b1 * 1e6 + b2 * 1e3 + b3;
+  break;
+}
         case "updated":
           av = new Date(A.updatedAt || 0).getTime();
           bv = new Date(B.updatedAt || 0).getTime();
@@ -443,44 +455,39 @@ useEffect(() => {
 
   /* ========================= Helpers ========================= */
   function normalizeForSubmit(p: Partial<RefActivity>) {
-    const out: any = {};
-    const copyFields = [
-      "code",
-      "title",
-      "discipline",
-      "stageLabel",
-      "phase",
-      "element",
-      "system",
-      "nature",
-      "method",
-      "notes",
-      "status",
-    ];
-    copyFields.forEach((k) => (out[k] = (p as any)[k]));
+  const out: any = {};
+  const copyFields = [
+    "code","title","discipline","stageLabel",
+    "phase","element","system","nature","method",
+    "notes","status"
+  ];
+  copyFields.forEach((k) => (out[k] = (p as any)[k]));
 
-    // Coerce arrays, trim strings
-    ["system", "nature", "method", "phase", "element"].forEach((k) => {
-      out[k] = Array.isArray(out[k]) ? out[k] : [];
-    });
+  // arrays
+  ["system","nature","method","phase","element"].forEach((k) => {
+    out[k] = Array.isArray(out[k]) ? out[k] : [];
+  });
 
-    ["code", "title", "stageLabel", "notes"].forEach((k) => {
-      if (out[k] != null) out[k] = String(out[k]).trim();
-    });
+  // strings
+  ["code","title","stageLabel","notes"].forEach((k) => {
+    if (out[k] != null) out[k] = String(out[k]).trim();
+  });
 
-    // version: UI shows number input; default 1
-    const vNum = Number((p as any).version);
-    out.version = Number.isFinite(vNum) ? vNum : 1;
+  // NEW: pass versionLabel (preferred by backend)
+  const vl = (p as any).versionLabel;
+  out.versionLabel = typeof vl === "string" ? vl.trim() : (p.version != null ? String(p.version) : null);
 
-    // Optional unique "code" -> empty string becomes null for backend
-    if (out.code === "") out.code = null;
-    if (out.stageLabel === "") out.stageLabel = null;
+  // Keep legacy version as fallback (backend still accepts it)
+  const vNum = Number((p as any).version);
+  out.version = Number.isFinite(vNum) ? vNum : 1;
 
-    // Status safety
-    if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
+  if (out.code === "") out.code = null;
+  if (out.stageLabel === "") out.stageLabel = null;
+  if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
 
-    return out;
-  }
+  return out;
+}
+
 
   const openNew = () => {
     // setEditing({ ...emptyForm, id: "" });
@@ -537,7 +544,7 @@ useEffect(() => {
       (r.system || []).join("|"),
       (r.nature || []).join("|"),
       (r.method || []).join("|"),
-      `v${r.version}`,
+`v${(r as any).versionLabel ?? r.version}`,
       fmt(r.updatedAt),
       r.status,
       r.id,
@@ -798,7 +805,7 @@ useEffect(() => {
                     <td className="px-3 py-2">{asList(r.method)}</td>
 
                     {/* Version / Updated / Status */}
-                    <td className="px-3 py-2">v{r.version}</td>
+<td className="px-3 py-2">v{(r as any).versionLabel ?? r.version}</td>
                     <td className="px-3 py-2">{fmt(r.updatedAt)}</td>
                     <td className="px-3 py-2">
                       <StatusPill value={r.status} />
@@ -910,7 +917,7 @@ useEffect(() => {
                 <KV k="System" v={viewItem.system?.join(", ") || "—"} />
                 <KV k="Nature" v={viewItem.nature?.join(", ") || "—"} />
                 <KV k="Method" v={viewItem.method?.join(", ") || "—"} />
-                <KV k="Version" v={`v${viewItem.version}`} />
+<KV k="Version" v={`v${(viewItem as any).versionLabel ?? (viewItem.version ?? 1)}`} />
                 <KV k="Updated" v={fmt(viewItem.updatedAt)} />
                 <KV k="Status" v={<StatusPill value={viewItem.status} />} />
                 <div className="sm:col-span-2">
