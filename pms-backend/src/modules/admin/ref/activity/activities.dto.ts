@@ -1,4 +1,4 @@
-// src/modules/admin/ref/dtos.ts
+// src/modules/admin/ref/activity/dtos.ts
 import { IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateRefActivityDto {

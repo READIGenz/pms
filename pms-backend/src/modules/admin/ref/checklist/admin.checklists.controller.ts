@@ -1,0 +1,70 @@
+// src/modules/admin/ref/checklist/admin.checklists.controller.ts
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseBoolPipe,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { AdminChecklistsService } from './admin.checklists.service';
+import { CreateRefChecklistDto, UpdateRefChecklistDto } from './checklists.dto';
+
+type Discipline = 'Civil' | 'MEP' | 'Finishes' | 'Architecture';
+type Status = 'Active' | 'Draft' | 'Inactive' | 'Archived';
+
+@Controller(['admin/ref/checklists', 'admin/ref/checklistlib'])
+export class AdminChecklistsController {
+  constructor(private readonly svc: AdminChecklistsService) {}
+
+  @Get('stats')
+  stats() {
+    // global counts ignoring pagination/filters
+    return this.svc.stats();
+  }
+
+  @Get()
+  list(
+    @Query('q') q?: string,
+    @Query('discipline') discipline?: Discipline | '',
+    @Query('stageLabel') stageLabel?: string,
+    @Query('status') status?: Status | '',
+    @Query('aiDefault', new ParseBoolPipe({ optional: true })) aiDefault?: boolean,
+    @Query('page', new ParseIntPipe()) page = 1,
+    @Query('pageSize', new ParseIntPipe()) pageSize = 20,
+  ) {
+    return this.svc.list({
+      q,
+      discipline,
+      stageLabel,
+      status,
+      aiDefault,
+      page,
+      pageSize,
+    });
+  }
+
+  @Get(':id')
+  getOne(@Param('id') id: string) {
+    return this.svc.getOne(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateRefChecklistDto) {
+    return this.svc.create(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateRefChecklistDto) {
+    return this.svc.update(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.svc.remove(id);
+  }
+}

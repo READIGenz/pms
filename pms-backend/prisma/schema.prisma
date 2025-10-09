@@ -499,19 +499,30 @@ enum MaterialDiscipline {
 }
 
 model RefChecklist {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code       String     @unique
-  title      String
-  discipline Discipline
-  stageLabel String
-  tags       String[] // free tags
-  status     String     @default("Active")
-  version    Int        @default(1)
-  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String?     @unique
+  title        String
+  discipline   Discipline
+  stageLabel   String?                                // ← match RefActivity (optional)
+  tags         String[]    @default([])
+  status       String      @default("Active")
+  version      Int         @default(1)
 
-  items RefChecklistItem[]
+  // --- NEW: human label + sortable parts (like RefActivity) ---
+  versionLabel String?
+  versionMajor Int         @default(1)
+  versionMinor Int         @default(0)
+  versionPatch Int         @default(0)
+  // ------------------------------------------------------------
 
+  aiDefault    Boolean     @default(false)            // ← NEW: "AI (Default)" toggle
+
+  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(6)
+
+  items        RefChecklistItem[]
+
+  @@index([discipline, stageLabel])
   @@map("RefChecklist")
 }
 

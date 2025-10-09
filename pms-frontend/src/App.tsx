@@ -19,10 +19,11 @@ import AdminPermUserOverrides from './views/admin/permissionsexplorer/AdminPermU
 import ActivityLib from './views/admin/ref/activitylib/ActivityLib';
 import ActivityEdit from './views/admin/ref/activitylib/ActivityEdit';
 import ActivityCreate from './views/admin/ref/activitylib/ActivityCreate';
-
 import MaterialLib from './views/admin/ref/materiallib/MaterialLib';
 import { MaterialNewPage, MaterialEditPage } from './views/admin/ref/materiallib/MaterialForm';
-import ChecklistLib from './views/admin/ChecklistLib';
+
+import ChecklistLib from './views/admin/ref/checklistlib/ChecklistLib';
+import { ChecklistEditPage, ChecklistNewPage } from './views/admin/ref/checklistlib/ChecklistForm';
 
 // Role homes (create these files or swap with your actual components)
 import ClientHome from './views/client/clientHome';
@@ -31,6 +32,7 @@ import ContractorHome from './views/contractor/contractorHome';
 import ConsultantHome from './views/consultant/consultantHome';
 import SupplierHome from './views/supplier/supplierHome';
 import PMCHome from './views/pmc/pmcHome';
+
 
 // Optional generic landing
 function Landing() {
@@ -90,7 +92,9 @@ export default function App() {
           <Route path="ref/materiallib/new" element={<MaterialNewPage />} />
           <Route path="ref/materiallib/:id/edit" element={<MaterialEditPage />} />
 
-          <Route path="checkListLib" element={<ChecklistLib />} />
+          <Route path="ref/checklistlib" element={<ChecklistLib />} />
+          <Route path="ref/checklistlib/new" element={<ChecklistNewPage />} />
+          <Route path="ref/checklistlib/:id/edit" element={<ChecklistEditPage />} />
           {/* when no child path picked */}
         </Route>
 

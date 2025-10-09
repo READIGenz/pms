@@ -1,4 +1,4 @@
-// src/modules/admin/ref/admin.activities.controller.ts
+// src/modules/admin/ref/activity/admin.activities.controller.ts
 import {
   Body,
   Controller,
