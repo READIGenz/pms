@@ -40,7 +40,6 @@ function buildVersionFields(input: {
 }) {
   if (input.versionLabel !== undefined) {
     const { major, minor, patch, normLabel } = parseSemverLabel(input.versionLabel);
-    // keep legacy numeric "version" aligned to major (min 1)
     const legacy = major > 0 ? major : 1;
     return {
       version: legacy,
@@ -51,7 +50,6 @@ function buildVersionFields(input: {
     };
   }
 
-  // fallback to legacy numeric "version"
   const v = Number(input.version ?? 1);
   const legacy = Number.isFinite(v) && v > 0 ? Math.floor(v) : 1;
   return {
@@ -99,7 +97,6 @@ export class AdminChecklistsService {
       this.prisma.refChecklist.count({ where }),
     ]);
 
-    // Flatten _count.items → itemsCount for the FE (ChecklistLib.tsx reads either itemsCount or items.length)
     const items = rawItems.map((r: any) => {
       const { _count, ...rest } = r;
       return { ...rest, itemsCount: _count?.items ?? 0 };
@@ -108,13 +105,13 @@ export class AdminChecklistsService {
     return { items, total };
   }
 
-  async getOne(id: string) {
+  // ✅ getOne: add includeItems param and use it properly
+  async getOne(id: string, includeItems = false) {
     const r = await this.prisma.refChecklist.findUnique({
       where: { id },
       include: {
         _count: { select: { items: true } },
-        // If you also want to return the actual items, uncomment:
-        // items: true,
+        ...(includeItems ? { items: { orderBy: { seq: 'asc' } } } : {}),
       },
     });
     if (!r) return null;
@@ -136,19 +133,73 @@ export class AdminChecklistsService {
     return this.prisma.refChecklist.delete({ where: { id } });
   }
 
+  /** ✅ replace all items in one go (idempotent) */
+ async replaceItems(
+  id: string,
+  items: Array<{
+    seq?: number;
+    text: string;
+    requirement?: 'Mandatory' | 'Optional' | null;
+    itemCode?: string | null;
+    critical?: boolean | null;
+    aiEnabled?: boolean | null;
+    aiConfidence?: number | null;
+    units?: string | null;
+    tolerance?: '<=' | '+-' | '=' | null;
+    base?: number | null;
+    plus?: number | null;
+    minus?: number | null;
+    tags?: string[] | null;
+  }>,
+) {
+  const clean = (items || [])
+    .map((x, i) => ({
+      checklistId: id,
+      seq: Number.isFinite(x.seq as any) ? Number(x.seq) : i,
+      text: String(x.text || '').trim(),
+      requirement: x.requirement ?? null,
+      itemCode: x.itemCode ?? null,
+      critical: x.critical ?? null,
+      aiEnabled: x.aiEnabled ?? null,
+      aiConfidence: x.aiConfidence == null ? null : Number(x.aiConfidence),
+      units: x.units ?? null,
+      tolerance: x.tolerance ?? null,
+      base: x.base == null ? null : Number(x.base),
+      plus: x.plus == null ? null : Number(x.plus),
+      minus: x.minus == null ? null : Number(x.minus),
+      tags: Array.isArray(x.tags) ? x.tags : [],
+      // keep existing
+      method: [],
+      risk: x.critical ? 'Critical' : null, // optional mirror
+    }))
+    .filter(r => r.text);
+
+  await this.prisma.$transaction([
+    this.prisma.refChecklistItem.deleteMany({ where: { checklistId: id } }),
+    ...(clean.length ? [this.prisma.refChecklistItem.createMany({ data: clean })] : []),
+  ]);
+
+  return this.prisma.refChecklist.findUnique({
+    where: { id },
+    include: {
+      _count: { select: { items: true } },
+      items: { orderBy: { seq: 'asc' } },
+    },
+  });
+}
+
   /** Normalize payload for CREATE (always sets version fields). */
   private cleanCreate(d: CreateRefChecklistDto) {
     const vf = buildVersionFields({ versionLabel: d.versionLabel, version: d.version });
 
     return {
-      code: d.code ?? null, // FE may send ""; coerce to null at controller if needed
+      code: d.code ?? null,
       title: String(d.title || '').trim(),
-      discipline: d.discipline, // 'Civil' | 'MEP' | 'Finishes' | 'Architecture'
+      discipline: d.discipline,
       stageLabel: d.stageLabel ?? null,
 
       tags: Array.isArray(d.tags) ? d.tags : [],
 
-      // legacy + new semver fields
       version: vf.version,
       versionLabel: vf.versionLabel,
       versionMajor: vf.versionMajor,
@@ -161,11 +212,7 @@ export class AdminChecklistsService {
     };
   }
 
-  /**
-   * Normalize payload for UPDATE.
-   * Only touches version fields if caller sent `version` or `versionLabel`.
-   * For other fields, preserve "undefined" (meaning: do not update).
-   */
+  /** Normalize payload for UPDATE (only touches version fields if caller sent them). */
   private cleanUpdate(d: UpdateRefChecklistDto) {
     const touchesVersion =
       Object.prototype.hasOwnProperty.call(d, 'version') ||
@@ -192,7 +239,6 @@ export class AdminChecklistsService {
 
       tags: d.tags === undefined ? undefined : Array.isArray(d.tags) ? d.tags : [],
 
-      // Only include version fields when touched
       ...versionData,
 
       aiDefault: d.aiDefault === undefined ? undefined : !!d.aiDefault,

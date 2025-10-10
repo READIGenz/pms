@@ -49,9 +49,9 @@ export class AdminChecklistsController {
   }
 
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    return this.svc.getOne(id);
-  }
+getOne(@Param('id') id: string, @Query('includeItems') includeItems?: '0'|'1') {
+  return this.svc.getOne(id, includeItems === '1');
+}
 
   @Post()
   create(@Body() dto: CreateRefChecklistDto) {
@@ -62,6 +62,31 @@ export class AdminChecklistsController {
   update(@Param('id') id: string, @Body() dto: UpdateRefChecklistDto) {
     return this.svc.update(id, dto);
   }
+
+  @Patch(':id/items')
+updateItems(
+  @Param('id') id: string,
+  @Body() body: {
+    items: Array<{
+      id?: string;
+      seq?: number;
+      text: string;
+      requirement?: 'Mandatory' | 'Optional' | null;
+      itemCode?: string | null;
+      critical?: boolean | null;
+      aiEnabled?: boolean | null;
+      aiConfidence?: number | null;
+      units?: string | null;
+      tolerance?: '<=' | '+-' | '=' | null;
+      base?: number | null;
+      plus?: number | null;
+      minus?: number | null;
+      tags?: string[] | null;    // (visual, measurement, evidence, document)
+    }>;
+  },
+) {
+  return this.svc.replaceItems(id, body.items || []);
+}
 
   @Delete(':id')
   remove(@Param('id') id: string) {
