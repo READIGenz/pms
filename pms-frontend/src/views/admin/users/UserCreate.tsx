@@ -22,6 +22,14 @@ export default function UserCreate() {
   const nav = useNavigate();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
+  // ---------- CURRENT USER (who is creating) ----------
+  // Only show admin-privilege controls if the creator is Super Admin.
+  const currentUser = (() => {
+    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+  })();
+  const canGrantAdmin = !!currentUser?.isSuperAdmin;
+
+
   // ---------- Identity ----------
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
@@ -45,6 +53,10 @@ export default function UserCreate() {
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [isServiceProvider, setIsServiceProvider] = useState<boolean>(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
+
+   // ---------- Admin Privileges (visible to Super Admin only) ----------
+  const [makeSuperAdmin, setMakeSuperAdmin] = useState<boolean>(false);
+  const [makeGlobalAdmin, setMakeGlobalAdmin] = useState<boolean>(false);
 
   // ---------- Reference data ----------
   const [states, setStates] = useState<StateOpt[]>([]);
@@ -152,7 +164,14 @@ export default function UserCreate() {
         // flags (top-level convenience):
         isClient,
         isServiceProvider,
+          ...(canGrantAdmin && makeSuperAdmin ? { isSuperAdmin: true as const } : {}),
+
       };
+
+      // Only a Super Admin can set this, backend enforces too.
+      // if (canGrantAdmin && makeSuperAdmin) {
+      //   createPayload.isSuperAdmin = true;
+      // }
 
       const createRes = await api.post("/admin/users", createPayload);
       if (!createRes?.data?.ok || !createRes?.data?.user?.userId) {
@@ -184,6 +203,21 @@ export default function UserCreate() {
         });
       } catch (e: any) {
         console.warn("Affiliations save failed:", e?.response?.data || e);
+      }
+
+          // 4) Grant Global Admin role if toggled (super admin only)
+      if (canGrantAdmin && makeGlobalAdmin) {
+        try {
+          await api.post(`/admin/users/${userId}/roles`, {
+            role: "Admin",
+            scopeType: "Global",
+            isDefault: true,
+            canApprove: true,
+          });
+        } catch (e: any) {
+          // Do not block user creation; surface a soft notice
+          setRoleWarn(e?.response?.data?.error || "User created, but failed to grant Global Admin role.");
+        }
       }
 
       nav("/admin/users", { replace: true });
@@ -359,6 +393,26 @@ export default function UserCreate() {
           </div>
         </Section>
 
+        {/* ========== NEW: Admin Privileges (only Super Admin sees this) ========== */}
+        {canGrantAdmin && (
+          <Section title="Admin Privileges (Super Admin only)">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-700 dark:text-gray-300">Super Admin</span>
+                <ToggleYN value={makeSuperAdmin} setValue={setMakeSuperAdmin} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-700 dark:text-gray-300">Admin (Global)</span>
+                <ToggleYN value={makeGlobalAdmin} setValue={setMakeGlobalAdmin} />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Super Admin has full platform access, including toggling audit logging and assigning roles.
+                Admin (Global) receives a global <code>Admin</code> role via role membership.
+              </p>
+            </div>
+          </Section>
+        )}
+
         {/* Footer actions */}
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -505,3 +559,7 @@ function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) 
     </div>
   );
 }
+function setRoleWarn(arg0: any) {
+  throw new Error("Function not implemented.");
+}
+

@@ -1,6 +1,7 @@
 import {
   Body, Controller, Get, Param, Patch, Post, Query,
   UploadedFile, UseGuards, UseInterceptors, HttpException, HttpStatus,
+  Req, ForbiddenException
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -8,10 +9,11 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 import {
-  Prisma, UserRole, CompanyRole,
+  Prisma, UserRole, CompanyRole,RoleScope
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AdminCodeService } from '../admin-code.service';
+
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin/users')
@@ -150,7 +152,7 @@ export class AdminUsersController {
   }
 
   @Post()
-  async createUser(@Body() body: any) {
+  async createUser(@Req() req: any,@Body() body: any) {
     if (!body?.firstName || !body?.countryCode || !body?.phone) {
       return { ok: false, error: 'firstName, countryCode and phone are required.' };
     }
@@ -174,11 +176,17 @@ export class AdminUsersController {
         pin: body.pin || undefined,
         state: body.stateId ? { connect: { stateId: body.stateId } } : undefined,
         district: body.districtId ? { connect: { districtId: body.districtId } } : undefined,
-      };
-      return tx.user.create({ data: payload, select: { userId: true, updatedAt: true } });
-    });
-    return { ok: true, user: created };
-  }
+       //Only honor isSuperAdmin if the caller is super admin
+      ...(req?.user?.isSuperAdmin && body?.isSuperAdmin === true
+        ? { isSuperAdmin: true }
+        : {}),
+        };
+
+    return tx.user.create({ data: payload, select: { userId: true, updatedAt: true, isSuperAdmin: true } });
+  });
+
+  return { ok: true, user: created };
+}
 
   @Patch(':id')
   async updateUser(@Param('id') userId: string, @Body() body: any) {
@@ -317,4 +325,41 @@ export class AdminUsersController {
 
     return { ok: true, count: toCreate.length, user };
   }
+
+@Post(':id/roles')
+async addRole(
+  @Req() req: any,
+  @Param('id') userId: string,
+  @Body() body: { role: UserRole; scopeType: RoleScope; companyId?: string | null; projectId?: string | null; isDefault?: boolean; canApprove?: boolean; },
+) {
+  // Only super admins can grant roles from this admin endpoint
+  if (!req?.user?.isSuperAdmin) {
+    throw new ForbiddenException('Only Super Admin can grant roles');
+  }
+
+  // For Global Admin, enforce scope rules
+  if (body.role === 'Admin' && body.scopeType !== 'Global') {
+    throw new HttpException('Admin must be Global scope', HttpStatus.BAD_REQUEST);
+  }
+
+  const data: Prisma.UserRoleMembershipCreateInput = {
+    user: { connect: { userId } },
+    role: body.role,
+    scopeType: body.scopeType,
+    company: body.companyId ? { connect: { companyId: body.companyId } } : undefined,
+    project: body.projectId ? { connect: { projectId: body.projectId } } : undefined,
+    isDefault: !!body.isDefault,
+    canApprove: !!body.canApprove,
+  };
+
+  const created = await this.prisma.userRoleMembership.create({
+    data,
+    select: {
+      id: true, role: true, scopeType: true, companyId: true, projectId: true,
+      isDefault: true, canApprove: true, createdAt: true, updatedAt: true,
+    },
+  });
+
+  return { ok: true, membership: created };
+}
 }

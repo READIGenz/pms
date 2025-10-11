@@ -55,8 +55,7 @@ export default function App() {
 
         {/* Admin area */}
         <Route
-          path="/admin"
-          element={<RequireAuth><AdminHome /></RequireAuth>}
+          path="/admin" element={<RequireAuth><AdminHome /></RequireAuth>}
         >
           <Route index element={<div className="p-4">Dashboard</div>} />
           <Route path="users" element={<Users />} />

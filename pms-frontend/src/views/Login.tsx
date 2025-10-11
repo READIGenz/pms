@@ -106,7 +106,7 @@ function mapRoleToPath(role: string): string {
     .replace(/[_\s-]+/g, '') // IH-PMT / IH_PMT → ihpmt
     .toLowerCase();
   switch (norm) {
-    case 'admin': return '/adminHome';
+    case 'admin': return '/admin';
     case 'client': return '/clientHome';
     case 'ihpmt': return '/ihpmtHome';
     case 'pmc': return '/pmcHome';
