@@ -89,7 +89,7 @@ function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boole
   if (!projectId) return false;
   const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   return mems.some(m =>
-    String(m?.role || "").toLowerCase() === "suppliers" &&
+    String(m?.role || "").toLowerCase() === "supplier" &&
     m?.project?.projectId === projectId
   );
 }
@@ -101,6 +101,15 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   if (from && today < from) return "Yet to Start";
   if (to && today > to) return "Expired";
   return "Valid";
+}
+function supplierCompanyId(u: UserLite): string | null {
+  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  const m = mems.find(
+    (m) =>
+      String(m?.role || "").toLowerCase() === "supplier" &&
+      m?.company?.companyId
+  );
+  return (m?.company?.companyId as string) || null;
 }
 
 const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
@@ -154,8 +163,8 @@ export default function SuppliersAssignments() {
     return () => { alive = false; };
   }, [selectedProjectId]);
 
-  // Tile 3 (browse role users) — using /admin/users for now
-  // If your BE exposes specific tables, swap to role-specific endpoints later.
+  // Tile 3 (browse role users) — using /admin/users
+  // If BE exposes specific tables, swap to role-specific endpoints later.
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
@@ -268,7 +277,7 @@ export default function SuppliersAssignments() {
     action: string;
     code: string;
     name: string;
-    company: string;   // <-- NEW column
+    company: string;
     projects: string;
     mobile: string;
     email: string;
@@ -420,7 +429,7 @@ export default function SuppliersAssignments() {
       role: "Supplier",
       scopeType: "Project",
       projectId: selectedProjectId,
-      companyId: null,
+      companyId: supplierCompanyId(u),
       validFrom,
       validTo,
       isDefault: false,
@@ -525,8 +534,8 @@ export default function SuppliersAssignments() {
           userName: displayName(u) || "(No name)",
           projectId: pj.projectId,
           projectTitle: pj.title,
-          company: companiesLabel(u),      // <-- ADD
-          projects: projectsLabel(u),      // <-- ADD
+          company: m?.company?.name || "",     // <- per membership
+          projects: pj.title,                  // <- single project for this membership
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
@@ -536,6 +545,7 @@ export default function SuppliersAssignments() {
           _user: u,
           _mem: m,
         });
+
       }
     }
     return rows;
@@ -572,14 +582,41 @@ export default function SuppliersAssignments() {
   const [editRow, setEditRow] = useState<AssignmentRow | null>(null);
   const [editFrom, setEditFrom] = useState<string>("");
   const [editTo, setEditTo] = useState<string>("");
+  const [origFrom, setOrigFrom] = useState<string>("");
+  const [origTo, setOrigTo] = useState<string>("");
+  const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
 
   const openView = (row: AssignmentRow) => { setViewRow(row); setViewOpen(true); };
   const openEdit = (row: AssignmentRow) => {
     setEditRow(row);
-    setEditFrom(fmtLocalDateOnly(row.validFrom) || todayLocalISO());
-    setEditTo(fmtLocalDateOnly(row.validTo) || addDaysISO(todayLocalISO(), 1));
+
+    const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
+    const currentTo = fmtLocalDateOnly(row.validTo) || "";
+
+    // keep existing behavior for initial values
+    setEditFrom(currentFrom || todayLocalISO());
+    setEditTo(currentTo || addDaysISO(todayLocalISO(), 1));
+
+    // remember the original valid-from (used for validation/min attribute)
+    setOrigFrom(currentFrom);
+    setOrigTo(currentTo);
+
     setEditOpen(true);
   };
+
+  useEffect(() => {
+    if (!editOpen && pendingEditAlert) {
+      const msg = pendingEditAlert;
+      setPendingEditAlert(null); // prevent re-firing
+
+      // Wait for the next paint (twice to be extra sure), THEN alert.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          alert(msg);
+        });
+      });
+    }
+  }, [editOpen, pendingEditAlert]);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -868,8 +905,8 @@ export default function SuppliersAssignments() {
                       { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
-                      { key: "company", label: "Company" }, // <-- NEW header
-                      { key: "projects", label: "Projects" },
+                      { key: "company", label: "Company" },
+                      { key: "projects", label: "Project" },
                       { key: "mobile", label: "Mobile" },
                       { key: "email", label: "Email" },
                       { key: "state", label: "State" },
@@ -1125,13 +1162,16 @@ export default function SuppliersAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editFrom}
+                  // Allow moving back to today if current valid-from is in the future.
+                  // Never allow past dates.
                   min={todayLocalISO()}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
-                    if (editTo && editTo < v) setEditTo(v);
+                    if (editTo && editTo < v) setEditTo(v); // keep: ensure To >= From
                   }}
                 />
+
               </div>
               <div>
                 <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
@@ -1139,7 +1179,7 @@ export default function SuppliersAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editTo}
-                  min={editFrom || todayLocalISO()}
+                  min={(editFrom && editFrom > todayLocalISO()) ? editFrom : todayLocalISO()} // <- at least today; also respect From
                   onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
@@ -1154,14 +1194,50 @@ export default function SuppliersAssignments() {
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) { alert("Both Valid From and Valid To are required."); return; }
-                  if (editFrom < today) { alert("Valid From cannot be before today."); return; }
+
+                  // New rule: valid-to must be at least today
+                  if (editTo < today) {
+                    alert("Valid To cannot be before today.");
+                    return;
+                  }
+                  // if (editFrom < today) { alert("Valid From cannot be before today."); return; }
                   if (editTo < editFrom) { alert("Valid To must be on or after Valid From."); return; }
                   if (!editRow?.membershipId) { alert("Cannot update: missing membership id."); return; }
                   try {
-                    await api.patch(`/admin/assignments/${editRow.membershipId}`, { validFrom: editFrom, validTo: editTo });
+                    // Prefer the company on the membership; fall back to user's Supplier company
+                    const companyId =
+                      editRow?._mem?.company?.companyId ||
+                      (editRow?._user ? supplierCompanyId(editRow._user) : null);
+                    // Only include validFrom if it actually changed
+                    const payload: any = {
+                      validTo: editTo,
+                      scopeType: "Project",
+                      projectId: editRow.projectId,
+                      ...(companyId ? { companyId } : {}),
+                    };
+                    if (!origFrom || editFrom !== origFrom) {
+                      payload.validFrom = editFrom;
+                    }
+                    await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
+                    // Build success message (but don't alert yet)
+                    const successMsg = [
+                      `Updated validity`,
+                      ``,
+                      `Project: ${editRow.projectTitle}`,
+                      `Supplier: ${editRow.userName}`,
+                      ``,
+                      `Valid From: ${origFrom || "—"} → ${editFrom}`,
+                      `Valid To:   ${origTo || "—"} → ${editTo}`,
+                    ].join("\n");
+                    // Refresh data first so table reflects changes
                     const { data: fresh } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
                     setAllUsers(Array.isArray(fresh) ? fresh : (fresh?.users ?? []));
+
+                    // Close the modal
                     setEditOpen(false);
+                    setEditRow(null); // optional, helps ensure full unmount before alert
+                    // Queue the alert to show after modal unmounts
+                    setPendingEditAlert(successMsg);
                   } catch (e: any) {
                     const msg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Update failed.";
                     alert(msg);

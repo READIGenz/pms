@@ -189,6 +189,13 @@ enum RoleScope {
   @@map("RoleScope")
 }
 
+enum AuditAction {
+  AssignAdded
+  AssignRemoved
+  AssignReplaced // keep for future atomic replace ops, safe to leave
+
+  @@map("AuditAction")
+}
 // ============================ Models ============================ */
 
 model State {
@@ -667,4 +674,55 @@ model RefActivityMaterial {
   @@index([activityId])
   @@index([materialId])
   @@map("RefActivityMaterial")
+}
+
+model AdminAuditSetting {
+  id                 Int       @id @default(1)
+  /// When false, no assignment audit rows are written.
+  assignmentsEnabled Boolean   @default(true)
+
+  // Who flipped the switch last (denormalized for history)
+  updatedByUserId    String?   @db.Uuid
+  updatedByName      String?
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@map("AdminAuditSetting")
+}
+
+model AdminAuditLog {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  // Who performed the change
+  actorUserId   String       @db.Uuid
+  actorName     String       // full name at time of action (denormalized)
+
+  // What happened
+  action        AuditAction
+  module        String       @default("Assignments")
+
+  // Whose assignments were changed
+  targetUserId  String       @db.Uuid
+
+  // Context of the membership affected
+  role          UserRole?
+  scopeType     RoleScope?
+  companyId     String?      @db.Uuid
+  projectId     String?      @db.Uuid
+
+  // Optional request context
+  ip            String?
+  userAgent     String?
+
+  // Snapshots
+  /// e.g. { id, role, scopeType, companyId, projectId }
+  before        Json?
+  after         Json?
+
+  createdAt     DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@index([targetUserId, createdAt])
+  @@index([companyId])
+  @@index([projectId])
+  @@index([action])
+  @@map("AdminAuditLog")
 }

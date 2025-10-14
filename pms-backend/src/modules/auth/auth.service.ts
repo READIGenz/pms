@@ -1,10 +1,14 @@
 // pms-backend/src/modules/auth/auth.service.ts
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service'; // adjust path as needed
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly debug = String(process.env.AUTH_DEBUG || '').toLowerCase() === '1'
+    || String(process.env.AUTH_DEBUG || '').toLowerCase() === 'true';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -53,24 +57,49 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { userId },
       select: {
-        userId: true, firstName: true, lastName: true,
-        email: true, phone: true, countryCode: true,
-        userStatus: true, isSuperAdmin: true,
+        userId: true,
+        firstName: true,
+        middleName: true, // <-- added so we can build full name in token
+        lastName: true,
+        email: true,
+        phone: true,
+        countryCode: true,
+        userStatus: true,
+        isSuperAdmin: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');
 
     // Final token for the chosen role
+    const fullName = this.fullName(user);
+
     const jwtPayload: any = {
       sub: user.userId,
+      userId: user.userId,
+      name: fullName,
+      email: user.email ?? null,
       isSuperAdmin: !!user.isSuperAdmin,
-      role: m.role,                    // e.g. "Client", "IH-PMT"…
-      scopeType: m.scopeType,          // Global | Company | Project
+      role: m.role,
+      scopeType: m.scopeType,
       companyId: m.companyId ?? null,
       projectId: m.projectId ?? null,
     };
 
+    // DEBUG (guarded): payload we’re about to sign
+    if (this.debug) {
+      this.logger.debug(
+        `[AUTH] assumeRole: signing JWT payload -> sub=${jwtPayload.sub} userId=${jwtPayload.userId} name="${jwtPayload.name}" ` +
+        `isSuperAdmin=${jwtPayload.isSuperAdmin} role=${jwtPayload.role} scopeType=${jwtPayload.scopeType} ` +
+        `companyId=${jwtPayload.companyId ?? 'null'} projectId=${jwtPayload.projectId ?? 'null'}`
+      );
+    }
+
     const token = await this.signJwt(jwtPayload, { expiresIn: '2h' });
+
+    // DEBUG (guarded): token length only (don’t log full token)
+    if (this.debug) {
+      this.logger.debug(`[AUTH] assumeRole: signed JWT length=${token.length}`);
+    }
 
     return {
       ok: true,
@@ -78,7 +107,7 @@ export class AuthService {
       jwt: jwtPayload,
       user: {
         userId: user.userId,
-        name: this.fullName(user),
+        name: fullName,
         email: user.email,
         phone: user.phone,
         countryCode: user.countryCode,

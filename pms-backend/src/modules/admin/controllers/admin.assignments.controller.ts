@@ -1,9 +1,21 @@
+// src/modules/admin/controllers/admin.assignments.controller.ts
 import {
-  Body, Controller, HttpException, HttpStatus,
-  Param, ParseUUIDPipe, Patch, Post,
+  Body,
+  Controller,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { Prisma, RoleScope, UserRole } from '@prisma/client';
+import { Prisma, RoleScope, UserRole, AuditAction } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from './../audit/audit.service';
+import { JwtAuthGuard } from 'src/main';
 
 type BulkItem = {
   userId: string;
@@ -38,12 +50,65 @@ function todayIstMidnightUtc(): Date {
   return new Date(Date.UTC(y, m, d) - IST_OFFSET_MIN * 60_000);
 }
 
+// ===== Actor UUID resolver =====
+const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (v?: string | null): v is string => !!v && UUID_RX.test(v);
+
+/**
+ * Resolve the internal actor UUID suitable for writing to @db.Uuid columns.
+ * Prefers any UUID already present on the JWT (userId/id/uuid/sub).
+ * Falls back to an email lookup in your users table.
+ */
+async function resolveActorUserId(prisma: PrismaService, req: any): Promise<string | null> {
+  const u = req?.user || {};
+  const direct = [u.userId, u.id, u.uuid, u.sub].find(isUuid);
+  if (direct) return direct;
+
+  const email = (u.email || '').trim();
+  if (email) {
+    const found = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { userId: true }, // adjust if your PK field differs
+    });
+    if (found?.userId && isUuid(found.userId)) return found.userId;
+  }
+  return null;
+}
+
+/** Return a Map<userId, companyId> for service-provider users who own a Company row */
+async function mapCompanyIdsByUser(
+  prisma: PrismaService,
+  userIds: string[],
+): Promise<Map<string, string>> {
+  if (!userIds.length) return new Map();
+  const companies = await prisma.company.findMany({
+    where: { userId: { in: Array.from(new Set(userIds)) } },
+    select: { userId: true, companyId: true },
+  });
+  const map = new Map<string, string>();
+  for (const c of companies) if (c.userId && c.companyId) map.set(c.userId, c.companyId);
+  return map;
+}
+
+// ===== Targeted debug toggle for actor-related logs =====
+const AUDIT_DEBUG =
+  String(process.env.AUDIT_DEBUG || '').toLowerCase() === '1' ||
+  String(process.env.AUDIT_DEBUG || '').toLowerCase() === 'true';
+
+@UseGuards(JwtAuthGuard)
 @Controller('/admin/assignments')
 export class AdminAssignmentsController {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminAssignmentsController.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Post('bulk')
-  async bulkCreate(@Body() body: BulkPayload) {
+  async bulkCreate(@Req() req: any, @Body() body: BulkPayload) {
+    this.logger.log(`[ASSIGNMENTS] bulkCreate items=${body?.items?.length ?? 0}`);
+
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       throw new HttpException('No items provided', HttpStatus.BAD_REQUEST);
     }
@@ -63,16 +128,15 @@ export class AdminAssignmentsController {
         throw new HttpException(`items[${idx}]: validTo must be on/after validFrom`, HttpStatus.BAD_REQUEST);
       }
 
-      // Build with possible undefined, then DELETE undefined keys to avoid TS widening.
-      const tmp: any = {
+        const tmp: any = {
         userId: it.userId,
         role: it.role,
         scopeType: it.scopeType,
         projectId: it.projectId ?? null,
-        companyId: it.companyId ?? null,
+        companyId: it.companyId,  
         isDefault: !!it.isDefault,
-        validFrom: vFrom,      // may be undefined
-        validTo:   vTo,        // may be undefined
+        validFrom: vFrom,  // may be undefined
+        validTo:   vTo,    // may be undefined
       };
       if (tmp.validFrom === undefined) delete tmp.validFrom;
       if (tmp.validTo   === undefined) delete tmp.validTo;
@@ -85,16 +149,83 @@ export class AdminAssignmentsController {
       skipDuplicates: true,
     });
 
+    if (AUDIT_DEBUG) {
+      const actorUserId = await resolveActorUserId(this.prisma, req);
+      this.logger.debug(
+        `[ASSIGNMENTS] actor snapshot: ${JSON.stringify({
+          fromReq: req?.user,
+          resolvedActorUserId: actorUserId,
+        })}`,
+      );
+      this.logger.debug(
+        `[ASSIGNMENTS] actorName computed='${[req?.user?.firstName, req?.user?.middleName, req?.user?.lastName].filter(Boolean).join(' ') || 'User'}'`,
+      );
+    }
+
+    // ---- AUDIT: one row per affected target user ----
+    try {
+      if (!(await this.audit.isAssignmentsEnabled())) {
+        return { ok: true, created: result.count };
+      }
+
+      const actor = req?.user || {};
+      const actorName =
+        [actor.firstName, actor.middleName, actor.lastName].filter(Boolean).join(' ').trim() || 'User';
+      const actorUserId = await resolveActorUserId(this.prisma, req); // <-- use internal UUID
+
+      // Group attempted inserts by userId
+      const byUser = new Map<string, Prisma.UserRoleMembershipCreateManyInput[]>();
+      for (const it of rows) {
+        const list = byUser.get(it.userId) || [];
+        list.push(it);
+        byUser.set(it.userId, list);
+      }
+      if (AUDIT_DEBUG) this.logger.debug(`[ASSIGNMENTS] audit groups=${byUser.size}`);
+
+      await Promise.all(
+        Array.from(byUser.entries()).map(([userId, items]) =>
+          this.audit.logAssignment({
+            action: AuditAction.AssignAdded,
+            targetUserId: userId,
+            actorUserId,              // real UUID or null → service will default safely
+            actorName,
+            role: items[0].role as any,
+            scopeType: items[0].scopeType as any,
+            projectId: items[0].projectId ?? null,
+            companyId: items[0].companyId ?? null,
+            before: null,
+            after: items.map(it => ({
+              role: it.role,
+              scopeType: it.scopeType,
+              companyId: it.companyId ?? null,
+              projectId: it.projectId ?? null,
+              validFrom: it.validFrom ?? null,
+              validTo: it.validTo ?? null,
+              isDefault: !!it.isDefault,
+            })) as any,
+            ip: req?.ip,
+            userAgent: req?.headers?.['user-agent'],
+          })
+        )
+      );
+    } catch (e: any) {
+      this.logger.warn(`[ASSIGNMENTS] bulk audit failed: ${e?.message || e}`);
+      // swallow so UX isn’t blocked
+    }
+
     return { ok: true, created: result.count };
   }
 
   // ===== PATCH: update only dates (IST rules) =====
   @Patch(':id')
   async updateDates(
+    @Req() req: any,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: { validFrom?: string | null; validTo?: string | null }
   ) {
-    if (!body || (!('validFrom' in body) && !('validTo' in body))) {
+    this.logger.log(`[ASSIGNMENTS] updateDates id=${id} body=${JSON.stringify(body)}`);
+
+    if (body == null || (!('validFrom' in body) && !('validTo' in body))) {
       throw new HttpException('Provide validFrom and/or validTo', HttpStatus.BAD_REQUEST);
     }
 
@@ -123,7 +254,6 @@ export class AdminAssignmentsController {
       throw new HttpException('validTo must be on/after validFrom', HttpStatus.BAD_REQUEST);
     }
 
-    // Non-nullable columns: only set when Dates exist (no nulls/undefined).
     const data: Prisma.UserRoleMembershipUpdateInput = {
       ...(vFrom ? { validFrom: vFrom } : {}),
       ...(vTo   ? { validTo:   vTo   } : {}),
@@ -134,12 +264,80 @@ export class AdminAssignmentsController {
     }
 
     try {
+      const before = await this.prisma.userRoleMembership.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          userId: true,
+          role: true,
+          scopeType: true,
+          companyId: true,
+          projectId: true,
+          isDefault: true,
+          validFrom: true,
+          validTo: true,
+        },
+      });
+
+      if (!before) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+
       const updated = await this.prisma.userRoleMembership.update({
         where: { id },
         data,
       });
+
+      if (AUDIT_DEBUG) {
+        const actorUserId = await resolveActorUserId(this.prisma, req);
+        this.logger.debug(
+          `[ASSIGNMENTS] actor snapshot: ${JSON.stringify({
+            fromReq: req?.user,
+            resolvedActorUserId: actorUserId,
+          })}`,
+        );
+      }
+
+      this.logger.debug(`[ASSIGNMENTS] update OK membershipId=${updated.id}`);
+
+      try {
+        if (await this.audit.isAssignmentsEnabled()) {
+          const actor = req?.user || {};
+          const actorName =
+            [actor.firstName, actor.middleName, actor.lastName].filter(Boolean).join(' ').trim() || 'User';
+          const actorUserId = await resolveActorUserId(this.prisma, req); // <-- use internal UUID
+          if (AUDIT_DEBUG) this.logger.debug(`[ASSIGNMENTS] calling audit for membershipId=${updated.id}`);
+
+          await this.audit.logAssignment({
+            action: AuditAction.AssignReplaced,
+            targetUserId: before.userId,
+            actorUserId,
+            actorName,
+            role: before.role as any,
+            scopeType: before.scopeType as any,
+            companyId: before.companyId ?? null,
+            projectId: before.projectId ?? null,
+            before: before as any,
+            after: {
+              id: updated.id,
+              userId: updated.userId,
+              role: updated.role,
+              scopeType: updated.scopeType,
+              companyId: updated.companyId,
+              projectId: updated.projectId,
+              isDefault: updated.isDefault,
+              validFrom: updated.validFrom,
+              validTo: updated.validTo,
+            } as any,
+            ip: req?.ip,
+            userAgent: req?.headers?.['user-agent'],
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`[ASSIGNMENTS] update audit failed: ${e?.message || e}`);
+      }
+
       return { ok: true, id: updated.id, validFrom: updated.validFrom, validTo: updated.validTo };
     } catch (e: any) {
+      if (e?.status === HttpStatus.NOT_FOUND) throw e;
       if (e?.code === 'P2025') throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
       throw new HttpException('Failed to update assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }

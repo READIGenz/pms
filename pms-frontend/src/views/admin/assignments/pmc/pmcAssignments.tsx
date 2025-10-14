@@ -1,4 +1,4 @@
-// src/views/admin/assignments/pms/pmcsAssignments.tsx
+// src/views/admin/assignments/pmc/pmcAssignments.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
@@ -102,6 +102,15 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   if (to && today > to) return "Expired";
   return "Valid";
 }
+function pmcCompanyId(u: UserLite): string | null {
+  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  const m = mems.find(
+    (m) =>
+      String(m?.role || "").toLowerCase() === "pmc" &&
+      m?.company?.companyId
+  );
+  return (m?.company?.companyId as string) || null;
+}
 
 const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
   <div className="mb-3">
@@ -110,7 +119,7 @@ const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) =
   </div>
 );
 
-export default function PMCsAssignments() {
+export default function pmcAssignments() {
   const nav = useNavigate();
 
   // --- Auth gate ---
@@ -154,8 +163,8 @@ export default function PMCsAssignments() {
     return () => { alive = false; };
   }, [selectedProjectId]);
 
-  // Tile 3 (browse role users) — using /admin/users for now
-  // If your BE exposes specific tables, swap to role-specific endpoints later.
+  // Tile 3 (browse role users) — using /admin/users
+  // If BE exposes specific tables, swap to role-specific endpoints later.
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
@@ -179,7 +188,7 @@ export default function PMCsAssignments() {
     for (const u of allUsers) {
       const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
       for (const m of mems) {
-        // Only include companies where the membership role is PMC
+        // Only include companies where the membership role is pmc
         if (String(m?.role || "").toLowerCase() !== "pmc") continue;
         const name = (m?.company?.name || "").trim();
         if (name) set.add(name);
@@ -268,7 +277,7 @@ export default function PMCsAssignments() {
     action: string;
     code: string;
     name: string;
-    company: string;   // <-- NEW column
+    company: string;
     projects: string;
     mobile: string;
     email: string;
@@ -420,7 +429,7 @@ export default function PMCsAssignments() {
       role: "PMC",
       scopeType: "Project",
       projectId: selectedProjectId,
-      companyId: null,
+      companyId: pmcCompanyId(u),
       validFrom,
       validTo,
       isDefault: false,
@@ -430,7 +439,7 @@ export default function PMCsAssignments() {
       setAssignLoading(true);
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(`Assigned ${data?.created ?? items.length} pmc(s) to "${projectTitle}".`);
+      alert(`Assigned ${data?.created ?? items.length} PMC(s) to "${projectTitle}".`);
 
       setSelectedIds(new Set());
       setMovedIds(new Set());
@@ -525,8 +534,8 @@ export default function PMCsAssignments() {
           userName: displayName(u) || "(No name)",
           projectId: pj.projectId,
           projectTitle: pj.title,
-          company: companiesLabel(u),      // <-- ADD
-          projects: projectsLabel(u),      // <-- ADD
+          company: m?.company?.name || "",     // <- per membership
+          projects: pj.title,                  // <- single project for this membership
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
@@ -536,6 +545,7 @@ export default function PMCsAssignments() {
           _user: u,
           _mem: m,
         });
+
       }
     }
     return rows;
@@ -572,14 +582,41 @@ export default function PMCsAssignments() {
   const [editRow, setEditRow] = useState<AssignmentRow | null>(null);
   const [editFrom, setEditFrom] = useState<string>("");
   const [editTo, setEditTo] = useState<string>("");
+  const [origFrom, setOrigFrom] = useState<string>("");
+  const [origTo, setOrigTo] = useState<string>("");
+  const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
 
   const openView = (row: AssignmentRow) => { setViewRow(row); setViewOpen(true); };
   const openEdit = (row: AssignmentRow) => {
     setEditRow(row);
-    setEditFrom(fmtLocalDateOnly(row.validFrom) || todayLocalISO());
-    setEditTo(fmtLocalDateOnly(row.validTo) || addDaysISO(todayLocalISO(), 1));
+
+    const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
+    const currentTo = fmtLocalDateOnly(row.validTo) || "";
+
+    // keep existing behavior for initial values
+    setEditFrom(currentFrom || todayLocalISO());
+    setEditTo(currentTo || addDaysISO(todayLocalISO(), 1));
+
+    // remember the original valid-from (used for validation/min attribute)
+    setOrigFrom(currentFrom);
+    setOrigTo(currentTo);
+
     setEditOpen(true);
   };
+
+  useEffect(() => {
+    if (!editOpen && pendingEditAlert) {
+      const msg = pendingEditAlert;
+      setPendingEditAlert(null); // prevent re-firing
+
+      // Wait for the next paint (twice to be extra sure), THEN alert.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          alert(msg);
+        });
+      });
+    }
+  }, [editOpen, pendingEditAlert]);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -613,7 +650,7 @@ export default function PMCsAssignments() {
 
       {/* Tile 2 — Roles & Options (PMC) */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Roles & Options" data-tile-name="Roles & Options">
-        <TileHeader title="Tile 2 — Roles & Options" subtitle="Pick from moved PMCs & set validity." />
+        <TileHeader title="Tile 2 — Roles & Options" subtitle="Pick from moved PMC & set validity." />
 
         <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* moved list */}
@@ -714,7 +751,7 @@ export default function PMCsAssignments() {
                 className={"px-4 py-2 rounded text-white " + (canSubmit ? "bg-emerald-600 hover:bg-emerald-700" : "bg-emerald-600/50 cursor-not-allowed")}
                 onClick={onAssign}
                 disabled={!canSubmit}
-                title={canSubmit ? "Assign selected PMCs to project" : "Select all required fields"}
+                title={canSubmit ? "Assign selected PMC to project" : "Select all required fields"}
               >
                 {assignLoading ? "Assigning…" : "Assign"}
               </button>
@@ -859,7 +896,7 @@ export default function PMCsAssignments() {
             {usersLoading ? (
               <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Loading PMCs…</div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMSs match the selected criteria.</div>
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMCs match the selected criteria.</div>
             ) : (
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
@@ -868,8 +905,8 @@ export default function PMCsAssignments() {
                       { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
-                      { key: "company", label: "Company" }, // <-- NEW header
-                      { key: "projects", label: "Projects" },
+                      { key: "company", label: "Company" },
+                      { key: "projects", label: "Project" },
                       { key: "mobile", label: "Mobile" },
                       { key: "email", label: "Email" },
                       { key: "state", label: "State" },
@@ -906,7 +943,7 @@ export default function PMCsAssignments() {
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                         <button
                           className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
-                          title="Move this pmc to selection"
+                          title="Move this PMCs to selection"
                           onClick={() => onMoveToTile2(r._raw!)}
                         >
                           Move
@@ -934,7 +971,7 @@ export default function PMCsAssignments() {
           {/* Pagination */}
           <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
             <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b> pmcs
+              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b> PMCs
               {stateFilter ? <> · State: <b>{stateFilter}</b></> : null}
               {districtFilter ? <> · District: <b>{districtFilter}</b></> : null}
               {statusFilter !== "all" ? <> · Status: <b>{statusFilter}</b></> : null}
@@ -955,14 +992,14 @@ export default function PMCsAssignments() {
         </div>
       </section>
 
-      {/* Tile 4 — PMC Assignments */}
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4" aria-label="Tile: PMC Assignments" data-tile-name="PMC Assignments">
-        <TileHeader title="Tile 4 — PMC Assignments" subtitle="All PMCs who have been assigned to projects." />
+      {/* Tile 4 — PMCs Assignments */}
+      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4" aria-label="Tile: PMCs Assignments" data-tile-name="PMCs Assignments">
+        <TileHeader title="Tile 4 — PMCs Assignments" subtitle="All PMCs who have been assigned to projects." />
 
         <div className="border rounded-xl dark:border-neutral-800 overflow-hidden">
           <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
             {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMC assignments found.</div>
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No PMCs assignments found.</div>
             ) : (
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
@@ -1044,7 +1081,7 @@ export default function PMCsAssignments() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setViewOpen(false)} />
           <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">PMC Assignment</div>
+            <div className="text-lg font-semibold mb-2 dark:text-white">PMCs Assignment</div>
             <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
               {viewRow.userName} · {viewRow.projectTitle}
             </div>
@@ -1052,7 +1089,7 @@ export default function PMCsAssignments() {
               <table className="min-w-full text-sm">
                 <tbody>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">PMC</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">PMCs</td>
                     <td className="px-3 py-2">{viewRow.userName || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
@@ -1104,7 +1141,7 @@ export default function PMCsAssignments() {
               <table className="min-w-full text-sm">
                 <tbody>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">PMC</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">PMCs</td>
                     <td className="px-3 py-2">{editRow.userName || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
@@ -1125,13 +1162,16 @@ export default function PMCsAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editFrom}
+                  // Allow moving back to today if current valid-from is in the future.
+                  // Never allow past dates.
                   min={todayLocalISO()}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
-                    if (editTo && editTo < v) setEditTo(v);
+                    if (editTo && editTo < v) setEditTo(v); // keep: ensure To >= From
                   }}
                 />
+
               </div>
               <div>
                 <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
@@ -1139,7 +1179,7 @@ export default function PMCsAssignments() {
                   type="date"
                   className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                   value={editTo}
-                  min={editFrom || todayLocalISO()}
+                  min={(editFrom && editFrom > todayLocalISO()) ? editFrom : todayLocalISO()} // <- at least today; also respect From
                   onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
@@ -1154,14 +1194,50 @@ export default function PMCsAssignments() {
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) { alert("Both Valid From and Valid To are required."); return; }
-                  if (editFrom < today) { alert("Valid From cannot be before today."); return; }
+
+                  // New rule: valid-to must be at least today
+                  if (editTo < today) {
+                    alert("Valid To cannot be before today.");
+                    return;
+                  }
+                  // if (editFrom < today) { alert("Valid From cannot be before today."); return; }
                   if (editTo < editFrom) { alert("Valid To must be on or after Valid From."); return; }
                   if (!editRow?.membershipId) { alert("Cannot update: missing membership id."); return; }
                   try {
-                    await api.patch(`/admin/assignments/${editRow.membershipId}`, { validFrom: editFrom, validTo: editTo });
+                    // Prefer the company on the membership; fall back to user's PMC company
+                    const companyId =
+                      editRow?._mem?.company?.companyId ||
+                      (editRow?._user ? pmcCompanyId(editRow._user) : null);
+                    // Only include validFrom if it actually changed
+                    const payload: any = {
+                      validTo: editTo,
+                      scopeType: "Project",
+                      projectId: editRow.projectId,
+                      ...(companyId ? { companyId } : {}),
+                    };
+                    if (!origFrom || editFrom !== origFrom) {
+                      payload.validFrom = editFrom;
+                    }
+                    await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
+                    // Build success message (but don't alert yet)
+                    const successMsg = [
+                      `Updated validity`,
+                      ``,
+                      `Project: ${editRow.projectTitle}`,
+                      `PMC: ${editRow.userName}`,
+                      ``,
+                      `Valid From: ${origFrom || "—"} → ${editFrom}`,
+                      `Valid To:   ${origTo || "—"} → ${editTo}`,
+                    ].join("\n");
+                    // Refresh data first so table reflects changes
                     const { data: fresh } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
                     setAllUsers(Array.isArray(fresh) ? fresh : (fresh?.users ?? []));
+
+                    // Close the modal
                     setEditOpen(false);
+                    setEditRow(null); // optional, helps ensure full unmount before alert
+                    // Queue the alert to show after modal unmounts
+                    setPendingEditAlert(successMsg);
                   } catch (e: any) {
                     const msg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Update failed.";
                     alert(msg);

@@ -1,3 +1,4 @@
+//src/views/admin/assignments/Assignments.tsx
 import { lazy, Suspense } from "react";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 

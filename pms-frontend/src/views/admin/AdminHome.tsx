@@ -2,10 +2,23 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation, Navigate, NavLink } from 'react-router-dom';
 
+function decodeJwtPayload(token: string): any | null {
+  try {
+    const [_, b64] = token.split(".");
+    if (!b64) return null;
+    const norm = b64.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = norm.length % 4 ? "=".repeat(4 - (norm.length % 4)) : "";
+    return JSON.parse(atob(norm + pad));
+  } catch { return null; }
+}
+
 export default function AdminHome() {
   // client-side guard
   const token = localStorage.getItem('token');
   const loc = useLocation();
+const payload = token ? decodeJwtPayload(token) : null;
+const isSuperAdmin = !!payload?.isSuperAdmin;
+
 
   useEffect(() => {
     document.title = 'Trinity PMS — Admin';
@@ -91,6 +104,8 @@ export default function AdminHome() {
                 <SideLink to="ref/activitylib" label="Activity Library" />
                 <SideLink to="ref/materiallib" label="Material Library" />
                 <SideLink to="ref/checklistlib" label="Checklist Library" />
+                {isSuperAdmin && <SideLink to="audit" label="Audit" />}
+
               </div>
             </div>
           </aside>

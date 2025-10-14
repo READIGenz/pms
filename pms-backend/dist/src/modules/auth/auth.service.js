@@ -8,16 +8,20 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 // pms-backend/src/modules/auth/auth.service.ts
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const prisma_service_1 = require("../../prisma/prisma.service"); // adjust path as needed
-let AuthService = class AuthService {
+let AuthService = AuthService_1 = class AuthService {
     constructor(prisma, jwt) {
         this.prisma = prisma;
         this.jwt = jwt;
+        this.logger = new common_1.Logger(AuthService_1.name);
+        this.debug = String(process.env.AUTH_DEBUG || '').toLowerCase() === '1'
+            || String(process.env.AUTH_DEBUG || '').toLowerCase() === 'true';
     }
     async exists(login, verbose = false) {
         const user = await this.findByLogin(login);
@@ -62,30 +66,50 @@ let AuthService = class AuthService {
         const user = await this.prisma.user.findUnique({
             where: { userId },
             select: {
-                userId: true, firstName: true, lastName: true,
-                email: true, phone: true, countryCode: true,
-                userStatus: true, isSuperAdmin: true,
+                userId: true,
+                firstName: true,
+                middleName: true, // <-- added so we can build full name in token
+                lastName: true,
+                email: true,
+                phone: true,
+                countryCode: true,
+                userStatus: true,
+                isSuperAdmin: true,
             },
         });
         if (!user)
             throw new common_1.UnauthorizedException('User not found');
         // Final token for the chosen role
+        const fullName = this.fullName(user);
         const jwtPayload = {
             sub: user.userId,
+            userId: user.userId,
+            name: fullName,
+            email: user.email ?? null,
             isSuperAdmin: !!user.isSuperAdmin,
-            role: m.role, // e.g. "Client", "IH-PMT"…
-            scopeType: m.scopeType, // Global | Company | Project
+            role: m.role,
+            scopeType: m.scopeType,
             companyId: m.companyId ?? null,
             projectId: m.projectId ?? null,
         };
+        // DEBUG (guarded): payload we’re about to sign
+        if (this.debug) {
+            this.logger.debug(`[AUTH] assumeRole: signing JWT payload -> sub=${jwtPayload.sub} userId=${jwtPayload.userId} name="${jwtPayload.name}" ` +
+                `isSuperAdmin=${jwtPayload.isSuperAdmin} role=${jwtPayload.role} scopeType=${jwtPayload.scopeType} ` +
+                `companyId=${jwtPayload.companyId ?? 'null'} projectId=${jwtPayload.projectId ?? 'null'}`);
+        }
         const token = await this.signJwt(jwtPayload, { expiresIn: '2h' });
+        // DEBUG (guarded): token length only (don’t log full token)
+        if (this.debug) {
+            this.logger.debug(`[AUTH] assumeRole: signed JWT length=${token.length}`);
+        }
         return {
             ok: true,
             token,
             jwt: jwtPayload,
             user: {
                 userId: user.userId,
-                name: this.fullName(user),
+                name: fullName,
                 email: user.email,
                 phone: user.phone,
                 countryCode: user.countryCode,
@@ -146,7 +170,7 @@ let AuthService = class AuthService {
     }
 };
 exports.AuthService = AuthService;
-exports.AuthService = AuthService = __decorate([
+exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         jwt_1.JwtService])

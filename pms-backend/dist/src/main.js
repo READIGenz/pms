@@ -1,14 +1,38 @@
 "use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.JwtAuthGuard = void 0;
 // src/main.ts
+const common_1 = require("@nestjs/common");
+const passport_1 = require("@nestjs/passport");
+let JwtAuthGuard = class JwtAuthGuard extends (0, passport_1.AuthGuard)('jwt') {
+};
+exports.JwtAuthGuard = JwtAuthGuard;
+exports.JwtAuthGuard = JwtAuthGuard = __decorate([
+    (0, common_1.Injectable)()
+], JwtAuthGuard);
 require("dotenv/config");
 const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
-const common_1 = require("@nestjs/common");
+const common_2 = require("@nestjs/common");
 const path_1 = require("path");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule, { cors: true });
-    app.useGlobalPipes(new common_1.ValidationPipe({
+    // Allow overriding Nest logger levels via env:
+    // e.g. LOG_LEVELS=log,warn,error,debug  (leave empty to keep Nest default)
+    const rawLevels = String(process.env.LOG_LEVELS || '').trim();
+    const parsedLevels = rawLevels
+        ? rawLevels.split(',').map(s => s.trim()).filter(Boolean)
+        : undefined;
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, {
+        cors: true,
+        logger: parsedLevels, // undefined preserves Nest's default behavior
+    });
+    app.useGlobalPipes(new common_2.ValidationPipe({
         whitelist: true, // strips unknown fields (keep DTOs exact)
         forbidNonWhitelisted: false,
         transform: true,

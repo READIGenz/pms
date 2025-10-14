@@ -1,13 +1,32 @@
 // src/main.ts
+import { Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') {}
+
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, LogLevel } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { cors: true });
+  // Allow overriding Nest logger levels via env:
+  // e.g. LOG_LEVELS=log,warn,error,debug  (leave empty to keep Nest default)
+  const rawLevels = String(process.env.LOG_LEVELS || '').trim();
+  const parsedLevels = rawLevels
+    ? (rawLevels.split(',').map(s => s.trim()).filter(Boolean) as LogLevel[])
+    : undefined;
+
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule,
+    {
+      cors: true,
+      logger: parsedLevels, // undefined preserves Nest's default behavior
+    },
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({
