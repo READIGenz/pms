@@ -15,7 +15,13 @@ type DenyValue = 'inherit' | 'deny';
 // Deny-only (partial by design)
 type UserOverrideMatrix = Partial<Record<ModuleCode, Partial<Record<Actions, DenyValue>>>>;
 
-type ProjectLite = { projectId: string; title: string };
+type ProjectLite = {
+  projectId: string;
+  title: string;
+  code?: string | null;
+  distt?: string | null;
+  type?: string | null;
+};
 
 // Augmented user to carry code & role for the dropdown label
 type UserLite = { userId: string; name: string; code?: string | null; role?: string | null };
@@ -110,6 +116,9 @@ export default function AdminPermUserOverrides() {
         const pList: ProjectLite[] = (pArr ?? []).map((p: any) => ({
           projectId: p.projectId ?? p.id,
           title: p.title ?? p.name ?? 'Untitled',
+          code: p.code ?? p.projectCode ?? null,
+          distt: p.distt ?? p.district ?? null,
+          type: p.type ?? p.projectType ?? null,
         })).filter((p: ProjectLite) => p.projectId && p.title);
         setProjects(pList);
         if (pList.length) setProjectId(prev => prev || pList[0].projectId);
@@ -306,11 +315,20 @@ export default function AdminPermUserOverrides() {
               disabled={!projects.length}
             >
               {!projects.length && <option value="">No projects</option>}
-              {projects.map((p) => (
-                <option key={p.projectId} value={p.projectId}>
-                  {p.title}
-                </option>
-              ))}
+              {projects.map((p) => {
+                const tip = [
+                  p.code ? `Code: ${p.code}` : null,
+                  `Title: ${p.title}`,
+                  `Distt: ${p.distt ?? '-'}`,
+                  `Type: ${p.type ?? '-'}`,
+                ].filter(Boolean).join(' | ');
+
+                return (
+                  <option key={p.projectId} value={p.projectId} title={tip}>
+                    {p.title}
+                  </option>
+                );
+              })}
             </select>
             {/* Role filter */}
             <select
