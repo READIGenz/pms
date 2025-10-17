@@ -1,4 +1,4 @@
-// src/views/admin/permissions/AdminPermTempProjectOverrides.tsx
+// src/views/admin/permissions/AdminPermProjectOverrides.tsx
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,20 +10,72 @@ import {
   resetProjectOverride,
 } from '../../../api/adminPermissions';
 
-const MODULES = ['WIR','MIR','CS','DPR','MIP','DS','RFC','OBS','DLP','LTR','FDB','MAITRI','DASHBOARD'] as const;
-const ACTIONS = ['view','raise','review','approve','close'] as const;
+const MODULES = ['WIR', 'MIR', 'CS', 'DPR', 'MIP', 'DS', 'RFC', 'OBS', 'DLP', 'LTR', 'FDB', 'MAITRI', 'DASHBOARD'] as const;
+type ModuleKey = typeof MODULES[number];
+
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  WIR: "WIR (Work Inspection Request)",
+  MIR: "MIR (Material Inspection Request)",
+  CS: "CS (Contractor's Submittal)",
+  DPR: "DPR (Daily Progress Report)",
+  MIP: "MIP (Implementation Plan)",
+  DS: "DS (Design Submittal)",
+  RFC: "RFC (Request For Clarification)",
+  OBS: "OBS (Site Observation and NCR/CAR)",
+  DLP: "DLP",
+  LTR: "LTR (Letter)",
+  FDB: "FDB (Feedback)",
+  MAITRI: "MAITRI",
+  DASHBOARD: "DASHBOARD",
+} as const;
+
+const ACTIONS = ['view', 'raise', 'review', 'approve', 'close'] as const;
 
 // Match your reference: title-case + "IH-PMT"
-const ROLE_OPTIONS: RoleKey[] = ['Client','IH-PMT','Contractor','Consultant','PMC','Supplier'];
+const ROLE_OPTIONS: RoleKey[] = ['Client', 'IH-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier'];
 
-const emptyRow = () => ({ view:false, raise:false, review:false, approve:false, close:false });
+const emptyRow = () => ({ view: false, raise: false, review: false, approve: false, close: false });
 const emptyMatrix = () =>
   Object.fromEntries(MODULES.map(m => [m, { ...emptyRow() }])) as Matrix;
+
+/** ---------- NEW: normalize & exported fetcher for user-inherit use ---------- **/
+
+/** Fill missing modules/actions with false and enforce LTR rule. */
+function normalizeMatrix(raw?: Partial<Matrix> | null): Matrix {
+  const base = emptyMatrix();
+  if (!raw) return base;
+
+  for (const mod of MODULES) {
+    const src = (raw as any)?.[mod] ?? {};
+    for (const act of ACTIONS) {
+      base[mod][act] = !!src[act];
+    }
+  }
+  // Enforce LTR rule
+  base.LTR.review = false;
+  base.LTR.approve = false;
+  return base;
+}
+
+/**
+ * Exported helper: fetch the role’s *project-level* matrix, normalized.
+ * User Overrides screen can import this to compute “inherit” (i.e., the base allow matrix).
+ */
+export async function getRoleBaseMatrix(projectId: string, role: RoleKey): Promise<Matrix> {
+  try {
+    const mat = await getProjectOverride(projectId, role);
+    return normalizeMatrix(mat);
+  } catch {
+    return normalizeMatrix(null);
+  }
+}
+
+/** -------------------------------------------------------------------------- **/
 
 export default function AdminPermProjectOverrides() {
   const navigate = useNavigate();
 
-  const [projects, setProjects] = useState<{projectId:string; title:string}[]>([]);
+  const [projects, setProjects] = useState<{ projectId: string; title: string }[]>([]);
   const [projectId, setProjectId] = useState<string>('');
   const [role, setRole] = useState<RoleKey>('Client');
 
@@ -52,13 +104,13 @@ export default function AdminPermProjectOverrides() {
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
-    getProjectOverride(projectId, role)
-      .then((mat) => setMatrix(mat ?? emptyMatrix()))
-      .catch(() => setMatrix(emptyMatrix()))
+    // use the helper internally too (no behavior change, just normalized)
+    getRoleBaseMatrix(projectId, role)
+      .then((mat) => setMatrix(mat))
       .finally(() => setLoading(false));
   }, [projectId, role]);
 
-  const toggle = (mod: typeof MODULES[number], action: typeof ACTIONS[number]) => {
+  const toggle = (mod: ModuleKey, action: typeof ACTIONS[number]) => {
     setMatrix(prev => {
       const next = structuredClone(prev);
       if (mod === 'LTR' && (action === 'review' || action === 'approve')) {
@@ -80,7 +132,7 @@ export default function AdminPermProjectOverrides() {
       m.LTR.review = false; m.LTR.approve = false;
       await saveProjectOverride(projectId, role, m);
       setToast('Override saved.');
-    } catch (e:any) {
+    } catch (e: any) {
       setToast(`Save failed: ${e.message ?? e}`);
     } finally {
       setSaving(false);
@@ -96,7 +148,7 @@ export default function AdminPermProjectOverrides() {
       m.LTR.review = false; m.LTR.approve = false;
       setMatrix(m);
       setToast('Reset to role template.');
-    } catch (e:any) {
+    } catch (e: any) {
       setToast(`Reset failed: ${e.message ?? e}`);
     } finally {
       setSaving(false);
@@ -123,7 +175,7 @@ export default function AdminPermProjectOverrides() {
           <select
             className="border rounded-xl px-3 py-2"
             value={projectId}
-            onChange={(e)=>setProjectId(e.target.value)}
+            onChange={(e) => setProjectId(e.target.value)}
             aria-label="Select Project"
             disabled={!projects.length}
           >
@@ -134,7 +186,7 @@ export default function AdminPermProjectOverrides() {
           <select
             className="border rounded-xl px-3 py-2"
             value={role}
-            onChange={(e)=>setRole(e.target.value as RoleKey)}
+            onChange={(e) => setRole(e.target.value as RoleKey)}
             aria-label="Select Role"
             disabled={!projects.length}
           >
@@ -179,14 +231,14 @@ export default function AdminPermProjectOverrides() {
               <tbody>
                 {MODULES.map((m) => (
                   <tr key={m} className="border-t">
-                    <td className="px-4 py-3 font-medium">{m}</td>
+                    <td className="px-4 py-3 font-medium">{MODULE_LABELS[m]}</td>
                     {ACTIONS.map(a => (
                       <td key={a} className="px-3 py-3 text-center">
                         <input
                           type="checkbox"
                           checked={!!matrix?.[m]?.[a]}
                           onChange={() => toggle(m, a)}
-                          aria-label={`${m} ${a}`}
+                          aria-label={`${MODULE_LABELS[m]} ${a}`}
                           disabled={!projectId}
                         />
                       </td>

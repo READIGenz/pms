@@ -10,13 +10,14 @@ type ProjectOpt = { projectId: string; title: string; code?: string | null };
 type CompanyOpt = {
   companyId: string;
   name: string;
-  companyRole?: "Ava_PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
+  companyRole?: "IH_PMT" | "IH-PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
 };
 
 /** Enums from prisma schema */
-const preferredLanguages = ["en","hi","bn","ta","te","mr","pa","or","gu","kn","ml"] as const;
-const zones = ["NCR","North","South","East","West","Central"] as const;
-const statuses = ["Active","Inactive"] as const;
+const preferredLanguages = ["en", "hi", "bn", "ta", "te", "mr", "pa", "or", "gu", "kn", "ml"] as const;
+const zones = ["NCR", "North", "South", "East", "West", "Central"] as const;
+const statuses = ["Active", "Inactive"] as const;
+const companyRoles = ["IH_PMT", "Contractor", "Consultant", "PMC", "Supplier"] as const;
 
 export default function UserCreate() {
   const nav = useNavigate();
@@ -54,7 +55,7 @@ export default function UserCreate() {
   const [isServiceProvider, setIsServiceProvider] = useState<boolean>(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
 
-   // ---------- Admin Privileges (visible to Super Admin only) ----------
+  // ---------- Admin Privileges (visible to Super Admin only) ----------
   const [makeSuperAdmin, setMakeSuperAdmin] = useState<boolean>(false);
   const [makeGlobalAdmin, setMakeGlobalAdmin] = useState<boolean>(false);
 
@@ -63,7 +64,18 @@ export default function UserCreate() {
   const [districts, setDistricts] = useState<DistrictOpt[]>([]);
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
-
+  const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
+  // compute the filtered list based on dropdown selection
+  const filteredCompanies = useMemo(() => {
+    // normalize underscores/hyphens/case and accept server's "IH-PMT"
+    const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
+    const filter = companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
+    const f = normalize(filter || "");
+    return companies.filter(c => {
+      if (!f) return true; // no filter -> show all
+      return normalize(String(c.companyRole ?? "")) === f;
+    });
+  }, [companies, companyRoleFilter]);
   // ---------- UI ----------
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -121,15 +133,15 @@ export default function UserCreate() {
     firstName.trim().length > 0 &&
     phoneClean.length >= 10; // basic India mobile check (10 digits)
 
-  const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-    setSelectedCompanyIds(values);
-  };
+  // const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+  //   setSelectedCompanyIds(values);
+  // };
 
-  const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-    setSelectedProjectIds(values);
-  };
+  // const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+  //   setSelectedProjectIds(values);
+  // };
 
   const submit = async () => {
     setErr(null);
@@ -164,7 +176,7 @@ export default function UserCreate() {
         // flags (top-level convenience):
         isClient,
         isServiceProvider,
-          ...(canGrantAdmin && makeSuperAdmin ? { isSuperAdmin: true as const } : {}),
+        ...(canGrantAdmin && makeSuperAdmin ? { isSuperAdmin: true as const } : {}),
 
       };
 
@@ -205,7 +217,7 @@ export default function UserCreate() {
         console.warn("Affiliations save failed:", e?.response?.data || e);
       }
 
-          // 4) Grant Global Admin role if toggled (super admin only)
+      // 4) Grant Global Admin role if toggled (super admin only)
       if (canGrantAdmin && makeGlobalAdmin) {
         try {
           await api.post(`/admin/users/${userId}/roles`, {
@@ -267,7 +279,7 @@ export default function UserCreate() {
             <Text label="Email (optional)" type="email" value={email} setValue={setEmail} />
 
             <div className="grid grid-cols-[5rem,1fr] gap-2">
-              <Text label="Code" value="+91" setValue={() => {}} disabled />
+              <Text label="Code" value="+91" setValue={() => { }} disabled />
               <Text
                 label="Mobile (India)"
                 value={phone}
@@ -348,24 +360,19 @@ export default function UserCreate() {
           </div>
         </Section>
 
+
         {/* ========== Affiliations Block ========== */}
         <Section title="Affiliations">
-          <div className="space-y-5">
+          <div className="space-y-6">
             {/* Client Projects */}
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">Are you Client for any Project?</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Are you Client for any Project?
+                </span>
                 <ToggleYN value={isClient} setValue={setIsClient} />
               </div>
-              <div className="mt-2">
-                <MultiSelect
-                  label="Select Project(s)"
-                  disabled={!isClient}
-                  value={selectedProjectIds}
-                  onChange={onPickProjects}
-                  options={projects.map(p => ({ value: p.projectId, label: p.code ? `${p.title} (${p.code})` : p.title }))}
-                />
-              </div>
+              {/* Project selection intentionally hidden */}
             </div>
 
             {/* Service Partner Companies */}
@@ -376,19 +383,48 @@ export default function UserCreate() {
                 </span>
                 <ToggleYN value={isServiceProvider} setValue={setIsServiceProvider} />
               </div>
-              <div className="mt-2">
-                <MultiSelect
-                  label="Select Company(ies)"
-                  disabled={!isServiceProvider}
-                  value={selectedCompanyIds}
-                  onChange={onPickCompanies}
-                  // show role in label for clarity
-                  options={companies.map(c => ({
-                    value: c.companyId,
-                    label: c.companyRole ? `${c.name} — ${c.companyRole}` : c.name,
-                  }))}
-                />
-              </div>
+
+              {/* Show company choices only when isServiceProvider = true */}
+              {isServiceProvider && (
+                <div className="mt-3 space-y-3">
+                  <div className="max-w-xs">
+                    <Select
+                      label="Filter by Role"
+                      value={companyRoleFilter}
+                      setValue={setCompanyRoleFilter}
+                      options={[
+                        "",
+                        { value: "IH_PMT", label: "IH-PMT" },
+                        { value: "Contractor", label: "Contractor" },
+                        { value: "Consultant", label: "Consultant" },
+                        { value: "PMC", label: "PMC" },
+                        { value: "Supplier", label: "Supplier" },
+                      ]}
+                    />
+                  </div>
+
+                  <CheckboxGroup
+                    label={
+                      companyRoleFilter
+                        ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter}`
+                        : "Select Company(ies)"
+                    }
+                    items={filteredCompanies.map((c) => ({
+                      value: c.companyId,
+                      label: c.companyRole ? `${c.name}` : c.name,
+                    }))}
+                    selected={selectedCompanyIds}
+                    setSelected={setSelectedCompanyIds}
+                  />
+
+                  {filteredCompanies.length === 0 && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      No companies match the selected role.
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
         </Section>
@@ -436,6 +472,14 @@ export default function UserCreate() {
 
 /* ------------------------ Small UI helpers ------------------------ */
 
+const roleMatches = (value: string | null | undefined, filter: string) => {
+  if (!filter) return true;
+  // normalize underscores/hyphens/case; also accept server's "IH-PMT"
+  const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
+  const filterApi = filter === "IH_PMT" ? "IH-PMT" : filter;
+  return normalize(String(value ?? "")) === normalize(filterApi);
+};
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-5">
@@ -448,8 +492,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type="text", required=false, placeholder, disabled=false
-}: { label:string; value:string; setValue:(v:string)=>void; type?:string; required?:boolean; placeholder?:string; disabled?:boolean }) {
+  label, value, setValue, type = "text", required = false, placeholder, disabled = false
+}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -457,7 +501,7 @@ function Text({
       </span>
       <input
         className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
         type={type} placeholder={placeholder} disabled={disabled}
       />
     </label>
@@ -466,22 +510,22 @@ function Text({
 
 function TextArea({
   label, value, setValue
-}: { label:string; value:string; setValue:(v:string)=>void }) {
+}: { label: string; value: string; setValue: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1 md:col-span-2">
       <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
       <textarea
         className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled=false
+  label, value, setValue, options, disabled = false
 }: {
-  label:string; value:string; setValue:(v:string)=>void; options: (string | { value: string; label: string })[]; disabled?:boolean
+  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -489,7 +533,7 @@ function Select({
       <select
         className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
         value={value} disabled={disabled}
-        onChange={(e)=>setValue(e.target.value)}
+        onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
@@ -501,35 +545,52 @@ function Select({
   );
 }
 
-function MultiSelect({
-  label, value, onChange, options, disabled=false
+function CheckboxGroup({
+  label,
+  items,
+  selected,
+  setSelected,
 }: {
   label: string;
-  value: string[];
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  options: { value: string; label: string }[];
-  disabled?: boolean;
+  items: { value: string; label: string }[];
+  selected: string[];
+  setSelected: (vals: string[]) => void;
 }) {
+  const toggle = (val: string) => {
+    setSelected(
+      selected.includes(val)
+        ? selected.filter((v) => v !== val)
+        : [...selected, val]
+    );
+  };
+
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-      <select
-        multiple
-        className="border rounded px-2 py-2 min-h-[8rem] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+    <fieldset className="border rounded-2xl p-4 dark:border-neutral-800">
+      <legend className="text-sm text-gray-700 dark:text-gray-300 px-1">
+        {label}
+      </legend>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+        {items.map((it) => (
+          <label
+            key={it.value}
+            className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100"
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={selected.includes(it.value)}
+              onChange={() => toggle(it.value)}
+            />
+            <span>{it.label}</span>
+          </label>
         ))}
-      </select>
-      <span className="text-xs text-gray-600 dark:text-gray-400">
-        Hold Ctrl/Cmd to select multiple.
-      </span>
-    </label>
+      </div>
+      {items.length === 0 && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          No options available.
+        </div>
+      )}
+    </fieldset>
   );
 }
 

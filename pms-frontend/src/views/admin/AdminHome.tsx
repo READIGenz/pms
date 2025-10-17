@@ -95,9 +95,9 @@ const isSuperAdmin = !!payload?.isSuperAdmin;
               </div>
               <div className="flex flex-col gap-1">
                 <SideLink to="." label="Dashboard" end />
+                <SideLink to="companies" label="Companies" />
                 <SideLink to="users" label="Users" />
                 <SideLink to="projects" label="Projects" />
-                <SideLink to="companies" label="Companies" />
                 <SideLink to="assignments" label="Assignments" />
                 <SideLink to="permissions" label="Role Templates and Project Overrides" />
                 <SideLink to="permission-explorer" label="User Permission Explorer" />

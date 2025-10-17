@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Delete,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -342,4 +343,75 @@ export class AdminAssignmentsController {
       throw new HttpException('Failed to update assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  // ===== DELETE: hard remove an assignment =====
+@Delete(':id')
+async remove(
+  @Req() req: any,
+  @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+) {
+  this.logger.log(`[ASSIGNMENTS] remove id=${id}`);
+
+  try {
+    // Load 'before' for audit and to return meaningful 404s
+    const before = await this.prisma.userRoleMembership.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        role: true,
+        scopeType: true,
+        companyId: true,
+        projectId: true,
+        isDefault: true,
+        validFrom: true,
+        validTo: true,
+      },
+    });
+
+    if (!before) {
+      throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+    }
+
+    // Hard delete (if you prefer soft-delete, swap this for an update)
+    await this.prisma.userRoleMembership.delete({ where: { id } });
+
+    // ---- AUDIT ----
+    try {
+      if (await this.audit.isAssignmentsEnabled()) {
+        const actor = req?.user || {};
+        const actorName =
+          [actor.firstName, actor.middleName, actor.lastName].filter(Boolean).join(' ').trim() || 'User';
+        const actorUserId = await resolveActorUserId(this.prisma, req);
+
+        await this.audit.logAssignment({
+          action: AuditAction.AssignRemoved,      // <-- assuming you have this; if not, create it
+          targetUserId: before.userId,
+          actorUserId,
+          actorName,
+          role: before.role as any,
+          scopeType: before.scopeType as any,
+          companyId: before.companyId ?? null,
+          projectId: before.projectId ?? null,
+          before: before as any,
+          after: null,
+          ip: req?.ip,
+          userAgent: req?.headers?.['user-agent'],
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`[ASSIGNMENTS] remove audit failed: ${e?.message || e}`);
+      // don't block delete on audit failure
+    }
+
+    return { ok: true, id };
+  } catch (e: any) {
+    if (e?.status === HttpStatus.NOT_FOUND) throw e;
+    if (e?.code === 'P2025') {
+      // Prisma "Record to delete does not exist"
+      throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+    }
+    throw new HttpException('Failed to remove assignment', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+}
 }

@@ -1,6 +1,9 @@
 // src/admin/permissionsexplorer/AdminPermUserOverrides.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../../api/client';
+import type { RoleKey } from '../../../api/adminPermissions';
+import { getRoleBaseMatrix } from '../permissions/AdminPermProjectOverrides';
+
 
 /* ========================= Local types ========================= */
 type Actions = 'view' | 'raise' | 'review' | 'approve' | 'close';
@@ -18,12 +21,31 @@ type ProjectLite = { projectId: string; title: string };
 type UserLite = { userId: string; name: string; code?: string | null; role?: string | null };
 
 /* ========================= Constants ========================= */
-const MODULES: readonly ModuleCode[] = [
-  'WIR','MIR','CS','DPR','MIP','DS','RFC','OBS','DLP','LTR','FDB','MAITRI','DASHBOARD'
-] as const;
-const ACTIONS: readonly Actions[] = ['view','raise','review','approve','close'] as const;
+const ROLE_OPTIONS: RoleKey[] = ['Client', 'IH-PMT', 'Contractor', 'Consultant', 'PMC', 'Supplier'];
 
-const DENY_OPTIONS: readonly DenyValue[] = ['inherit','deny'] as const;
+const MODULES: readonly ModuleCode[] = [
+  'WIR', 'MIR', 'CS', 'DPR', 'MIP', 'DS', 'RFC', 'OBS', 'DLP', 'LTR', 'FDB', 'MAITRI', 'DASHBOARD'
+] as const;
+type ModuleKey = typeof MODULES[number];
+
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  WIR: "WIR (Work Inspection Request)",
+  MIR: "MIR (Material Inspection Request)",
+  CS: "CS (Contractor's Submittal)",
+  DPR: "DPR (Daily Progress Report)",
+  MIP: "MIP (Implementation Plan)",
+  DS: "DS (Design Submittal)",
+  RFC: "RFC (Request For Clarification)",
+  OBS: "OBS (Site Observation and NCR/CAR)",
+  DLP: "DLP",
+  LTR: "LTR (Letter)",
+  FDB: "FDB (Feedback)",
+  MAITRI: "MAITRI",
+  DASHBOARD: "DASHBOARD",
+} as const;
+
+const ACTIONS: readonly Actions[] = ['view', 'raise', 'review', 'approve', 'close'] as const;
+const DENY_OPTIONS: readonly DenyValue[] = ['inherit', 'deny'] as const;
 
 /* ========================= Helpers ========================= */
 const emptyMatrix = (): UserOverrideMatrix => ({});
@@ -59,9 +81,18 @@ export default function AdminPermUserOverrides() {
 
   const [projectId, setProjectId] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
+  const [roleFilter, setRoleFilter] = useState<RoleKey | 'All'>('All');
 
   // data
   const [matrix, setMatrix] = useState<UserOverrideMatrix>(emptyMatrix());
+
+  // base “inherit” matrix for the selected project + user’s role
+  type AllowMatrix = Record<ModuleKey, Record<typeof ACTIONS[number], boolean>>;
+  const allowEmptyRow = () => ({ view: false, raise: false, review: false, approve: false, close: false });
+  const allowEmptyMatrix = (): AllowMatrix =>
+    Object.fromEntries(MODULES.map(m => [m, { ...allowEmptyRow() }])) as AllowMatrix;
+
+  const [baseAllow, setBaseAllow] = useState<AllowMatrix>(allowEmptyMatrix());
 
   // ui
   const [loading, setLoading] = useState<boolean>(false);
@@ -133,10 +164,22 @@ export default function AdminPermUserOverrides() {
           .filter(u => assignedIds.has(u.userId))
           .map(u => ({ ...u, role: roleByUser[u.userId] ?? u.role ?? null }));
 
-        setAssignedUsers(filtered);
+        // apply the role filter
+        const source: UserLite[] = filtered;
+        const filteredByRole: UserLite[] =
+          roleFilter === 'All'
+            ? source
+            : source.filter((u: UserLite) => {
+              const raw = (u.role ?? '').trim();
+              // normalize IH-PMT ↔ IH_PMT
+              if (roleFilter === 'IH-PMT') return raw === 'IH_PMT';
+              return raw === roleFilter;
+            });
 
-        if (!filtered.find(u => u.userId === userId)) {
-          setUserId(filtered[0]?.userId ?? '');
+        setAssignedUsers(filteredByRole);
+
+        if (!filteredByRole.find(u => u.userId === userId)) {
+          setUserId(filteredByRole[0]?.userId ?? '');
         }
       } catch (e: any) {
         setAssignedUsers([]);
@@ -145,7 +188,7 @@ export default function AdminPermUserOverrides() {
         setTimeout(() => setToast(null), 3000);
       }
     })();
-  }, [projectId, users]);
+  }, [projectId, users, roleFilter]);
 
   /* ------------------------- load current overrides ------------------------ */
   useEffect(() => {
@@ -170,6 +213,33 @@ export default function AdminPermUserOverrides() {
       }
     })();
   }, [projectId, userId]);
+
+  useEffect(() => {
+    // Need project, user, and the user’s ROLE for this project
+    if (!projectId || !userId) { setBaseAllow(allowEmptyMatrix()); return; }
+
+    // Find the selected user’s role from assignedUsers (it was already attached in your earlier effect)
+    const roleRaw = assignedUsers.find(u => u.userId === userId)?.role ?? '';
+    const rolePretty = roleRaw === 'IH_PMT' ? 'IH-PMT' : roleRaw;
+    const roleKey = (rolePretty || 'Client') as RoleKey; // fallback to something safe
+
+    (async () => {
+      try {
+        const mat = await getRoleBaseMatrix(projectId, roleKey);
+        // map Matrix -> AllowMatrix (same shape booleans)
+        const mapped = MODULES.reduce((acc, mod) => {
+          acc[mod] = ACTIONS.reduce((row, act) => {
+            row[act] = !!mat?.[mod]?.[act];
+            return row;
+          }, {} as Record<typeof ACTIONS[number], boolean>);
+          return acc;
+        }, {} as AllowMatrix);
+        setBaseAllow(mapped);
+      } catch {
+        setBaseAllow(allowEmptyMatrix());
+      }
+    })();
+  }, [projectId, userId, assignedUsers]);
 
   /* ------------------------- actions ------------------------- */
   const canSave = useMemo(() => !!projectId && !!userId && !loading && !saving, [projectId, userId, loading, saving]);
@@ -223,49 +293,66 @@ export default function AdminPermUserOverrides() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">Modules & Permissions — User Overrides</h1>
         <div className="flex flex-wrap items-center gap-3">
-          {/* Project selector */}
-          <select
-            className="border rounded-xl px-3 py-2"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            aria-label="Select Project"
-            disabled={!projects.length}
-          >
-            {!projects.length && <option value="">No projects</option>}
-            {projects.map((p) => (
-              <option key={p.projectId} value={p.projectId}>
-                {p.title}
-              </option>
-            ))}
-          </select>
 
-          {/* User selector — ONLY assigned users, label shows <code - full name (role)> */}
-          <select
-            className="border rounded-xl px-3 py-2"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            aria-label="Select User"
-            disabled={!assignedUsers.length}
-          >
-            {!assignedUsers.length && <option value="">No assigned users</option>}
-            {assignedUsers.map((u) => {
-  const code = (u.code ?? '').toString().trim();
-  const name = (u.name ?? '').toString().trim();
 
-  const rawRole = (u.role ?? '').toString().trim();
-  const rolePretty = rawRole === 'IH_PMT' ? 'IH-PMT' : rawRole;  // ← NEW
+          {/* Role + User (stick together) */}
+          <div className="flex items-center gap-2 flex-nowrap">
+            {/* Project selector */}
+            <select
+              className="border rounded-xl px-3 py-2"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              aria-label="Select Project"
+              disabled={!projects.length}
+            >
+              {!projects.length && <option value="">No projects</option>}
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+            {/* Role filter */}
+            <select
+              className="border rounded-xl px-3 py-2"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as RoleKey | 'All')}
+              aria-label="Filter by Role"
+              disabled={!projects.length}
+              title="Filter the users list by role on this project"
+            >
+              <option value="All">All Roles</option>
+              {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
 
-  const left = [code, name].filter(Boolean).join(' - ');
-  const right = rolePretty ? ` (${rolePretty})` : '';
-  const label = `${left}${right}`;
-  return (
-    <option key={u.userId} value={u.userId}>
-      {label}
-    </option>
-  );
-})}
+            {/* User selector — ONLY assigned users, label shows <code - full name (role)> */}
+            <select
+              className="border rounded-xl px-3 py-2"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              aria-label="Select User"
+              disabled={!assignedUsers.length}
+            >
+              {!assignedUsers.length && <option value="">No assigned users</option>}
+              {assignedUsers.map((u) => {
+                const code = (u.code ?? '').toString().trim();
+                const name = (u.name ?? '').toString().trim();
 
-          </select>
+                const rawRole = (u.role ?? '').toString().trim();
+                const rolePretty = rawRole === 'IH_PMT' ? 'IH-PMT' : rawRole;
+
+                const left = [code, name].filter(Boolean).join(' - ');
+                const right = roleFilter === 'All' && rolePretty ? ` (${rolePretty})` : '';
+                const label = `${left}${right}`;
+                return (
+                  <option key={u.userId} value={u.userId}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
 
           {/* Actions */}
           <div className="flex items-center gap-2">
@@ -305,33 +392,53 @@ export default function AdminPermUserOverrides() {
           <tbody>
             {MODULES.map((m) => (
               <tr key={m} className="border-t">
-                <td className="px-4 py-3 font-medium">{m}</td>
+                <td className="px-4 py-3 font-medium">{MODULE_LABELS[m]}</td>
                 {ACTIONS.map((a) => (
                   <td key={a} className="px-3 py-3 text-center">
                     {m === 'LTR' && (a === 'review' || a === 'approve') ? (
                       <span className="text-xs text-gray-400">—</span>
                     ) : (
-                      <div className="inline-flex items-center gap-2">
-                        {DENY_OPTIONS.map((opt) => {
-                          const checked = safeGet(matrix, m, a) === opt;
-                          const id = `${m}-${a}-${opt}`;
-                          return (
-                            <label key={opt} htmlFor={id} className="inline-flex items-center gap-1 cursor-pointer">
-                              <input
-                                id={id}
-                                type="radio"
-                                name={`${m}-${a}`}
-                                value={opt}
-                                checked={checked}
-                                onChange={() => onChangeCell(m, a, opt)}
-                              />
-                              <span className="text-xs capitalize">{opt}</span>
-                            </label>
-                          );
-                        })}
+                      <div className="inline-flex items-center gap-3">
+                        {/* EXISTING RADIO BUTTONS (inherit / deny) */}
+                        <div className="inline-flex items-center gap-2">
+                          {/* Read-only base value for this project/role */}
+                          <span
+                            className={
+                              "text-[10px] rounded px-1.5 py-0.5 border " +
+                              (baseAllow[m][a] ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                : "bg-gray-50 border-gray-200 text-gray-600")
+                            }
+                            title={`Project/Role matrix value: ${baseAllow[m][a] ? 'Yes' : 'No'}`}
+                          >
+                            {baseAllow[m][a] ? 'Yes' : 'No'}
+                          </span>
+
+                          {/* Existing radios (unchanged behavior) */}
+                          {DENY_OPTIONS.map((opt) => {
+                            const checked = safeGet(matrix, m, a) === opt;
+                            const id = `${m}-${a}-${opt}`;
+                            return (
+                              <label key={opt} htmlFor={id} className="inline-flex items-center gap-1 cursor-pointer">
+                                <input
+                                  id={id}
+                                  type="radio"
+                                  name={`${m}-${a}`}
+                                  value={opt}
+                                  checked={checked}
+                                  onChange={() => onChangeCell(m, a, opt)}
+                                  aria-label={`${MODULE_LABELS[m]} ${a} ${opt}`}
+                                />
+                                <span className="text-xs capitalize">{opt}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
                       </div>
                     )}
                   </td>
+
+
                 ))}
               </tr>
             ))}

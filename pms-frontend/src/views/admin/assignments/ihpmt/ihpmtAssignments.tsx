@@ -167,7 +167,8 @@ export default function IhpmtsAssignments() {
           .filter((p: ProjectLite) => p.projectId && p.title);
         if (!alive) return;
         setProjects(minimal);
-        if (minimal.length > 0 && !selectedProjectId) setSelectedProjectId(minimal[0].projectId);
+        // Stop auto-setting first project (remove this line)
+        // if (minimal.length > 0 && !selectedProjectId) setSelectedProjectId(minimal[0].projectId);
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.response?.data?.error || e?.message || "Failed to load projects.");
@@ -412,6 +413,51 @@ export default function IhpmtsAssignments() {
     validTo &&
     !assignLoading;
 
+  const onHardDeleteFromEdit = async () => {
+    if (!editRow) return;
+
+    const resolvedId =
+      editRow.membershipId || await findCurrentMembershipId(editRow.userId, editRow.projectId);
+
+    if (!resolvedId) {
+      await refetchUsers();
+      setEditOpen(false);
+      setEditRow(null);
+      setPendingEditAlert("Assignment already removed.");
+      return;
+    }
+
+    const msg =
+      `Remove assignment?\n\n` +
+      `IH-PMT: ${editRow.userName}\n` +
+      `Project: ${editRow.projectTitle}\n\n` +
+      `This will permanently delete the assignment.`;
+
+    if (!window.confirm(msg)) return;
+
+    try {
+      setDeleting(true);
+      await api.delete(`/admin/assignments/${encodeURIComponent(resolvedId)}`);
+      await refetchUsers();
+      setEditOpen(false);
+      setEditRow(null);
+      setPendingEditAlert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404) {
+        await refetchUsers();
+        setEditOpen(false);
+        setEditRow(null);
+        setPendingEditAlert("Assignment already removed.");
+      } else {
+        const errMsg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Unassign failed.";
+        alert(errMsg); // keep modal open so the user can retry
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const onAssign = async () => {
     const project = projects.find(p => p.projectId === selectedProjectId);
     const projectTitle = project?.title || "(Unknown Project)";
@@ -588,6 +634,56 @@ export default function IhpmtsAssignments() {
     return rows;
   }, [assignedRows, aSortKey, aSortDir]);
 
+  // ---- Helpers for refreshing and robust membership resolution (for delete) ----
+  const refetchUsers = async (): Promise<UserLite[]> => {
+    const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+    const list = Array.isArray(data) ? data : (data?.users ?? []);
+    setAllUsers(list as UserLite[]);
+    return list as UserLite[];
+  };
+
+  const normalizeId = (v: any) => String(v ?? "").trim();
+
+  /** Try to find the freshest IH-PMT membership id for (userId, projectId) */
+  const findCurrentMembershipId = async (userId: string, projectId: string) => {
+    const pickBest = (mems: any[]) => {
+      const candidates = mems
+        .filter((mem) => isRole(mem?.role, ROLE_IH_PMT))
+        .filter((mem) => normalizeId(mem?.project?.projectId) === normalizeId(projectId));
+
+      if (candidates.length === 0) return null;
+
+      // Sort by updatedAt desc, then validFrom desc, then id for stability
+      candidates.sort((a, b) => {
+        const au = Date.parse(a?.updatedAt ?? "") || 0;
+        const bu = Date.parse(b?.updatedAt ?? "") || 0;
+        if (au !== bu) return -(au - bu);
+        const af = Date.parse(
+          a.validFrom ?? a.validFromDate ?? a.from ?? a.startDate ?? a.valid_from ?? a.validFromAt ?? a.valid_from_at ?? ""
+        ) || 0;
+        const bf = Date.parse(
+          b.validFrom ?? b.validFromDate ?? b.from ?? b.startDate ?? b.valid_from ?? b.validFromAt ?? b.valid_from_at ?? ""
+        ) || 0;
+        if (af !== bf) return -(af - bf);
+        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
+      });
+
+      const best = candidates[0];
+      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as string | null;
+    };
+
+    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
+
+    let id = match(allUsers.find(u => u.userId === userId));
+    if (id) return id;
+
+    const users = await refetchUsers();
+    id = match(users.find(u => u.userId === userId));
+    return id ?? null;
+  };
+
+  const [deleting, setDeleting] = useState(false);
+
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
@@ -631,6 +727,23 @@ export default function IhpmtsAssignments() {
     }
   }, [editOpen, pendingEditAlert]);
 
+  useEffect(() => {
+    if (!editOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (deleting) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        setEditOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editOpen, deleting]);
+
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
@@ -643,9 +756,10 @@ export default function IhpmtsAssignments() {
 
       {/* Tile 1 — Projects */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Projects" data-tile-name="Projects">
-        <TileHeader title="Tile 1 — Projects" subtitle="Choose the project to assign." />
+        <TileHeader title="Projects" subtitle="Choose the project to assign." />
         <div className="max-w-xl">
           <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Project</label>
+          {/* Always show a blank default option in the select */}
           <select
             className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
             value={selectedProjectId}
@@ -655,15 +769,21 @@ export default function IhpmtsAssignments() {
             {projects.length === 0 ? (
               <option value="">Loading…</option>
             ) : (
-              projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.title}</option>)
+              <>
+                <option value="">—</option>
+                {projects.map((p) => (
+                  <option key={p.projectId} value={p.projectId}>{p.title}</option>
+                ))}
+              </>
             )}
           </select>
+
         </div>
       </section>
 
       {/* Tile 2 — Roles & Options (IH-PMT) */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Roles & Options" data-tile-name="Roles & Options">
-        <TileHeader title="Tile 2 — Roles & Options" subtitle="Pick from moved IH-PMTs & set validity." />
+        <TileHeader title="Roles & Options" subtitle="Pick from moved IH-PMTs & set validity." />
 
         <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* moved list */}
@@ -775,7 +895,7 @@ export default function IhpmtsAssignments() {
 
       {/* Tile 3 — Browse IH-PMTs */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Browse IH-PMTs" data-tile-name="Browse IH-PMTs">
-        <TileHeader title="Tile 3 — Browse IH-PMTs" subtitle="Search and filter; sort columns; paginate. Use ‘Move’ to add IH-PMTs to Tile 2." />
+        <TileHeader title="Browse IH-PMTs" subtitle="Search and filter; sort columns; paginate. Use ‘Move’ to add IH-PMTs to Tile 2." />
 
         {/* Controls */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-3 mb-3">
@@ -1007,7 +1127,7 @@ export default function IhpmtsAssignments() {
 
       {/* Tile 4 — IH-PMTs Assignments */}
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4" aria-label="Tile: IH-PMTs Assignments" data-tile-name="IH-PMT Assignments">
-        <TileHeader title="Tile 4 — IH-PMTs Assignments" subtitle="All IH-PMTs who have been assigned to projects." />
+        <TileHeader title="IH-PMTs Assignments" subtitle="All IH-PMTs who have been assigned to projects." />
 
         <div className="border rounded-xl dark:border-neutral-800 overflow-hidden">
           <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
@@ -1144,9 +1264,19 @@ export default function IhpmtsAssignments() {
       {/* ===== Edit Modal ===== */}
       {editOpen && editRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setEditOpen(false)} />
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!deleting) setEditOpen(false); }} />
           <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">Edit Validity</div>
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="text-lg font-semibold dark:text-white">Edit Validity</div>
+              <button
+                className="px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                onClick={onHardDeleteFromEdit}
+                disabled={deleting || !editRow?.membershipId}
+                title={editRow?.membershipId ? "Permanently remove this assignment" : "Missing membership id"}
+              >
+                {deleting ? "Removing…" : "Remove"}
+              </button>
+            </div>
             <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
               {editRow.userName} · {editRow.projectTitle}
             </div>

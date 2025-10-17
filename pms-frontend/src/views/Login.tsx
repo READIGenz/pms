@@ -23,35 +23,35 @@ type ExistsResponse = {
 
 type VerifyResponse =
   | {
-      ok: true;
-      token?: string; // may be omitted when chooseRole=true (identity-only flow)
-      user: any;
-      jwt?: any;
-      chooseRole: false;
-      roles: RoleOption[];
-    }
+    ok: true;
+    token?: string; // may be omitted when chooseRole=true (identity-only flow)
+    user: any;
+    jwt?: any;
+    chooseRole: false;
+    roles: RoleOption[];
+  }
   | {
-      ok: true;
-      user: any;
-      jwt?: any;
-      chooseRole: true;
-      roles: RoleOption[];
-      token?: string; // if backend includes a base token, we’ll keep it
-    }
+    ok: true;
+    user: any;
+    jwt?: any;
+    chooseRole: true;
+    roles: RoleOption[];
+    token?: string; // if backend includes a base token, we’ll keep it
+  }
   | { ok: false; error: string };
 
 type AssumeRoleResponse =
   | {
-      ok: true;
-      token: string;
-      user: any;
-      jwt: any;
-      role: RoleOption;
-    }
+    ok: true;
+    token: string;
+    user: any;
+    jwt: any;
+    role: RoleOption;
+  }
   | {
-      ok: false;
-      error?: string;
-    };
+    ok: false;
+    error?: string;
+  };
 
 // ---- Helpers ----
 function decodeJwtPayload(token: string): any | null {
@@ -80,7 +80,7 @@ function readSavedLogins(): string[] {
 function writeSavedLogins(arr: string[]) {
   try {
     localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr));
-  } catch {}
+  } catch { }
 }
 function addSavedLogin(login: string) {
   const v = (login || '').trim();
@@ -134,6 +134,24 @@ export default function Login() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
+  const [assume401s, setAssume401s] = useState(0);
+
+  function resetToEnter(message?: string) {
+    // clear transient UI state
+    setErr(message ?? null);
+    setCode('');
+    setShowOtp(false);
+    setSelectedMembershipId(null);
+    setPendingUser(null);
+    setRoleOptions([]);
+
+    // clear any auth remnants
+    try { localStorage.removeItem('token'); } catch { }
+    try { sessionStorage.removeItem('otpSession'); } catch { }
+
+    setStep('enter');
+    setBusy(false);
+  }
 
   // role selection
   const [pendingUser, setPendingUser] = useState<any | null>(null);
@@ -192,6 +210,22 @@ export default function Login() {
     setTimeout(() => {
       if (location.pathname !== path) location.assign(path);
     }, 150);
+  };
+
+  // Clear local OTP and (best-effort) invalidate on server, then go back
+  const handleBackFromOtp = async () => {
+    setErr(null);
+    setCode('');
+    setShowOtp(false);
+
+    try {
+      // Safe to ignore if your backend doesn't expose this route
+      await api.post('/auth/otp/invalidate', { login });
+    } catch {
+      /* ignore */
+    }
+
+    setStep('enter');
   };
 
   // GET /auth/exists?login=...&verbose=1
@@ -350,6 +384,7 @@ export default function Login() {
 
   const onEnterOtp = (e: React.KeyboardEvent<HTMLInputElement>) =>
     e.key === 'Enter' && code.trim().length >= 6 && verify();
+
 
   // commit a suggestion
   const commitSelection = (index: number) => {
@@ -562,9 +597,10 @@ export default function Login() {
                   {busy ? 'Verifying…' : 'Verify & Continue'}
                 </button>
 
-                <button type="button" onClick={() => setStep('enter')} className={btnSecondary}>
+                <button type="button" onClick={handleBackFromOtp} className={btnSecondary}>
                   Back
                 </button>
+
               </>
             )}
 

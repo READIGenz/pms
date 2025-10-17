@@ -14,9 +14,9 @@ type CompanyOpt = {
 };
 
 /** Enums from prisma schema */
-const preferredLanguages = ["en","hi","bn","ta","te","mr","pa","or","gu","kn","ml"] as const;
-const zones = ["NCR","North","South","East","West","Central"] as const;
-const statuses = ["Active","Inactive"] as const;
+const preferredLanguages = ["en", "hi", "bn", "ta", "te", "mr", "pa", "or", "gu", "kn", "ml"] as const;
+const zones = ["NCR", "North", "South", "East", "West", "Central"] as const;
+const statuses = ["Active", "Inactive"] as const;
 
 /** Small helpers (photo preview) */
 function resolvePhotoUrl(path?: string | null): string | null {
@@ -210,15 +210,15 @@ export default function UserEdit() {
     firstName.trim().length > 0 &&
     phoneClean.length >= 10;
 
-  const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-    setSelectedCompanyIds(values);
-  };
+  // const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+  //   setSelectedCompanyIds(values);
+  // };
 
-  const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-    setSelectedProjectIds(values);
-  };
+  // const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+  //   setSelectedProjectIds(values);
+  // };
 
   const submit = async () => {
     setErr(null);
@@ -267,12 +267,12 @@ export default function UserEdit() {
       }
 
       // 3) Save affiliations (projects/companies)
-      await api.post(`/admin/users/${id}/affiliations`, {
-        isClient,
-        projectIds: isClient ? selectedProjectIds : [],
-        isServiceProvider,
-        companyIds: isServiceProvider ? selectedCompanyIds : [],
-      });
+      // await api.post(`/admin/users/${id}/affiliations`, {
+      //   isClient,
+      //   projectIds: isClient ? selectedProjectIds : [],
+      //   isServiceProvider,
+      //   companyIds: isServiceProvider ? selectedCompanyIds : [],
+      // });
 
       nav("/admin/users", { replace: true });
     } catch (e: any) {
@@ -341,7 +341,7 @@ export default function UserEdit() {
                 <Text label="Email (optional)" type="email" value={email} setValue={setEmail} />
 
                 <div className="grid grid-cols-[5rem,1fr] gap-2">
-                  <Text label="Code" value="+91" setValue={() => {}} disabled />
+                  <Text label="Code" value="+91" setValue={() => { }} disabled />
                   <Text
                     label="Mobile (India)"
                     value={phone}
@@ -455,43 +455,69 @@ export default function UserEdit() {
             {/* ========== Affiliations Block ========== */}
             <Section title="Affiliations">
               <div className="space-y-5">
-                {/* Client Projects */}
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Are you Client for any Project?</span>
-                    <ToggleYN value={isClient} setValue={setIsClient} />
-                  </div>
-                  <div className="mt-2">
-                    <MultiSelect
-                      label="Select Project(s)"
-                      disabled={!isClient}
-                      value={selectedProjectIds}
-                      onChange={onPickProjects}
-                      options={projects.map(p => ({ value: p.projectId, label: p.code ? `${p.title} (${p.code})` : p.title }))}
-                    />
-                  </div>
-                </div>
-
-                {/* Service Partner Companies */}
+                {/* Client flag (read-only) */}
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 dark:text-gray-300">
-                      Are you working for any of our Service Partner?
+                      Client
                     </span>
-                    <ToggleYN value={isServiceProvider} setValue={setIsServiceProvider} />
+                    <span
+                      className={
+                        "px-2 py-0.5 text-xs rounded border " +
+                        (isClient
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                          : "bg-gray-50 text-gray-700 border-gray-200 dark:bg-neutral-800 dark:text-gray-300 dark:border-neutral-700")
+                      }
+                    >
+                      {isClient ? "Yes" : "No"}
+                    </span>
                   </div>
-                  <div className="mt-2">
-                    <MultiSelect
-                      label="Select Company(ies)"
-                      disabled={!isServiceProvider}
-                      value={selectedCompanyIds}
-                      onChange={onPickCompanies}
-                      options={companies.map(c => ({
-                        value: c.companyId,
-                        label: c.companyRole ? `${c.name} — ${c.companyRole}` : c.name,
-                      }))}
-                    />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Affiliations are managed from <b>Client Assignments</b>. Edit validity there.
+                  </p>
+                </div>
+
+                {/* Service Partner Companies (read-only list) */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Service Partner Companies
+                    </span>
+                    <span
+                      className={
+                        "px-2 py-0.5 text-xs rounded border " +
+                        (isServiceProvider
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                          : "bg-gray-50 text-gray-700 border-gray-200 dark:bg-neutral-800 dark:text-gray-300 dark:border-neutral-700")
+                      }
+                    >
+                      {isServiceProvider ? "Yes" : "No"}
+                    </span>
                   </div>
+
+                  {isServiceProvider ? (
+                    <ul className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+                      {companies
+                        .filter(c => selectedCompanyIds.includes(c.companyId))
+                        .map(c => (
+                          <li
+                            key={c.companyId}
+                            className="text-sm text-gray-800 dark:text-gray-100 px-2 py-1 rounded bg-gray-50 dark:bg-neutral-800 border dark:border-neutral-700"
+                          >
+                            {c.companyRole ? `${c.name} — ${c.companyRole}` : c.name}
+                          </li>
+                        ))}
+                      {selectedCompanyIds.length === 0 && (
+                        <li className="text-xs text-gray-500 dark:text-gray-400">
+                          No companies assigned.
+                        </li>
+                      )}
+                    </ul>
+                  ) : (
+                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Not a service provider.
+                    </div>
+                  )}
                 </div>
               </div>
             </Section>
@@ -533,8 +559,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type="text", required=false, placeholder, disabled=false
-}: { label:string; value:string; setValue:(v:string)=>void; type?:string; required?:boolean; placeholder?:string; disabled?:boolean }) {
+  label, value, setValue, type = "text", required = false, placeholder, disabled = false
+}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -542,7 +568,7 @@ function Text({
       </span>
       <input
         className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
         type={type} placeholder={placeholder} disabled={disabled}
       />
     </label>
@@ -551,22 +577,22 @@ function Text({
 
 function TextArea({
   label, value, setValue
-}: { label:string; value:string; setValue:(v:string)=>void }) {
+}: { label: string; value: string; setValue: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1 md:col-span-2">
       <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
       <textarea
         className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled=false
+  label, value, setValue, options, disabled = false
 }: {
-  label:string; value:string; setValue:(v:string)=>void; options: (string | { value: string; label: string })[]; disabled?:boolean
+  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -574,7 +600,7 @@ function Select({
       <select
         className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
         value={value} disabled={disabled}
-        onChange={(e)=>setValue(e.target.value)}
+        onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
@@ -587,7 +613,7 @@ function Select({
 }
 
 function MultiSelect({
-  label, value, onChange, options, disabled=false
+  label, value, onChange, options, disabled = false
 }: {
   label: string;
   value: string[];
@@ -642,5 +668,54 @@ function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) 
         No
       </button>
     </div>
+  );
+}
+
+function CheckboxGroup({
+  label,
+  items,
+  selected,
+  setSelected,
+}: {
+  label: string;
+  items: { value: string; label: string }[];
+  selected: string[];
+  setSelected: (vals: string[]) => void;
+}) {
+  const toggle = (val: string) => {
+    setSelected(
+      selected.includes(val)
+        ? selected.filter((v) => v !== val)
+        : [...selected, val]
+    );
+  };
+
+  return (
+    <fieldset className="border rounded-2xl p-4 dark:border-neutral-800">
+      <legend className="text-sm text-gray-700 dark:text-gray-300 px-1">
+        {label}
+      </legend>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+        {items.map((it) => (
+          <label
+            key={it.value}
+            className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100"
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={selected.includes(it.value)}
+              onChange={() => toggle(it.value)}
+            />
+            <span>{it.label}</span>
+          </label>
+        ))}
+      </div>
+      {items.length === 0 && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          No options available.
+        </div>
+      )}
+    </fieldset>
   );
 }

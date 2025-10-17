@@ -3,7 +3,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTemplate, listTemplates, saveTemplate, Matrix, RoleKey } from '../../../api/adminPermissions';
 
+// Internal keys stay the same
 const MODULES = ['WIR','MIR','CS','DPR','MIP','DS','RFC','OBS','DLP','LTR','FDB','MAITRI','DASHBOARD'] as const;
+type ModuleKey = typeof MODULES[number];
+
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  WIR: "WIR (Work Inspection Request)",
+  MIR: "MIR (Material Inspection Request)",
+  CS:  "CS (Contractor's Submittal)",
+  DPR: "DPR (Daily Progress Report)",
+  MIP: "MIP (Implementation Plan)",
+  DS:  "DS (Design Submittal)",
+  RFC: "RFC (Request For Clarification)",
+  OBS: "OBS (Site Observation and NCR/CAR)",
+  DLP: "DLP",
+  LTR: "LTR (Letter)",
+  FDB: "FDB (Feedback)",
+  MAITRI: "MAITRI",
+  DASHBOARD: "DASHBOARD",
+} as const;
+
 const ACTIONS = ['view','raise','review','approve','close'] as const;
 
 // Adjust to your public labels (e.g., "IH-PMT" if you expose hyphenated):
@@ -32,7 +51,7 @@ export default function AdminPermTemplates() {
       .finally(() => setLoading(false));
   }, [role]);
 
-  const toggle = (mod: typeof MODULES[number], action: typeof ACTIONS[number]) => {
+  const toggle = (mod: ModuleKey, action: typeof ACTIONS[number]) => {
     setMatrix(prev => {
       const next = structuredClone(prev);
       if (mod === 'LTR' && (action === 'review' || action === 'approve')) {
@@ -47,20 +66,19 @@ export default function AdminPermTemplates() {
   const canSave = useMemo(() => !loading && !saving, [loading, saving]);
 
   const onSave = async () => {
-  setSaving(true);
-  try {
-    const m = structuredClone(matrix);
-    m.LTR.review = false; m.LTR.approve = false;
-    await saveTemplate(role, m);
-    setToast('Saved successfully.');
-  } catch (e: any) {
-    // Show status and role to confirm the path
-    setToast(`Save failed: ${e?.message ?? e} (role=${role})`);
-  } finally {
-    setSaving(false);
-    setTimeout(() => setToast(null), 3000);
-  }
-};
+    setSaving(true);
+    try {
+      const m = structuredClone(matrix);
+      m.LTR.review = false; m.LTR.approve = false;
+      await saveTemplate(role, m);
+      setToast('Saved successfully.');
+    } catch (e: any) {
+      setToast(`Save failed: ${e?.message ?? e} (role=${role})`);
+    } finally {
+      setSaving(false);
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -112,14 +130,14 @@ export default function AdminPermTemplates() {
           <tbody>
             {MODULES.map((m) => (
               <tr key={m} className="border-t">
-                <td className="px-4 py-3 font-medium">{m}</td>
+                <td className="px-4 py-3 font-medium">{MODULE_LABELS[m]}</td>
                 {ACTIONS.map(a => (
                   <td key={a} className="px-3 py-3 text-center">
                     <input
                       type="checkbox"
                       checked={!!matrix?.[m]?.[a]}
                       onChange={() => toggle(m, a)}
-                      aria-label={`${m} ${a}`}
+                      aria-label={`${MODULE_LABELS[m]} ${a}`}
                     />
                   </td>
                 ))}

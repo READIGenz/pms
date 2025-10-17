@@ -1,3 +1,4 @@
+// src/views/admin/companies/CompanyEdit.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
@@ -323,7 +324,7 @@ export default function EditCompany() {
       Object.entries(form).forEach(([k, v]) => {
         payload[k] = typeof v === "string" ? v.trim() : v;
       });
-payload.companyRole = toDbRole(payload.companyRole);
+      payload.companyRole = toDbRole(payload.companyRole);
       normalize(payload);
       validate(payload);
 
@@ -420,11 +421,11 @@ payload.companyRole = toDbRole(payload.companyRole);
             <SelectStrict
               label="Primary Specialisation (Role). Can not be changed."
               value={form.companyRole}
-              //onChange={(v) => set("companyRole", v as CompanyRole)}
               onChange={/* no-op since it's disabled */ (() => {}) as any}
               options={ROLE_OPTIONS.map((r) => ({ value: r, label: prettyRole(r) }))}
-              //options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))}
               placeholder="Select role"
+              /** prevent dropdown opening but keep the same visual style */
+              lockOpen
             />
             <Input
               label="Website"
@@ -643,6 +644,8 @@ function SelectStrict({
   options,
   placeholder = "Select…",
   disabled = false,
+  /** When true, keep normal styling but prevent the dropdown from opening */
+  lockOpen = false,
 }: {
   label: string;
   value: string;
@@ -650,6 +653,7 @@ function SelectStrict({
   options: Array<{ value: string; label: string }>;
   placeholder?: string;
   disabled?: boolean;
+  lockOpen?: boolean;
 }) {
   return (
     <label className="block">
@@ -661,6 +665,20 @@ function SelectStrict({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        aria-disabled={lockOpen || undefined}
+        onMouseDown={(e) => {
+          if (lockOpen) {
+            e.preventDefault(); // block the native dropdown from opening
+            // optional: remove focus so it doesn't show focus ring
+            (e.currentTarget as HTMLSelectElement).blur();
+          }
+        }}
+        onKeyDown={(e) => {
+          if (lockOpen) {
+            const keys = [" ", "Enter", "ArrowUp", "ArrowDown"];
+            if (keys.includes(e.key)) e.preventDefault();
+          }
+        }}
       >
         <option value="">{placeholder}</option>
         {options.map((opt) => (
