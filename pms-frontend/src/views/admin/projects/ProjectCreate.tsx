@@ -4,21 +4,21 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
 
 /* ---------- Reference-data types ---------- */
-type StateOpt    = { stateId: string; name: string; code: string };
+type StateOpt = { stateId: string; name: string; code: string };
 type DistrictOpt = { districtId: string; name: string; stateId: string };
-type CompanyOpt  = { companyId: string; name: string };
-type TagOpt      = { tagCode: string; label: string };
+type CompanyOpt = { companyId: string; name: string };
+type TagOpt = { tagCode: string; label: string };
 
 /* ---------- Enums (from prisma schema) ---------- */
-const projectStatuses = ["Draft","Active","OnHold","Completed","Archived"] as const;
-const stages          = ["Planning","Design","Procurement","Execution","Handover","Closed"] as const;
-const projectTypes    = ["Residential","Commercial","Industrial","Institutional","MixedUse","Infrastructure","Other"] as const;
-const structureTypes  = ["LowRise","HighRise","Villa","RowHouse","InteriorFitout","ShellCore","Other"] as const;
-const constructionTypes = ["New","Renovation","Retrofit","Repair","Fitout","Other"] as const;
-const contractTypes   = ["LumpSum","ItemRate","Turnkey","EPC","PMC","LabourOnly","Other"] as const;
-const healthOptions   = ["Green","Amber","Red","Unknown"] as const;
-const currencies      = ["INR","USD","EUR","GBP","AED","SAR","SGD","AUD","Other"] as const;
-const areaUnits       = ["SQFT","SQM","SQYD","Acre","Hectare"] as const;
+const projectStatuses = ["Draft", "Active", "OnHold", "Completed", "Archived"] as const;
+const stages = ["Planning", "Design", "Procurement", "Execution", "Handover", "Closed"] as const;
+const projectTypes = ["Residential", "Commercial", "Industrial", "Institutional", "MixedUse", "Infrastructure", "Other"] as const;
+const structureTypes = ["LowRise", "HighRise", "Villa", "RowHouse", "InteriorFitout", "ShellCore", "Other"] as const;
+const constructionTypes = ["New", "Renovation", "Retrofit", "Repair", "Fitout", "Other"] as const;
+const contractTypes = ["LumpSum", "ItemRate", "Turnkey", "EPC", "PMC", "LabourOnly", "Other"] as const;
+const healthOptions = ["Green", "Amber", "Red", "Unknown"] as const;
+const currencies = ["INR", "USD", "EUR", "GBP", "AED", "SAR", "SGD", "AUD", "Other"] as const;
+const areaUnits = ["SQFT", "SQM", "SQYD", "Acre", "Hectare"] as const;
 
 /* ---------- Component ---------- */
 export default function ProjectCreate() {
@@ -72,6 +72,8 @@ export default function ProjectCreate() {
   // ---------- UI ----------
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showNote, setShowNote] = useState(false);
+
 
   // --- Auth gate simple check ---
   useEffect(() => {
@@ -88,9 +90,11 @@ export default function ProjectCreate() {
           api.get("/admin/companies-brief"),
           // Try a couple of likely endpoints for ref project tags; gracefully degrade to []:
           (async () => {
-            try       { const { data } = await api.get("/admin/ref/project-tags"); return data; }
-            catch { try { const { data } = await api.get("/admin/project-tags"); return data; }
-                    catch { return []; } }
+            try { const { data } = await api.get("/admin/ref/project-tags"); return data; }
+            catch {
+              try { const { data } = await api.get("/admin/project-tags"); return data; }
+              catch { return []; }
+            }
           })(),
         ]);
 
@@ -101,7 +105,7 @@ export default function ProjectCreate() {
         // Normalize to {tagCode, label}
         const norm = tagList.map((t: any) => ({
           tagCode: t.tagCode ?? t.code ?? t.value ?? "",
-          label:   t.label ?? t.name ?? t.tagCode ?? "",
+          label: t.label ?? t.name ?? t.tagCode ?? "",
         })).filter((t: TagOpt) => t.tagCode);
         setAllTags(norm);
       } catch (e: any) {
@@ -242,7 +246,16 @@ export default function ProjectCreate() {
               Fill the details below and save. Project Title is mandatory field.
             </p>
           </div>
+         
           <div className="flex gap-2">
+             {/* Note button */}
+          <button
+            className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+            type="button"
+            onClick={() => setShowNote(true)}
+          >
+            Note
+          </button>
             <button
               className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/projects")}
@@ -419,6 +432,86 @@ export default function ProjectCreate() {
           </button>
         </div>
       </div>
+      {/* Note modal */}
+      {showNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowNote(false)}
+          />
+
+          {/* Dialog */}
+          <div className="relative z-10 w-full max-w-xl mx-4 rounded-2xl border bg-white dark:bg-neutral-900 dark:border-neutral-800 shadow-xl">
+            <div className="p-5 border-b dark:border-neutral-800 flex items-center justify-between">
+              <h2 className="text-base font-semibold dark:text-white">
+                Note for Admins — Creating a New Project
+              </h2>
+              <button
+                className="text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 text-sm leading-6 text-gray-800 dark:text-gray-100 space-y-3">
+              <div>
+                <b>Required to save:</b> Project Title and Status.
+              </div>
+
+              <div>
+                <b>Dates rule:</b> if you enter both Start Date and Planned Completion, the completion date cannot be before the start date.
+              </div>
+
+              <div>
+                <b>Optional but helpful:</b> Stage, Project Type, Structure Type, Construction Mode, Contract Type, Project Health,
+                Client/Owner Company, Description/Notes, and Tags.
+              </div>
+
+              <div>
+                <b>Location (optional):</b> Address, State, District, City/Town, PIN, Latitude, Longitude.
+                <ul className="list-disc pl-5 mt-1 space-y-1">
+                  <li>PIN should be a 6-digit number.</li>
+                  <li>Latitude/Longitude accept only numbers, decimal points, and minus signs.</li>
+                </ul>
+              </div>
+
+              <div>
+                <b>Currency & Contract Value (optional):</b> Currency defaults to INR; Contract Value accepts numbers and decimals.
+              </div>
+
+              <div>
+                <b>Tags (optional):</b> You can select multiple tags.
+              </div>
+
+              <div>
+                <b>After a successful save:</b> you’ll be taken back to the Projects page.
+              </div>
+
+              <div>
+                <b>Cancel:</b> returns to the Projects list without saving.
+              </div>
+            </div>
+
+            <div className="p-4 border-t dark:border-neutral-800 flex justify-end gap-2">
+              <button
+                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -437,8 +530,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type="text", required=false, placeholder, disabled=false
-}: { label:string; value:string; setValue:(v:string)=>void; type?:string; required?:boolean; placeholder?:string; disabled?:boolean }) {
+  label, value, setValue, type = "text", required = false, placeholder, disabled = false
+}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -446,7 +539,7 @@ function Text({
       </span>
       <input
         className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
         type={type} placeholder={placeholder} disabled={disabled}
       />
     </label>
@@ -455,22 +548,22 @@ function Text({
 
 function TextArea({
   label, value, setValue
-}: { label:string; value:string; setValue:(v:string)=>void }) {
+}: { label: string; value: string; setValue: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1 md:col-span-2">
       <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
       <textarea
         className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e=>setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled=false
+  label, value, setValue, options, disabled = false
 }: {
-  label:string; value:string; setValue:(v:string)=>void; options: (string | { value: string; label: string })[]; disabled?:boolean
+  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -478,7 +571,7 @@ function Select({
       <select
         className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
         value={value} disabled={disabled}
-        onChange={(e)=>setValue(e.target.value)}
+        onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
@@ -491,7 +584,7 @@ function Select({
 }
 
 function MultiSelect({
-  label, value, onChange, options, disabled=false
+  label, value, onChange, options, disabled = false
 }: {
   label: string;
   value: string[];
@@ -524,7 +617,7 @@ function MultiSelect({
 
 function DateInput({
   label, value, setValue, min, max
-}: { label:string; value:string; setValue:(v:string)=>void; min?:string; max?:string }) {
+}: { label: string; value: string; setValue: (v: string) => void; min?: string; max?: string }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
@@ -534,7 +627,7 @@ function DateInput({
         value={value}
         min={min}
         max={max}
-        onChange={(e)=>setValue(e.target.value)}
+        onChange={(e) => setValue(e.target.value)}
       />
     </label>
   );

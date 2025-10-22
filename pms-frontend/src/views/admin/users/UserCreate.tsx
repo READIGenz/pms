@@ -79,6 +79,8 @@ export default function UserCreate() {
   // ---------- UI ----------
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Note modal
+  const [showNote, setShowNote] = useState(false);
 
   // --- Auth gate simple check ---
   useEffect(() => {
@@ -327,7 +329,7 @@ export default function UserCreate() {
             return;
           }
 
-         // If no exact match found, warn but don't redirect to a wrong user
+          // If no exact match found, warn but don't redirect to a wrong user
           const openList = window.confirm(
             "A user with this mobile number already exists, but we couldn't fetch an exact match automatically.\n\n" +
             `Phone: +91 ${targetDigits}\n\n` +
@@ -358,6 +360,14 @@ export default function UserCreate() {
             </p>
           </div>
           <div className="flex gap-2">
+            {/* Note button (opens modal) */}
+            <button
+              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              onClick={() => setShowNote(true)}
+              type="button"
+            >
+              Note
+            </button>
             <button
               className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/users")}
@@ -572,6 +582,73 @@ export default function UserCreate() {
           </button>
         </div>
       </div>
+      {/* NOTE MODAL */}
+      {showNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="note-modal-title"
+        >
+          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b dark:border-neutral-800">
+              <h2 id="note-modal-title" className="text-base font-semibold dark:text-white">
+                Note for Admins — Creating a New User
+              </h2>
+              <button
+                onClick={() => setShowNote(false)}
+                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 text-sm space-y-3 text-gray-800 dark:text-gray-100">
+              <p><b>Required to save:</b> First Name and a 10-digit Indian mobile number.</p>
+
+              <p><b>Affiliation is mandatory:</b> Mark the person as Client and/or Service Partner.
+                (At least one must be selected.)</p>
+
+              <p>If you choose <b>Service Partner = Yes</b>, you must also pick at least one company from the list.</p>
+
+              <p><b>Location fields</b> (State, District, City, PIN, Address) are helpful but optional.</p>
+
+              <p><b>Photo</b> upload is optional. If it fails, the user can still be created.</p>
+
+              <div className="space-y-2">
+                <p><b>If the mobile number already belongs to someone:</b></p>
+                <ul className="list-disc ml-5 space-y-1">
+                  <li>You’ll see a message with that person’s details.</li>
+                  <li><b>OK</b> takes you straight to that person’s <b>Edit</b> page so you can update them.</li>
+                  <li><b>Cancel</b> keeps you on this page and stops the save (no duplicate will be created).</li>
+                  <li>If we can’t clearly find the exact person, you can choose <b>OK</b> to open the Users list and search, or <b>Cancel</b> to stay here (save is canceled).</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <p><b>For Super Admins only:</b></p>
+                <ul className="list-disc ml-5 space-y-1">
+                  <li>You’ll see extra switches for <b>Super Admin</b> and <b>Admin (Global)</b> access. Turning these on gives broader access; turning them off does not block creating the user.</li>
+                </ul>
+              </div>
+
+              <p><b>After a successful save:</b> you’ll be taken back to the Users page.</p>
+            </div>
+
+            <div className="px-5 py-3 border-t dark:border-neutral-800 flex justify-end gap-2">
+              <button
+                onClick={() => setShowNote(false)}
+                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -113,6 +113,8 @@ export default function CompanyCreate() {
 
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showNote, setShowNote] = useState(false);
+
 
   /* ========================= load reference data ========================= */
   useEffect(() => {
@@ -313,6 +315,14 @@ export default function CompanyCreate() {
             )}
           </div>
           <div className="flex gap-2">
+            {/* Note button */}
+            <button
+              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              type="button"
+              onClick={() => setShowNote(true)}
+            >
+              Note
+            </button>
             <button
               className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/companies")}
@@ -450,6 +460,86 @@ export default function CompanyCreate() {
         </div>
 
       </div>
+      {/* Note modal */}
+      {showNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowNote(false)}
+          />
+
+          {/* Dialog */}
+          <div className="relative z-10 w-full max-w-xl mx-4 rounded-2xl border bg-white dark:bg-neutral-900 dark:border-neutral-800 shadow-xl">
+            <div className="p-5 border-b dark:border-neutral-800 flex items-center justify-between">
+              <h2 className="text-base font-semibold dark:text-white">
+                Note for Admins — Creating a New Company
+              </h2>
+              <button
+                className="text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 text-sm leading-6 text-gray-800 dark:text-gray-100 space-y-3">
+              <div>
+                <b>Required to save:</b> Company Name, Status, and Primary Specialisation (Role).
+              </div>
+
+              <div>
+                <b>Company Code:</b> generated automatically based on the selected Role (e.g., PMT-0001, CON-0001).
+                You don’t have to type it; the system picks the next number for that role.
+              </div>
+
+              <div>
+                <b>Optional but useful:</b> Website, Address, State, District, PIN, Registration IDs (GSTIN, PAN, CIN),
+                and a short Note/description.
+              </div>
+
+              <div>
+                <b>Basic checks we do for you:</b>
+                <ul className="list-disc pl-5 mt-1 space-y-1">
+                  <li>Mobile must be a 10-digit number; Email must look like a valid email.</li>
+                  <li>PIN must be 6 digits.</li>
+                  <li>GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10 characters (ABCDE1234F).</li>
+                  <li>Website is auto-cleaned to start with <code>https://</code> if you miss it.</li>
+                  <li>GSTIN/PAN are auto-capitalised; numbers strip spaces/symbols.</li>
+                </ul>
+              </div>
+
+              <div>
+                <b>Duplicate company code:</b> If a generated code clashes, the system will make a fresh one and try again automatically.
+              </div>
+
+              <div>
+                <b>After a successful save:</b> you’ll be taken back to the Companies page.
+              </div>
+
+              <div>
+                <b>Cancel:</b> takes you back to the Companies list without saving.
+              </div>
+            </div>
+
+            <div className="p-4 border-t dark:border-neutral-800 flex justify-end gap-2">
+              <button
+                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
