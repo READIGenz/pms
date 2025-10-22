@@ -92,7 +92,8 @@ export default function UserCreate() {
       try {
         const [{ data: s }, { data: p }, { data: c }] = await Promise.all([
           api.get("/admin/states"),
-          api.get("/admin/projects", { params: { status: "Active" } }), // adjust as needed
+          // api.get("/admin/projects", { params: { status: "Active" } }),
+          api.get("/admin/projects"),
           api.get("/admin/companies-brief"),
         ]);
         setStates(Array.isArray(s) ? s : s?.states || []);
@@ -142,6 +143,21 @@ export default function UserCreate() {
   //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
   //   setSelectedProjectIds(values);
   // };
+  const normalizeDigits = (v: any) => String(v ?? "").replace(/\D/g, "");
+  const pickUserByPhone = (list: any[], desiredDigits: string) => {
+    if (!Array.isArray(list)) return null;
+    // try strict phone match first
+    const exact = list.find((u) => normalizeDigits(u?.phone) === desiredDigits);
+    if (exact) return exact;
+
+    // sometimes APIs keep countryCode separate; accept +91 + phone or countryCode "91"
+    const exactWithCCode = list.find((u) => {
+      const cc = normalizeDigits(u?.countryCode);
+      const ph = normalizeDigits(u?.phone);
+      return (cc === "91" || cc === "+91" || cc === "") && ph === desiredDigits;
+    });
+    return exactWithCCode || null;
+  };
 
   const submit = async () => {
     setErr(null);
@@ -149,6 +165,25 @@ export default function UserCreate() {
       setErr("First Name and a valid Mobile (India) are required.");
       return;
     }
+
+    // Affiliation must be Client and/or Service Provider (not neither)
+    if (!isClient && !isServiceProvider) {
+      window.alert(
+        "Affiliation required.\n\n" +
+        "Please mark the user as a Client and/or a Service Partner before creating."
+      );
+      return; // stop submit
+    }
+
+    //  If user is marked as a Service Provider but no companies are selected, warn & abort
+    if (isServiceProvider && selectedCompanyIds.length === 0) {
+      window.alert(
+        "This user is not linked to any Service Partner company.\n\n" +
+        "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+      );
+      return; // stop submit
+    }
+
 
     // 1) Create user
     try {
@@ -234,8 +269,79 @@ export default function UserCreate() {
 
       nav("/admin/users", { replace: true });
     } catch (e: any) {
-      setErr(e?.response?.data?.error || e?.message || "Failed to create user");
-    } finally {
+      // Handle "existing phone" gracefully
+      const httpStatus = e?.response?.status;
+      const serverMsg = e?.response?.data?.error || e?.message || "";
+
+      const looksLikeDuplicate =
+        httpStatus === 500 || httpStatus === 409 || /duplicate|exists/i.test(serverMsg);
+
+      if (looksLikeDuplicate) {
+        try {
+          const targetDigits = phoneClean; // already digits-only in your code
+          let u: any | null = null;
+
+          // 1) Try /admin/users?phone=XXXXX (prefer exact match in results)
+          try {
+            const res = await api.get("/admin/users", { params: { phone: targetDigits } });
+            const list = Array.isArray(res?.data) ? res.data : (res?.data?.users || []);
+            u = pickUserByPhone(list, targetDigits);
+          } catch { /* noop */ }
+
+          // 2) Lookup route
+          if (!u) {
+            try {
+              const res = await api.get("/admin/users/lookup", { params: { phone: targetDigits } });
+              const candidate = res?.data?.user;
+              if (candidate && normalizeDigits(candidate.phone) === targetDigits) {
+                u = candidate;
+              }
+            } catch { /* noop */ }
+          }
+
+          // 3) Generic search, but STILL pick by exact phone digits
+          if (!u) {
+            try {
+              const res = await api.get("/admin/users", { params: { search: targetDigits } });
+              const list = Array.isArray(res?.data) ? res.data : (res?.data?.users || []);
+              u = pickUserByPhone(list, targetDigits);
+            } catch { /* noop */ }
+          }
+
+          if (u?.userId) {
+            const fullName = [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ");
+            const codeLine = u.userCode ? `Code: ${u.userCode}\n` : "";
+            const phoneLine = `Phone: +91 ${normalizeDigits(u.phone) || targetDigits}`;
+
+            const proceedToEdit = window.confirm(
+              "A user with this mobile number already exists.\n\n" +
+              `${codeLine}Name: ${fullName || "(no name)"}\n${phoneLine}\n\n` +
+              "Press OK to open that user's Edit page.\n" +
+              "Press Cancel to stay here — the save will be canceled."
+            );
+
+            if (proceedToEdit) {
+              nav(`/admin/users/${u.userId}/edit`, { replace: true });
+            }
+            // Either way, stop this create flow.
+            return;
+          }
+
+         // If no exact match found, warn but don't redirect to a wrong user
+          const openList = window.confirm(
+            "A user with this mobile number already exists, but we couldn't fetch an exact match automatically.\n\n" +
+            `Phone: +91 ${targetDigits}\n\n` +
+            "Press OK to open the Users list, or Cancel to stay here (save canceled)."
+          );
+          if (openList) nav("/admin/users");
+          return;
+        } finally {
+          setSaving(false);
+        }
+      }
+
+      // Default error handling (non-duplicate case)
+      setErr(serverMsg || "Failed to create user");
       setSaving(false);
     }
   };

@@ -10,7 +10,7 @@ type ProjectOpt = { projectId: string; title: string; code?: string | null };
 type CompanyOpt = {
   companyId: string;
   name: string;
-  companyRole?: "Ava_PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
+  companyRole?: "IH_PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
 };
 
 /** Enums from prisma schema */
@@ -62,6 +62,38 @@ export default function UserEdit() {
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [refsErr, setRefsErr] = useState<string | null>(null);
+  const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
+  // Map of service-provider companyId -> list of projectIds the user is assigned on via that company
+  const [svcProjByCompany, setSvcProjByCompany] = useState<Record<string, string[]>>({});
+
+  const filteredCompanies = useMemo(() => {
+    // normalize underscores/hyphens/case and accept server's "IH-PMT"
+    const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
+    const filter = companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
+    const f = normalize(filter || "");
+    return companies.filter(c => {
+      if (!f) return true;
+      return normalize(String(c.companyRole ?? "")) === f;
+    });
+  }, [companies, companyRoleFilter]);
+
+  // Nice labels for projects the user is Client on
+  const clientProjectLabels = useMemo(() => {
+    return selectedProjectIds.map((pid) => {
+      const p = projects.find(pr => pr.projectId === pid);
+      if (!p) return pid; // fallback
+      // Prefer "CODE — Title" if code exists
+      return p.code ? `${p.code} — ${p.title}` : p.title;
+    });
+  }, [selectedProjectIds, projects]);
+
+  const serviceCompanyLabels = useMemo(() => {
+    return selectedCompanyIds.map((cid) => {
+      const c = companies.find(co => co.companyId === cid);
+      if (!c) return cid; // fallback
+      return c.companyRole ? `${c.name} — ${c.companyRole}` : c.name;
+    });
+  }, [selectedCompanyIds, companies]);
 
   // ---------- UI ----------
   const [loading, setLoading] = useState(true);
@@ -79,7 +111,8 @@ export default function UserEdit() {
     setRefsErr(null);
     const results = await Promise.allSettled([
       api.get("/admin/states"),
-      api.get("/admin/projects", { params: { status: "Active" } }),
+      //api.get("/admin/projects", { params: { status: "Active" } }),
+      api.get("/admin/projects"),
       api.get("/admin/companies-brief"),
     ]);
 
@@ -157,7 +190,7 @@ export default function UserEdit() {
         const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
         setSelectedProjectIds(
           memberships
-            .filter((m) => m.scopeType === "Project" && m.projectId)
+            .filter((m) => m.scopeType === "Project" && m.role === "Client" && m.projectId)
             .map((m) => m.projectId)
         );
         setSelectedCompanyIds(
@@ -172,6 +205,13 @@ export default function UserEdit() {
       }
     })();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || projects.length === 0) return;
+    // only need active projects we already loaded
+    buildSvcAssignmentsMap(id, projects);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, projects]);
 
   // Districts by state (from refs controller) — runs whenever stateId is set/changes
   useEffect(() => {
@@ -220,11 +260,53 @@ export default function UserEdit() {
   //   setSelectedProjectIds(values);
   // };
 
+  // Fetch assignments per project and build: companyId -> projectIds where this user is assigned
+  async function buildSvcAssignmentsMap(userId: string, projList: ProjectOpt[]) {
+    const map: Record<string, string[]> = {};
+
+    // NOTE: we query the only GET that exposes assignments
+    // /admin/projects/:id/assignments -> { assignments: [...] } or [...]
+    for (const p of projList) {
+      try {
+        const { data } = await api.get(`/admin/projects/${p.projectId}/assignments`);
+        const rows: any[] = Array.isArray(data) ? data : (data?.assignments || []);
+
+        rows
+          .filter((r) => String(r.userId) === String(userId))
+          .forEach((r) => {
+            const cid =
+              r.companyId ||
+              r.company?.companyId ||
+              (Array.isArray(r.companies) ? r.companies[0]?.companyId : undefined);
+
+            const pid = r.projectId || p.projectId;
+            if (!cid || !pid) return;
+
+            if (!map[cid]) map[cid] = [];
+            if (!map[cid].includes(pid)) map[cid].push(pid);
+          });
+      } catch (e) {
+        // ignore per-project errors; we just skip that project's assignments
+        // console.warn("assignments fetch failed for project", p.projectId, e);
+      }
+    }
+
+    setSvcProjByCompany(map);
+  }
+
   const submit = async () => {
     setErr(null);
     if (!canSave || !id) {
       setErr("First Name and a valid Mobile (India) are required.");
       return;
+    }
+    // If user has no Service Partner companies selected but the toggle is still Yes, warn & stop
+    if (isServiceProvider && selectedCompanyIds.length === 0) {
+      window.alert(
+        "This user is not linked to any Service Partner company.\n\n" +
+        "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+      );
+      return; // do not proceed with saving
     }
 
     try {
@@ -267,12 +349,16 @@ export default function UserEdit() {
       }
 
       // 3) Save affiliations (projects/companies)
-      // await api.post(`/admin/users/${id}/affiliations`, {
-      //   isClient,
-      //   projectIds: isClient ? selectedProjectIds : [],
-      //   isServiceProvider,
-      //   companyIds: isServiceProvider ? selectedCompanyIds : [],
-      // });
+      try {
+        await api.post(`/admin/users/${id}/affiliations`, {
+          isClient,
+          projectIds: isClient ? selectedProjectIds : [],
+          isServiceProvider,
+          companyIds: isServiceProvider ? selectedCompanyIds : [],
+        });
+      } catch (e: any) {
+        console.warn("Affiliations save failed:", e?.response?.data || e);
+      }
 
       nav("/admin/users", { replace: true });
     } catch (e: any) {
@@ -294,6 +380,66 @@ export default function UserEdit() {
     const d = districts.find(x => x.districtId === districtId);
     return d ? d.name : "(unknown district)";
   }, [districtId, districts]);
+
+  const onToggleClient = (next: boolean) => {
+    // If trying to switch from Yes -> No but user is assigned to client projects
+    if (!next && selectedProjectIds.length > 0) {
+      const list = clientProjectLabels.length
+        ? `\n\nAssigned as Client on:\n• ${clientProjectLabels.join("\n• ")}`
+        : "";
+      window.alert(
+        "This user is assigned as Client to one or more projects." +
+        list +
+        "\n\nPlease remove those assignments first, then change this setting."
+      );
+      // Do NOT change isClient (reverts any attempted change)
+      return;
+    }
+    setIsClient(next);
+  };
+
+  const onToggleServiceProvider = (next: boolean) => {
+    // If trying to switch from Yes -> No but user is assigned to service partner companies
+    if (!next && selectedCompanyIds.length > 0) {
+      const list = serviceCompanyLabels.length
+        ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join("\n• ")}`
+        : "";
+      window.alert(
+        "This user is linked to one or more Service Partner companies." +
+        list +
+        "\n\nPlease remove those assignments first, then change this setting."
+      );
+      // Do NOT change isServiceProvider (revert attempted change)
+      return;
+    }
+    setIsServiceProvider(next);
+  };
+
+  const onBeforeUncheckCompany = (companyId: string) => {
+    const c = companies.find(co => co.companyId === companyId);
+    const companyLabel = c ? (c.companyRole ? `${c.name} — ${c.companyRole}` : c.name) : companyId;
+
+    // projects where this user is assigned with this company (from svcProjByCompany)
+    const pids = svcProjByCompany[companyId] || [];
+    if (pids.length === 0) {
+      // No project ties to this company → allow uncheck (no alert)
+      return; // returning undefined (truthy) lets CheckboxGroup proceed
+    }
+
+    const projectLabels = pids.map(pid => {
+      const p = projects.find(pr => pr.projectId === pid);
+      return p ? (p.code ? `${p.code} — ${p.title}` : p.title) : pid;
+    });
+
+    window.alert(
+      "This user is linked to a Service Partner company." +
+      `\n\n• ${companyLabel}` +
+      `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join("\n• ")}` +
+      "\n\nPlease remove those assignments first, then change this setting."
+    );
+    return false; // block the uncheck only when there ARE project assignments
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
@@ -455,64 +601,67 @@ export default function UserEdit() {
             {/* ========== Affiliations Block ========== */}
             <Section title="Affiliations">
               <div className="space-y-5">
-                {/* Client flag (read-only) */}
+                {/* Client (editable) */}
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 dark:text-gray-300">
-                      Client
+                      Are you Client for any Project?
                     </span>
-                    <span
-                      className={
-                        "px-2 py-0.5 text-xs rounded border " +
-                        (isClient
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
-                          : "bg-gray-50 text-gray-700 border-gray-200 dark:bg-neutral-800 dark:text-gray-300 dark:border-neutral-700")
-                      }
-                    >
-                      {isClient ? "Yes" : "No"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Affiliations are managed from <b>Client Assignments</b>. Edit validity there.
-                  </p>
+                    <ToggleYN value={isClient} setValue={onToggleClient} />                  </div>
+                  {/* Project selection intentionally hidden (same as Create) */}
                 </div>
 
-                {/* Service Partner Companies (read-only list) */}
+
+                {/* Service Partner Companies (editable list) */}
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 dark:text-gray-300">
-                      Service Partner Companies
+                      Are you working for any of our Service Partner?
                     </span>
-                    <span
-                      className={
-                        "px-2 py-0.5 text-xs rounded border " +
-                        (isServiceProvider
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
-                          : "bg-gray-50 text-gray-700 border-gray-200 dark:bg-neutral-800 dark:text-gray-300 dark:border-neutral-700")
-                      }
-                    >
-                      {isServiceProvider ? "Yes" : "No"}
-                    </span>
+                    {/*  <ToggleYN value={isServiceProvider} setValue={setIsServiceProvider} />*/}
+                    <ToggleYN value={isServiceProvider} setValue={onToggleServiceProvider} />
+
                   </div>
 
                   {isServiceProvider ? (
-                    <ul className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
-                      {companies
-                        .filter(c => selectedCompanyIds.includes(c.companyId))
-                        .map(c => (
-                          <li
-                            key={c.companyId}
-                            className="text-sm text-gray-800 dark:text-gray-100 px-2 py-1 rounded bg-gray-50 dark:bg-neutral-800 border dark:border-neutral-700"
-                          >
-                            {c.companyRole ? `${c.name} — ${c.companyRole}` : c.name}
-                          </li>
-                        ))}
-                      {selectedCompanyIds.length === 0 && (
-                        <li className="text-xs text-gray-500 dark:text-gray-400">
-                          No companies assigned.
-                        </li>
+                    <div className="mt-3 space-y-3">
+                      <div className="max-w-xs">
+                        <Select
+                          label="Filter by Role"
+                          value={companyRoleFilter}
+                          setValue={setCompanyRoleFilter}
+                          options={[
+                            "",
+                            { value: "IH_PMT", label: "IH-PMT" },
+                            { value: "Contractor", label: "Contractor" },
+                            { value: "Consultant", label: "Consultant" },
+                            { value: "PMC", label: "PMC" },
+                            { value: "Supplier", label: "Supplier" },
+                          ]}
+                        />
+                      </div>
+
+                      <CheckboxGroup
+                        label={
+                          companyRoleFilter
+                            ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter}`
+                            : "Select Company(ies)"
+                        }
+                        items={filteredCompanies.map((c) => ({
+                          value: c.companyId,
+                          label: c.companyRole ? `${c.name}` : c.name,
+                        }))}
+                        selected={selectedCompanyIds}
+                        setSelected={setSelectedCompanyIds}
+                        onBeforeUncheck={onBeforeUncheckCompany}
+                      />
+
+                      {filteredCompanies.length === 0 && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          No companies match the selected role.
+                        </div>
                       )}
-                    </ul>
+                    </div>
                   ) : (
                     <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                       Not a service provider.
@@ -676,18 +825,25 @@ function CheckboxGroup({
   items,
   selected,
   setSelected,
+  onBeforeUncheck,
 }: {
   label: string;
   items: { value: string; label: string }[];
   selected: string[];
   setSelected: (vals: string[]) => void;
+  onBeforeUncheck?: (value: string) => boolean | void;
 }) {
   const toggle = (val: string) => {
-    setSelected(
-      selected.includes(val)
-        ? selected.filter((v) => v !== val)
-        : [...selected, val]
-    );
+    const isChecked = selected.includes(val);
+    if (isChecked) {
+      // about to UNCHECK
+      if (onBeforeUncheck && onBeforeUncheck(val) === false) {
+        return; // block uncheck
+      }
+      setSelected(selected.filter((v) => v !== val));
+    } else {
+      setSelected([...selected, val]);
+    }
   };
 
   return (
