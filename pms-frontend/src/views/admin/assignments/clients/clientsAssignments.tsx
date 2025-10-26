@@ -90,7 +90,12 @@ function phoneDisplay(u: UserLite) {
 }
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  const set = new Set(mem.map((m) => m?.project?.title).filter(Boolean) as string[]);
+  const set = new Set(
+    mem
+      .filter((m) => String(m?.role || '').toLowerCase() === 'client')
+      .map((m) => m?.project?.title)
+      .filter(Boolean) as string[]
+  );
   return Array.from(set).join(", ");
 }
 function isClientUser(u: UserLite): boolean {
@@ -579,6 +584,18 @@ export default function ClientsAssignments() {
     return rows;
   }, [assignedClientRows, aSortKey, aSortDir]);
 
+  {/* ===== Tile 4 pagination ===== */}
+  const [aPage, setAPage] = useState(1);
+  const aPageSize = pageSize; // <-- use the same selector value as Browse Clients
+  const aTotal = assignedSortedRows.length;
+  const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
+  const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
+  const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
+    const start = (aPageSafe - 1) * aPageSize;
+    return assignedSortedRows.slice(start, start + aPageSize);
+  }, [assignedSortedRows, aPageSafe, aPageSize]);
+  useEffect(() => { if (aPage > aTotalPages) setAPage(aTotalPages); }, [aTotalPages]);
+
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
@@ -732,7 +749,7 @@ export default function ClientsAssignments() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold dark:text-white">Client Assignments</h1>
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          Tiles: Projects · Roles & Options · <b>Browse Clients</b> · Client Assignments
+          Projects · Roles & Options · <b>Browse Clients</b> · Client Assignments
         </p>
         {err && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>}
       </div>
@@ -972,7 +989,7 @@ export default function ClientsAssignments() {
               <select
                 className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                 value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); setAPage(1); }} // <-- reset both paginations
               >
                 {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -1129,7 +1146,8 @@ export default function ClientsAssignments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assignedSortedRows.map((r, i) => (
+                  {/* map over paged rows */}
+                  {assignedRowsPaged.map((r, i) => (
                     <tr key={`${r.userId}-${r.projectId}-${i}`} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                         <div className="flex gap-2">
@@ -1162,6 +1180,47 @@ export default function ClientsAssignments() {
                 </tbody>
               </table>
             )}
+          </div>
+
+          {/* Pagination for assignments */}
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
+            <div className="text-gray-600 dark:text-gray-300">
+              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> client assignments
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage(1)}
+                disabled={aPageSafe <= 1}
+                title="First"
+              >
+                « First
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage((p) => Math.max(1, p - 1))}
+                disabled={aPageSafe <= 1}
+                title="Previous"
+              >
+                ‹ Prev
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
+                disabled={aPageSafe >= aTotalPages}
+                title="Next"
+              >
+                Next ›
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage(aTotalPages)}
+                disabled={aPageSafe >= aTotalPages}
+                title="Last"
+              >
+                Last »
+              </button>
+            </div>
           </div>
         </div>
       </section>

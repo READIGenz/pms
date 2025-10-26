@@ -1,4 +1,4 @@
-// src/App.tsx
+// pms-frontend/src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './views/Login';
 import AdminHome from './views/admin/AdminHome';
@@ -28,14 +28,10 @@ import ModuleSettingsLayout from './views/admin/moduleSettings/ModuleSettingsLay
 import Audit from './views/admin/Audit';
 
 
-// Role homes (create these files or swap with your actual components)
-import ClientHome from './views/client/clientHome';
-import IHPmtHome from './views/ihpmt/ihpmtHome';
-import ContractorHome from './views/contractor/contractorHome';
-import ConsultantHome from './views/consultant/consultantHome';
-import SupplierHome from './views/supplier/supplierHome';
-import PMCHome from './views/pmc/pmcHome';
-
+// Unified Home
+import HomeLayout from './views/home/HomeLayout';
+import Welcome from './views/home/Welcome';
+import Tiles from './views/home/Tiles';
 
 // Optional generic landing
 function Landing() {
@@ -102,17 +98,13 @@ export default function App() {
 
           </Route>
           <Route path="audit" element={<Audit />} />
-
-          {/* when no child path picked */}
         </Route>
 
-        {/* Role-based homes */}
-        <Route path="/clientHome" element={<RequireAuth><ClientHome /></RequireAuth>} />
-        <Route path="/ihpmtHome" element={<RequireAuth><IHPmtHome /></RequireAuth>} />
-        <Route path="/contractorHome" element={<RequireAuth><ContractorHome /></RequireAuth>} />
-        <Route path="/consultantHome" element={<RequireAuth><ConsultantHome /></RequireAuth>} />
-        <Route path="/supplierHome" element={<RequireAuth><SupplierHome /></RequireAuth>} />
-        <Route path="/pmcHome" element={<RequireAuth><PMCHome /></RequireAuth>} />
+        {/* Unified role-aware Home */}
+        <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
+          <Route index element={<Welcome />} />
+          <Route path="tiles" element={<Tiles />} />
+        </Route>
 
         {/* Fallback generic landing (if you use /landing in Login.tsx fallback) */}
         <Route path="/landing" element={<RequireAuth><Landing /></RequireAuth>} />
@@ -120,7 +112,7 @@ export default function App() {
         {/* catch-all */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    </BrowserRouter>
+    </BrowserRouter >
   );
 
 }

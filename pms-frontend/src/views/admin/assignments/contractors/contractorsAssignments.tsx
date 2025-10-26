@@ -72,7 +72,12 @@ function phoneDisplay(u: UserLite) {
 }
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  const set = new Set(mem.map((m) => m?.project?.title).filter(Boolean) as string[]);
+  const set = new Set(
+    mem
+      .filter((m) => String(m?.role || '').toLowerCase() === 'contractor') 
+      .map((m) => m?.project?.title)
+      .filter(Boolean) as string[]
+  );
   return Array.from(set).join(", ");
 }
 function companiesLabel(u: UserLite): string {
@@ -576,6 +581,18 @@ export default function ContractorsAssignments() {
     return rows;
   }, [assignedRows, aSortKey, aSortDir]);
 
+  // ===== Assignments pagination (uses same rows selector as browse table) =====
+  const [aPage, setAPage] = useState(1);
+  const aPageSize = pageSize; // shared selector
+  const aTotal = assignedSortedRows.length;
+  const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
+  const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
+  const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
+    const start = (aPageSafe - 1) * aPageSize;
+    return assignedSortedRows.slice(start, start + aPageSize);
+  }, [assignedSortedRows, aPageSafe, aPageSize]);
+  useEffect(() => { if (aPage > aTotalPages) setAPage(aTotalPages); }, [aTotalPages]);
+
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
@@ -586,78 +603,78 @@ export default function ContractorsAssignments() {
   const [origFrom, setOrigFrom] = useState<string>("");
   const [origTo, setOrigTo] = useState<string>("");
   const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
-const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-// --- helpers used by delete ---
-const refetchUsers = async (): Promise<UserLite[]> => {
-  const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-  const list = Array.isArray(data) ? data : (data?.users ?? []);
-  setAllUsers(list);
-  return list as UserLite[];
-};
-const normalizeId = (v: any) => String(v ?? "").trim();
+  // --- helpers used by delete ---
+  const refetchUsers = async (): Promise<UserLite[]> => {
+    const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+    const list = Array.isArray(data) ? data : (data?.users ?? []);
+    setAllUsers(list as UserLite[]);
+    return list as UserLite[];
+  };
+  const normalizeId = (v: any) => String(v ?? "").trim();
 
-/** Find the freshest membership id for (userId, projectId) with role Contractor */
-const findCurrentMembershipId = async (userId: string, projectId: string) => {
-  const match = (u: UserLite | undefined) => {
-    if (!u?.userRoleMemberships) return null;
-    const pid = normalizeId(projectId);
-    const m = u.userRoleMemberships.find((mem: any) => {
-      const role = String(mem?.role || "").toLowerCase();
-      const memPid = normalizeId(mem?.project?.projectId);
-      return (role === "contractor" || role === "") && memPid === pid;
-    });
-    return (m?.id ?? (m as any)?._id ?? (m as any)?.membershipId ?? null) as string | null;
+  /** Find the freshest membership id for (userId, projectId) with role Contractor */
+  const findCurrentMembershipId = async (userId: string, projectId: string) => {
+    const match = (u: UserLite | undefined) => {
+      if (!u?.userRoleMemberships) return null;
+      const pid = normalizeId(projectId);
+      const m = u.userRoleMemberships.find((mem: any) => {
+        const role = String(mem?.role || "").toLowerCase();
+        const memPid = normalizeId(mem?.project?.projectId);
+        return (role === "contractor" || role === "") && memPid === pid;
+      });
+      return (m?.id ?? (m as any)?._id ?? (m as any)?.membershipId ?? null) as string | null;
+    };
+
+    let id = match(allUsers.find(u => u.userId === userId));
+    if (id) return id;
+
+    const users = await refetchUsers();
+    id = match(users.find(u => u.userId === userId));
+    return id ?? null;
   };
 
-  let id = match(allUsers.find(u => u.userId === userId));
-  if (id) return id;
+  const onHardDeleteFromEdit = async () => {
+    if (!editRow) return;
 
-  const users = await refetchUsers();
-  id = match(users.find(u => u.userId === userId));
-  return id ?? null;
-};
+    const resolvedId =
+      editRow.membershipId || (await findCurrentMembershipId(editRow.userId, editRow.projectId));
 
-const onHardDeleteFromEdit = async () => {
-  if (!editRow) return;
-
-  const resolvedId =
-    editRow.membershipId || (await findCurrentMembershipId(editRow.userId, editRow.projectId));
-
-  if (!resolvedId) {
-    await refetchUsers();
-    setEditOpen(false);
-    alert("Assignment already removed.");
-    return;
-  }
-
-  const msg =
-    `Remove assignment?\n\n` +
-    `Contractor: ${editRow.userName}\n` +
-    `Project: ${editRow.projectTitle}\n\n` +
-    `This will permanently delete the assignment.`;
-
-  if (!window.confirm(msg)) return;
-
-  try {
-    setDeleting(true);
-    await api.delete(`/admin/assignments/${encodeURIComponent(resolvedId)}`);
-    await refetchUsers();
-    alert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
-    setEditOpen(false);
-  } catch (e: any) {
-    const status = e?.response?.status;
-    if (status === 404) {
+    if (!resolvedId) {
       await refetchUsers();
       setEditOpen(false);
       alert("Assignment already removed.");
-    } else {
-      alert(e?.response?.data?.error || e?.message || "Unassign failed.");
+      return;
     }
-  } finally {
-    setDeleting(false);
-  }
-};
+
+    const msg =
+      `Remove assignment?\n\n` +
+      `Contractor: ${editRow.userName}\n` +
+      `Project: ${editRow.projectTitle}\n\n` +
+      `This will permanently delete the assignment.`;
+
+    if (!window.confirm(msg)) return;
+
+    try {
+      setDeleting(true);
+      await api.delete(`/admin/assignments/${encodeURIComponent(resolvedId)}`);
+      await refetchUsers();
+      alert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
+      setEditOpen(false);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404) {
+        await refetchUsers();
+        setEditOpen(false);
+        alert("Assignment already removed.");
+      } else {
+        alert(e?.response?.data?.error || e?.message || "Unassign failed.");
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const openView = (row: AssignmentRow) => { setViewRow(row); setViewOpen(true); };
   const openEdit = (row: AssignmentRow) => {
@@ -696,7 +713,7 @@ const onHardDeleteFromEdit = async () => {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold dark:text-white">Contractor Assignments</h1>
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          Tiles: Projects · Roles & Options · <b>Browse Contractors</b> · Contractor Assignments
+          Projects · Roles & Options · <b>Browse Contractors</b> · Contractor Assignments
         </p>
         {err && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>}
       </div>
@@ -957,7 +974,7 @@ const onHardDeleteFromEdit = async () => {
               <select
                 className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
                 value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); setAPage(1); }}
               >
                 {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -1116,7 +1133,7 @@ const onHardDeleteFromEdit = async () => {
                 </thead>
 
                 <tbody>
-                  {assignedSortedRows.map((r, i) => (
+                  {assignedRowsPaged.map((r, i) => (
                     <tr key={`${r.userId}-${r.projectId}-${i}`} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                         <div className="flex gap-2">
@@ -1152,6 +1169,47 @@ const onHardDeleteFromEdit = async () => {
                 </tbody>
               </table>
             )}
+          </div>
+
+          {/* Pagination for assignments (uses shared pageSize) */}
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
+            <div className="text-gray-600 dark:text-gray-300">
+              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> contractor assignments
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage(1)}
+                disabled={aPageSafe <= 1}
+                title="First"
+              >
+                « First
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage((p) => Math.max(1, p - 1))}
+                disabled={aPageSafe <= 1}
+                title="Previous"
+              >
+                ‹ Prev
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
+                disabled={aPageSafe >= aTotalPages}
+                title="Next"
+              >
+                Next ›
+              </button>
+              <button
+                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setAPage(aTotalPages)}
+                disabled={aPageSafe >= aTotalPages}
+                title="Last"
+              >
+                Last »
+              </button>
+            </div>
           </div>
         </div>
       </section>
