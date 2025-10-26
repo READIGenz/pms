@@ -24,6 +24,7 @@ import { MaterialNewPage, MaterialEditPage } from './views/admin/ref/materiallib
 
 import ChecklistLib from './views/admin/ref/checklistlib/ChecklistLib';
 import { ChecklistEditPage, ChecklistNewPage } from './views/admin/ref/checklistlib/ChecklistForm';
+import ModuleSettingsLayout from './views/admin/moduleSettings/ModuleSettingsLayout';
 import Audit from './views/admin/Audit';
 
 
@@ -75,7 +76,7 @@ export default function App() {
           <Route path="companies/new" element={<CompanyCreate />} />
           <Route path="companies/:id/edit" element={<CompanyEdit />} />
 
-          {/* 👇 NEW: assignments use a param route; base redirects to 'clients' */}
+          {/* assignments use a param route; base redirects to 'clients' */}
           <Route path="assignments" element={<Navigate to="clients" replace />} />
           <Route path="assignments/:role" element={<Assignments />} />
 
@@ -96,8 +97,11 @@ export default function App() {
           <Route path="ref/checklistlib" element={<ChecklistLib />} />
           <Route path="ref/checklistlib/new" element={<ChecklistNewPage />} />
           <Route path="ref/checklistlib/:id/edit" element={<ChecklistEditPage />} />
-          
-            <Route path="audit" element={<Audit />} />
+
+          <Route path="module-settings" element={<ModuleSettingsLayout />}>
+
+          </Route>
+          <Route path="audit" element={<Audit />} />
 
           {/* when no child path picked */}
         </Route>

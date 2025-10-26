@@ -6,6 +6,13 @@ import { PrismaClient, Prisma } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   auditSettings: any;
   auditLog: any;
+    private _projectModuleSetting: any;
+  public get projectModuleSetting(): any {
+    return this._projectModuleSetting;
+  }
+  public set projectModuleSetting(value: any) {
+    this._projectModuleSetting = value;
+  }
   async onModuleInit() {
     await this.$connect();
     // ---- Global empty-string → null guard for optional-unique fields ----

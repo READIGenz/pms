@@ -104,6 +104,7 @@ const isSuperAdmin = !!payload?.isSuperAdmin;
                 <SideLink to="ref/activitylib" label="Activity Library" />
                 <SideLink to="ref/materiallib" label="Material Library" />
                 <SideLink to="ref/checklistlib" label="Checklist Library" />
+                <SideLink to="module-settings" label="Module Settings" />
                 {isSuperAdmin && <SideLink to="audit" label="Audit" />}
 
               </div>

@@ -11,6 +11,12 @@ exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 let PrismaService = class PrismaService extends client_1.PrismaClient {
+    get projectModuleSetting() {
+        return this._projectModuleSetting;
+    }
+    set projectModuleSetting(value) {
+        this._projectModuleSetting = value;
+    }
     async onModuleInit() {
         await this.$connect();
         // ---- Global empty-string → null guard for optional-unique fields ----

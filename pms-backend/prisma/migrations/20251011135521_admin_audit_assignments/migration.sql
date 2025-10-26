@@ -7,7 +7,7 @@ CREATE TABLE "AdminAuditSetting" (
     "assignmentsEnabled" BOOLEAN NOT NULL DEFAULT true,
     "updatedByUserId" UUID,
     "updatedByName" TEXT,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 
     CONSTRAINT "AdminAuditSetting_pkey" PRIMARY KEY ("id")
 );

@@ -196,6 +196,12 @@ enum AuditAction {
 
   @@map("AuditAction")
 }
+
+enum ModuleCode {
+  WIR
+  @@map("ModuleCode")
+}
+
 // ============================ Models ============================ */
 
 model State {
@@ -354,6 +360,8 @@ model Project {
   userProjects              UserProject[] // junction backref
   userRoleMemberships       UserRoleMembership[] // role memberships scoped to this project
   PermissionProjectOverride PermissionProjectOverride[]
+  moduleSettings ProjectModuleSetting[]
+
 
   @@map("Project")
 }
@@ -641,7 +649,7 @@ model RefMaterial {
   properties   Json?
   version      Int      @default(1)
 
-  // --- NEW: human label + sortable parts ---
+  // --- human label + sortable parts ---
   versionLabel String?          // e.g. "1.2.3"
   versionMajor Int      @default(1)
   versionMinor Int      @default(0)
@@ -674,6 +682,24 @@ model RefActivityMaterial {
   @@index([activityId])
   @@index([materialId])
   @@map("RefActivityMaterial")
+}
+
+model ProjectModuleSetting {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String     @db.Uuid
+  module    ModuleCode
+  /// Stores only the WIR settings used in the UI:
+  /// { transmissionType: "Public"|"Private"|"UserSet", redirectAllowed: boolean, exportPdfAllowed: boolean }
+  extra     Json       
+
+  createdAt DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([projectId, module], map: "pms_project_module_unique")
+  @@index([projectId])
+  @@map("ProjectModuleSetting")
 }
 
 model AdminAuditSetting {

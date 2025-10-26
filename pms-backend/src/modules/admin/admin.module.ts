@@ -9,11 +9,12 @@ import { AdminPermissionsExplorerModule } from './permissions-explorer/user-over
 import { AdminActivitiesModule } from './ref/activity/admin.activities.module';
 import { AdminMaterialsModule } from './ref/material/admin.materials.module';
 import { AdminChecklistsModule } from './ref/checklist/admin.checklists.module';
+import { AdminModuleSettingsModule } from './module-settings/module-settings.module';
 import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [AdminUsersModule, AdminProjectsModule,AdminCompaniesModule, 
     AdminAssignmentsModule,AdminPermissionsModule, 
-    AdminPermissionsExplorerModule, AdminActivitiesModule, AdminMaterialsModule,AdminChecklistsModule,AuditModule],
+    AdminPermissionsExplorerModule, AdminActivitiesModule, AdminMaterialsModule,AdminChecklistsModule, AdminModuleSettingsModule, AuditModule],
 })
 export class AdminModule {}
