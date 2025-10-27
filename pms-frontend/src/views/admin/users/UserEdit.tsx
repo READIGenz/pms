@@ -352,7 +352,7 @@ export default function UserEdit() {
       try {
         await api.post(`/admin/users/${id}/affiliations`, {
           isClient,
-          projectIds: isClient ? selectedProjectIds : [],
+        //  projectIds: isClient ? selectedProjectIds : [],
           isServiceProvider,
           companyIds: isServiceProvider ? selectedCompanyIds : [],
         });

@@ -23,35 +23,35 @@ type ExistsResponse = {
 
 type VerifyResponse =
   | {
-      ok: true;
-      token?: string; // may be omitted when chooseRole=true (identity-only flow)
-      user: any;
-      jwt?: any;
-      chooseRole: false;
-      roles: RoleOption[];
-    }
+    ok: true;
+    token?: string; // may be omitted when chooseRole=true (identity-only flow)
+    user: any;
+    jwt?: any;
+    chooseRole: false;
+    roles: RoleOption[];
+  }
   | {
-      ok: true;
-      user: any;
-      jwt?: any;
-      chooseRole: true;
-      roles: RoleOption[];
-      token?: string; // if backend includes a base token, we’ll keep it
-    }
+    ok: true;
+    user: any;
+    jwt?: any;
+    chooseRole: true;
+    roles: RoleOption[];
+    token?: string; // if backend includes a base token, we’ll keep it
+  }
   | { ok: false; error: string };
 
 type AssumeRoleResponse =
   | {
-      ok: true;
-      token: string;
-      user: any;
-      jwt: any;
-      role: RoleOption;
-    }
+    ok: true;
+    token: string;
+    user: any;
+    jwt: any;
+    role: RoleOption;
+  }
   | {
-      ok: false;
-      error?: string;
-    };
+    ok: false;
+    error?: string;
+  };
 
 // ---- Helpers ----
 function decodeJwtPayload(token: string): any | null {
@@ -80,7 +80,7 @@ function readSavedLogins(): string[] {
 function writeSavedLogins(arr: string[]) {
   try {
     localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(arr));
-  } catch {}
+  } catch { }
 }
 function addSavedLogin(login: string) {
   const v = (login || '').trim();
@@ -129,6 +129,16 @@ function mapRoleToPath(role: string): string {
 const isClientRole = (role?: string) =>
   (role || '').toString().trim().replace(/[_\s-]+/g, '').toLowerCase() === 'client';
 
+// NEW: service provider roles helper (Contractor/Consultant/PMC/Supplier)
+const isServiceProviderRole = (role?: string) => {
+  const norm = (role || '').toString().trim().replace(/[_\s-]+/g, '').toLowerCase();
+  return ['contractor', 'consultant', 'pmc', 'supplier'].includes(norm);
+};
+
+// IH-PMT role helper (covers 'IH-PMT' and 'IH_PMT')
+const isIHPMTRole = (role?: string) =>
+  (role || '').toString().trim().replace(/[_\s-]+/g, '').toLowerCase() === 'ihpmt';
+
 export default function Login() {
   // Prefill username from MRU
   const initialLogin = (() => {
@@ -157,10 +167,10 @@ export default function Login() {
     // clear any auth remnants
     try {
       localStorage.removeItem('token');
-    } catch {}
+    } catch { }
     try {
       sessionStorage.removeItem('otpSession');
-    } catch {}
+    } catch { }
 
     setStep('enter');
     setBusy(false);
@@ -171,21 +181,51 @@ export default function Login() {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
 
-  // ---- NEW: de-duplicate Client role to a single option ----
+  // ---- UPDATED: keep exactly one Client (even if project-scoped),
+  // drop ALL project-scoped options for others, de-dup SP by role+company,
+  // and normalize labels (Client, IH-PMT)
   const roleOptionsDeduped = useMemo(() => {
     let clientTaken = false;
+    const spSeen = new Set<string>(); // `${normRole}::${companyId || 'none'}`
+
     return (roleOptions || []).reduce<RoleOption[]>((acc, r) => {
-      const isClient = isClientRole(r.role as string);
+      const normRole = (r.role || '').toString().trim().replace(/[_\s-]+/g, '').toLowerCase();
+      const isClient = normRole === 'client';
+      const isSP = ['contractor', 'consultant', 'pmc', 'supplier'].includes(normRole);
+
+      // Normalize label for Client & IH-PMT
+      const normalizedLabel = isClient
+        ? 'Client'
+        : isIHPMTRole(r.role)
+          ? r.label.replace(/^IH[_\s-]*PMT/i, 'IH-PMT')
+          : r.label;
+
+      // ✅ Always allow exactly ONE Client option (even if it came as Project)
       if (isClient) {
-        if (clientTaken) return acc; // drop duplicates
+        if (clientTaken) return acc;
         clientTaken = true;
-        acc.push({ ...r, label: 'Client' }); // normalize label
+        acc.push({ ...r, label: normalizedLabel });
         return acc;
       }
-      acc.push(r);
+
+      // For non-Client roles, remove all project-scoped options (no roles show projects)
+      if (r.scopeType === 'Project') return acc;
+
+      // De-dup service providers by role+company (keep company-based only)
+      if (isSP) {
+        const key = `${normRole}::${r.company?.id || 'none'}`;
+        if (spSeen.has(key)) return acc;
+        spSeen.add(key);
+        acc.push({ ...r, label: normalizedLabel });
+        return acc;
+      }
+
+      // Others (Admin / IH-PMT) – keep (with normalized label)
+      acc.push({ ...r, label: normalizedLabel });
       return acc;
     }, []);
   }, [roleOptions]);
+
 
   // saved usernames UI
   const [savedLogins, setSavedLogins] = useState<string[]>(() => readSavedLogins());
@@ -677,7 +717,13 @@ export default function Login() {
                 <div className="space-y-2">
                   {roleOptionsDeduped.map((r) => {
                     const roleIsClient = isClientRole(r.role as string);
-                    const displayLabel = roleIsClient ? 'Client' : r.label;
+                    //const roleIsSP = isServiceProviderRole(r.role as string);
+                    const roleIsIHPMT = isIHPMTRole(r.role as string);
+                    const displayLabel = roleIsClient
+                      ? 'Client'
+                      : roleIsIHPMT
+                        ? r.label.replace(/^IH[_\s-]*PMT/i, 'IH-PMT') // ensure dash
+                        : r.label;
 
                     return (
                       <label
@@ -697,16 +743,12 @@ export default function Login() {
                           <div className="font-medium dark:text-white">{displayLabel}</div>
 
                           <div className="text-xs text-gray-600 dark:text-gray-400">
-                            {r.scopeType === 'Company' && r.company
-                              ? `Company: ${r.company.name} (${r.company.role})`
-                              : null}
-
-                            {r.scopeType === 'Project' && r.project && !roleIsClient
-                              ? `Project: ${r.project.title}${r.project.code ? ` (${r.project.code})` : ''}`
-                              : null}
-
+                            {/* Show company only for service providers; 
+                            {roleIsSP && r.company ? `Company: ${r.company.name}` : null}
+                            No projects for any role */}
                             {r.scopeType === 'Global' ? 'Global scope' : null}
                           </div>
+
                         </div>
                       </label>
                     );

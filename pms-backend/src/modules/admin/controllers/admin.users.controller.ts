@@ -1,3 +1,4 @@
+// pms-backend/src/modules/admin/controllers/admin.users.controller.ts
 import {
   Body, Controller, Get, Param, Patch, Post, Query,
   UploadedFile, UseGuards, UseInterceptors, HttpException, HttpStatus,
@@ -9,7 +10,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 import {
-  Prisma, UserRole, CompanyRole,RoleScope
+  Prisma, UserRole, CompanyRole, RoleScope
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AdminCodeService } from '../admin-code.service';
@@ -176,17 +177,17 @@ export class AdminUsersController {
         pin: body.pin || undefined,
         state: body.stateId ? { connect: { stateId: body.stateId } } : undefined,
         district: body.districtId ? { connect: { districtId: body.districtId } } : undefined,
-       //Only honor isSuperAdmin if the caller is super admin
-      ...(req?.user?.isSuperAdmin && body?.isSuperAdmin === true
-        ? { isSuperAdmin: true }
-        : {}),
-        };
+        //Only honor isSuperAdmin if the caller is super admin
+        ...(req?.user?.isSuperAdmin && body?.isSuperAdmin === true
+          ? { isSuperAdmin: true }
+          : {}),
+      };
 
-    return tx.user.create({ data: payload, select: { userId: true, updatedAt: true, isSuperAdmin: true } });
-  });
+      return tx.user.create({ data: payload, select: { userId: true, updatedAt: true, isSuperAdmin: true } });
+    });
 
-  return { ok: true, user: created };
-}
+    return { ok: true, user: created };
+  }
 
   @Patch(':id')
   async updateUser(@Param('id') userId: string, @Body() body: any) {
@@ -271,6 +272,10 @@ export class AdminUsersController {
     const projectIds = Array.isArray(body.projectIds) ? body.projectIds.filter(Boolean) : [];
     const companyIds = Array.isArray(body.companyIds) ? body.companyIds.filter(Boolean) : [];
 
+    // Detect which fields were explicitly provided so we only touch those scopes
+    const hasProjectsField  = Object.prototype.hasOwnProperty.call(body, 'projectIds');
+    const hasCompaniesField = Object.prototype.hasOwnProperty.call(body, 'companyIds');
+
     const mapCompanyRoleToUserRole = (cr: CompanyRole | null): any => {
       switch (cr) {
         case 'IH_PMT': return 'IH_PMT';
@@ -282,39 +287,72 @@ export class AdminUsersController {
       }
     };
 
-    const companies = companyIds.length
-      ? await this.prisma.company.findMany({
-          where: { companyId: { in: companyIds } },
-          select: { companyId: true, companyRole: true },
-        })
-      : [];
+    let createdCount = 0;
 
-    const toCreate: Prisma.UserRoleMembershipCreateManyInput[] = [];
-    if (isClient) {
-      for (const pid of projectIds) {
-        toCreate.push({
-          userId, role: 'Client', scopeType: 'Project',
-          companyId: null, projectId: pid, isDefault: false,
-        } as any);
-      }
-    }
-    if (isServiceProvider) {
-      for (const c of companies) {
-        const role = mapCompanyRoleToUserRole(c.companyRole);
-        if (!role) continue;
-        toCreate.push({
-          userId, role, scopeType: 'Company',
-          companyId: c.companyId, projectId: null, isDefault: false,
-        } as any);
-      }
-    }
-
-    // This update bumps updatedAt via @updatedAt
+    // This update bumps updatedAt via @updatedAt; always update flags
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { userId }, data: { isClient, isServiceProvider } });
-      await tx.userRoleMembership.deleteMany({ where: { userId, scopeType: 'Project' } });
-      await tx.userRoleMembership.deleteMany({ where: { userId, scopeType: 'Company' } });
-      if (toCreate.length) await tx.userRoleMembership.createMany({ data: toCreate });
+
+      // ---- Company scope (partial & diff-based) ----
+      if (hasCompaniesField) {
+        // current company memberships
+        const existing = await tx.userRoleMembership.findMany({
+          where: { userId, scopeType: 'Company' },
+          select: { id: true, companyId: true },
+        });
+
+        const desiredSet  = new Set(companyIds);
+        const existingSet = new Set(existing.map(m => m.companyId!).filter(Boolean));
+
+        const toDeleteIds = existing
+          .filter(m => m.companyId && !desiredSet.has(m.companyId))
+          .map(m => m.id);
+
+        if (toDeleteIds.length) {
+          await tx.userRoleMembership.deleteMany({ where: { id: { in: toDeleteIds } } });
+        }
+
+        const toAddCompanyIds = companyIds.filter(cid => !existingSet.has(cid));
+        if (toAddCompanyIds.length) {
+          const companies = await tx.company.findMany({
+            where: { companyId: { in: toAddCompanyIds } },
+            select: { companyId: true, companyRole: true },
+          });
+          const rows = companies
+            .map(c => ({
+              userId,
+              role: mapCompanyRoleToUserRole(c.companyRole),
+              scopeType: 'Company' as const,
+              companyId: c.companyId,
+              projectId: null,
+              isDefault: false,
+            }))
+            .filter(r => !!r.role) as Prisma.UserRoleMembershipCreateManyInput[];
+
+          if (rows.length) {
+            await tx.userRoleMembership.createMany({ data: rows });
+            createdCount += rows.length;
+          }
+        }
+      }
+
+      // ---- Project scope (only when provided) ----
+      if (hasProjectsField) {
+        // replace strategy for projects when projectIds is explicitly sent
+        await tx.userRoleMembership.deleteMany({ where: { userId, scopeType: 'Project' } });
+        if (isClient && projectIds.length) {
+          const rows: Prisma.UserRoleMembershipCreateManyInput[] = projectIds.map((pid) => ({
+            userId,
+            role: 'Client' as any,
+            scopeType: 'Project',
+            companyId: null,
+            projectId: pid,
+            isDefault: false,
+          }));
+          await tx.userRoleMembership.createMany({ data: rows });
+          createdCount += rows.length;
+        }
+      }
     });
 
     // (Optional) return the fresh timestamp if you want the client to read it
@@ -323,43 +361,43 @@ export class AdminUsersController {
       select: { userId: true, updatedAt: true },
     });
 
-    return { ok: true, count: toCreate.length, user };
+    return { ok: true, count: createdCount, user };
   }
 
-@Post(':id/roles')
-async addRole(
-  @Req() req: any,
-  @Param('id') userId: string,
-  @Body() body: { role: UserRole; scopeType: RoleScope; companyId?: string | null; projectId?: string | null; isDefault?: boolean; canApprove?: boolean; },
-) {
-  // Only super admins can grant roles from this admin endpoint
-  if (!req?.user?.isSuperAdmin) {
-    throw new ForbiddenException('Only Super Admin can grant roles');
+  @Post(':id/roles')
+  async addRole(
+    @Req() req: any,
+    @Param('id') userId: string,
+    @Body() body: { role: UserRole; scopeType: RoleScope; companyId?: string | null; projectId?: string | null; isDefault?: boolean; canApprove?: boolean; },
+  ) {
+    // Only super admins can grant roles from this admin endpoint
+    if (!req?.user?.isSuperAdmin) {
+      throw new ForbiddenException('Only Super Admin can grant roles');
+    }
+
+    // For Global Admin, enforce scope rules
+    if (body.role === 'Admin' && body.scopeType !== 'Global') {
+      throw new HttpException('Admin must be Global scope', HttpStatus.BAD_REQUEST);
+    }
+
+    const data: Prisma.UserRoleMembershipCreateInput = {
+      user: { connect: { userId } },
+      role: body.role,
+      scopeType: body.scopeType,
+      company: body.companyId ? { connect: { companyId: body.companyId } } : undefined,
+      project: body.projectId ? { connect: { projectId: body.projectId } } : undefined,
+      isDefault: !!body.isDefault,
+      canApprove: !!body.canApprove,
+    };
+
+    const created = await this.prisma.userRoleMembership.create({
+      data,
+      select: {
+        id: true, role: true, scopeType: true, companyId: true, projectId: true,
+        isDefault: true, canApprove: true, createdAt: true, updatedAt: true,
+      },
+    });
+
+    return { ok: true, membership: created };
   }
-
-  // For Global Admin, enforce scope rules
-  if (body.role === 'Admin' && body.scopeType !== 'Global') {
-    throw new HttpException('Admin must be Global scope', HttpStatus.BAD_REQUEST);
-  }
-
-  const data: Prisma.UserRoleMembershipCreateInput = {
-    user: { connect: { userId } },
-    role: body.role,
-    scopeType: body.scopeType,
-    company: body.companyId ? { connect: { companyId: body.companyId } } : undefined,
-    project: body.projectId ? { connect: { projectId: body.projectId } } : undefined,
-    isDefault: !!body.isDefault,
-    canApprove: !!body.canApprove,
-  };
-
-  const created = await this.prisma.userRoleMembership.create({
-    data,
-    select: {
-      id: true, role: true, scopeType: true, companyId: true, projectId: true,
-      isDefault: true, canApprove: true, createdAt: true, updatedAt: true,
-    },
-  });
-
-  return { ok: true, membership: created };
-}
 }
