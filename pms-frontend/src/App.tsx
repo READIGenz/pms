@@ -32,6 +32,7 @@ import Audit from './views/admin/Audit';
 import HomeLayout from './views/home/HomeLayout';
 import Welcome from './views/home/Welcome';
 import Tiles from './views/home/Tiles';
+import MyProjects from './views/home/MyProjects';
 
 // Optional generic landing
 function Landing() {
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
           <Route index element={<Welcome />} />
           <Route path="tiles" element={<Tiles />} />
+          <Route path="my-projects" element={<MyProjects />} />
         </Route>
 
         {/* Fallback generic landing (if you use /landing in Login.tsx fallback) */}
