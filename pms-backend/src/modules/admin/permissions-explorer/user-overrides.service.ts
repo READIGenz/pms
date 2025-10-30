@@ -1,3 +1,5 @@
+//src/modules/admin/permissions-explorer/user-overrides.service.ts
+
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 

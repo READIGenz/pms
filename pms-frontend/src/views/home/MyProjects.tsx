@@ -42,6 +42,25 @@ const normalizeRole = (raw?: string) => {
     }
 };
 
+const gotoWir = (
+    navigate: ReturnType<typeof useNavigate>,
+    role: string,
+    proj: Project
+) => {
+    const r = normalizeRole(role);
+navigate(`/home/projects/${proj.projectId}/wir`, {
+            state: {
+            role: r,
+            project: {
+                projectId: proj.projectId,
+                code: proj.code,
+                title: proj.title,
+            },
+        },
+        replace: false,
+    });
+};
+
 const projectRouteForRole = (role?: string, projectId?: string) => {
     const r = normalizeRole(role);
     switch (r) {
@@ -322,6 +341,7 @@ export default function MyProjects() {
                 </button>
             </div>
 
+
             {/* ---- KPI strip ---- */}
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <KPI label="Total" value={loading ? '—' : kpis.total} />
@@ -357,7 +377,7 @@ export default function MyProjects() {
                 {filtered.map((p) => (
                     <button
                         key={p.projectId}
-                        onClick={() => navigate(projectRouteForRole(role, p.projectId))}
+                        onClick={() => gotoWir(navigate, role, p)}   // <-- open WIR with state
                         className="group text-left rounded-2xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 sm:p-5 shadow-sm hover:shadow-md transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
                     >
                         <div className="flex items-start gap-3 min-w-0">

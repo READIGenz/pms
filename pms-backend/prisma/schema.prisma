@@ -199,7 +199,29 @@ enum AuditAction {
 
 enum ModuleCode {
   WIR
+
   @@map("ModuleCode")
+}
+
+// ============================= WIR Enums =============================
+
+enum WirStatus {
+  Draft
+  Submitted
+  Recommended
+  Approved
+  Rejected
+
+  @@map("WirStatus")
+}
+
+enum WirItemStatus {
+  OK
+  NCR
+  Pending
+  Unknown
+
+  @@map("WirItemStatus")
 }
 
 // ============================ Models ============================ */
@@ -268,6 +290,10 @@ model User {
   state    State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
   district District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
 
+  wirAsContractor            Wir[]     @relation("WirContractorUser")
+  wirAsInspector             Wir[]     @relation("WirInspectorUser")
+  wirAsHod                   Wir[]     @relation("WirHodUser")
+  wirsCreated                Wir[]     @relation("WirCreatedBy")
   // 1:M shortcuts
   projectsAsClient           Project[] @relation("ProjectClientUser")
   companiesAsServiceProvider Company[] @relation("CompanyServiceProviderUser")
@@ -360,8 +386,8 @@ model Project {
   userProjects              UserProject[] // junction backref
   userRoleMemberships       UserRoleMembership[] // role memberships scoped to this project
   PermissionProjectOverride PermissionProjectOverride[]
-  moduleSettings ProjectModuleSetting[]
-
+  moduleSettings            ProjectModuleSetting[]
+  wirs                      Wir[]
 
   @@map("Project")
 }
@@ -505,64 +531,64 @@ enum Discipline {
 enum MaterialDiscipline {
   Civil
   Architecture
-  MEP_ELE @map("MEP.ELE")
-  MEP_PHE @map("MEP.PHE")
-  MEP_HVC @map("MEP.HVC")
+  MEP_ELE      @map("MEP.ELE")
+  MEP_PHE      @map("MEP.PHE")
+  MEP_HVC      @map("MEP.HVC")
   Finishes
 
   @@map("MaterialDiscipline") // DB name (optional but nice)
 }
 
 model RefChecklist {
-  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String?     @unique
-  title        String
-  discipline   Discipline
-  stageLabel   String?                                // ← match RefActivity (optional)
-  tags         String[]    @default([])
-  status       String      @default("Active")
-  version      Int         @default(1)
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String?    @unique
+  title      String
+  discipline Discipline
+  stageLabel String? // ← match RefActivity (optional)
+  tags       String[]   @default([])
+  status     String     @default("Active")
+  version    Int        @default(1)
 
   // --- NEW: human label + sortable parts (like RefActivity) ---
   versionLabel String?
-  versionMajor Int         @default(1)
-  versionMinor Int         @default(0)
-  versionPatch Int         @default(0)
+  versionMajor Int     @default(1)
+  versionMinor Int     @default(0)
+  versionPatch Int     @default(0)
   // ------------------------------------------------------------
 
-  aiDefault    Boolean     @default(false)            // ← NEW: "AI (Default)" toggle
+  aiDefault Boolean @default(false) // ← NEW: "AI (Default)" toggle
 
-  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime    @updatedAt @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  items        RefChecklistItem[]
+  items RefChecklistItem[]
 
   @@index([discipline, stageLabel])
   @@map("RefChecklist")
 }
 
 model RefChecklistItem {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  checklistId String   @db.Uuid
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checklistId String @db.Uuid
   seq         Int
 
   // Existing
-  text        String        // Title in the UI
-  requirement String?       // "Mandatory" | "Optional"
-  method      String[]      // keep
-  risk        String?       // keep (we’ll mirror "Critical: Yes/No" here too if you want)
-  tags        String[]      // (visual, measurement, evidence, document)
+  text        String // Title in the UI
+  requirement String? // "Mandatory" | "Optional"
+  method      String[] // keep
+  risk        String? // keep (we’ll mirror "Critical: Yes/No" here too if you want)
+  tags        String[] // (visual, measurement, evidence, document)
 
   // NEW (from your UI)
-  itemCode     String?      // "Item Code"
-  critical     Boolean?     // Yes/No
-  aiEnabled    Boolean?     // AI: Yes/No
-  aiConfidence Decimal?     // 0..1
-  units        String?      // "mm", "N/mm2", "mm/m", ...
-  tolerance    String?      // "<=", "+-", "="
-  base         Decimal?     // 17.001
-  plus         Decimal?     // 0.001
-  minus        Decimal?     // 0.001
+  itemCode     String? // "Item Code"
+  critical     Boolean? // Yes/No
+  aiEnabled    Boolean? // AI: Yes/No
+  aiConfidence Decimal? // 0..1
+  units        String? // "mm", "N/mm2", "mm/m", ...
+  tolerance    String? // "<=", "+-", "="
+  base         Decimal? // 17.001
+  plus         Decimal? // 0.001
+  minus        Decimal? // 0.001
 
   checklist           RefChecklist                   @relation(fields: [checklistId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   suggestedActivities RefChecklistItemActivityLink[]
@@ -604,28 +630,28 @@ model RefChecklistItemMaterialLink {
 }
 
 model RefActivity {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code       String?    @unique
-  title      String
-  discipline Discipline
-  stageLabel String?
-  phase      String[]   @default([]) // e.g., ["Execution", "Handover"]
-  element    String[]   @default([]) // e.g., ["Slab", "Beam"]
-  system     String[] // array tags
-  nature     String[] // array tags
-  method     String[] // array tags
-  status     String     @default("Active")
-  version    Int        @default(1)
-// --- NEW: human label + sortable parts ---
-  versionLabel String?           // e.g. "1.2.3"
-  versionMajor Int      @default(1)
-  versionMinor Int      @default(0)
-  versionPatch Int      @default(0)
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String?    @unique
+  title        String
+  discipline   Discipline
+  stageLabel   String?
+  phase        String[]   @default([]) // e.g., ["Execution", "Handover"]
+  element      String[]   @default([]) // e.g., ["Slab", "Beam"]
+  system       String[] // array tags
+  nature       String[] // array tags
+  method       String[] // array tags
+  status       String     @default("Active")
+  version      Int        @default(1)
+  // --- NEW: human label + sortable parts ---
+  versionLabel String? // e.g. "1.2.3"
+  versionMajor Int        @default(1)
+  versionMinor Int        @default(0)
+  versionPatch Int        @default(0)
   // -----------------------------------------
 
-  notes      String?
-  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+  notes     String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   materials                    RefActivityMaterial[]
   RefChecklistItemActivityLink RefChecklistItemActivityLink[]
@@ -635,31 +661,31 @@ model RefActivity {
 }
 
 model RefMaterial {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String?  @unique
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String?             @unique
   name         String
-  discipline   MaterialDiscipline?   // <— use the new enum here
+  discipline   MaterialDiscipline? // <— use the new enum here
   category     String?
   manufacturer String?
   model        String?
-  standards    String[] @default([])
+  standards    String[]            @default([])
   fireRating   String?
-  keyProps     String[] @default([])
-  aliases      String[] @default([])
+  keyProps     String[]            @default([])
+  aliases      String[]            @default([])
   properties   Json?
-  version      Int      @default(1)
+  version      Int                 @default(1)
 
   // --- human label + sortable parts ---
-  versionLabel String?          // e.g. "1.2.3"
-  versionMajor Int      @default(1)
-  versionMinor Int      @default(0)
-  versionPatch Int      @default(0)
+  versionLabel String? // e.g. "1.2.3"
+  versionMajor Int     @default(1)
+  versionMinor Int     @default(0)
+  versionPatch Int     @default(0)
   // ----------------------------------------
 
-  notes        String?
-  status       String   @default("Active")
-  createdAt    DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+  notes     String?
+  status    String   @default("Active")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   activityUses                 RefActivityMaterial[]
   RefChecklistItemMaterialLink RefChecklistItemMaterialLink[]
@@ -690,10 +716,10 @@ model ProjectModuleSetting {
   module    ModuleCode
   /// Stores only the WIR settings used in the UI:
   /// { transmissionType: "Public"|"Private"|"UserSet", redirectAllowed: boolean, exportPdfAllowed: boolean }
-  extra     Json       
+  extra     Json
 
-  createdAt DateTime   @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime   @updatedAt @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
 
@@ -703,52 +729,124 @@ model ProjectModuleSetting {
 }
 
 model AdminAuditSetting {
-  id                 Int       @id @default(1)
+  id                 Int     @id @default(1)
   /// When false, no assignment audit rows are written.
-  assignmentsEnabled Boolean   @default(true)
+  assignmentsEnabled Boolean @default(true)
 
   // Who flipped the switch last (denormalized for history)
-  updatedByUserId    String?   @db.Uuid
-  updatedByName      String?
-  updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
+  updatedByUserId String?  @db.Uuid
+  updatedByName   String?
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
 
   @@map("AdminAuditSetting")
 }
 
 model AdminAuditLog {
-  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
   // Who performed the change
-  actorUserId   String       @db.Uuid
-  actorName     String       // full name at time of action (denormalized)
+  actorUserId String @db.Uuid
+  actorName   String // full name at time of action (denormalized)
 
   // What happened
-  action        AuditAction
-  module        String       @default("Assignments")
+  action AuditAction
+  module String      @default("Assignments")
 
   // Whose assignments were changed
-  targetUserId  String       @db.Uuid
+  targetUserId String @db.Uuid
 
   // Context of the membership affected
-  role          UserRole?
-  scopeType     RoleScope?
-  companyId     String?      @db.Uuid
-  projectId     String?      @db.Uuid
+  role      UserRole?
+  scopeType RoleScope?
+  companyId String?    @db.Uuid
+  projectId String?    @db.Uuid
 
   // Optional request context
-  ip            String?
-  userAgent     String?
+  ip        String?
+  userAgent String?
 
   // Snapshots
   /// e.g. { id, role, scopeType, companyId, projectId }
-  before        Json?
-  after         Json?
+  before Json?
+  after  Json?
 
-  createdAt     DateTime     @default(now()) @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([targetUserId, createdAt])
   @@index([companyId])
   @@index([projectId])
   @@index([action])
   @@map("AdminAuditLog")
+}
+
+// ============================== WIR Models ==============================
+
+model Wir {
+  wirId String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code  String? @unique
+  title String
+
+  projectId String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [projectId], onUpdate: Cascade, onDelete: Cascade)
+
+  // status / health (reuse your ProjectHealth palette)
+  status WirStatus     @default(Draft)
+  health ProjectHealth @default(Unknown)
+
+  // meta
+  discipline Discipline?
+  stage      String?
+
+  // schedule
+  forDate DateTime? @db.Timestamptz(6)
+  forTime String?
+
+  // location (denormalized for quick display)
+  cityTown  String?
+  stateName String?
+
+  // participants (denormalized display names are resolved by service)
+  contractorId String? @db.Uuid
+  inspectorId  String? @db.Uuid
+  hodId        String? @db.Uuid
+
+  contractor User? @relation("WirContractorUser", fields: [contractorId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
+  inspector  User? @relation("WirInspectorUser", fields: [inspectorId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
+  hod        User? @relation("WirHodUser", fields: [hodId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
+
+  description String?
+
+  items WirItem[]
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("WirCreatedBy", fields: [createdById], references: [userId], onDelete: SetNull, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([discipline, stage])
+  @@map("Wir")
+}
+
+model WirItem {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  wirId String @db.Uuid
+  wir   Wir    @relation(fields: [wirId], references: [wirId], onUpdate: Cascade, onDelete: Cascade)
+
+  // checklist-style fields (UI-friendly)
+  name       String
+  spec       String?
+  required   String?
+  tolerance  String?
+  photoCount Int?
+  status     WirItemStatus @default(Unknown)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([wirId])
+  @@map("WirItem")
 }

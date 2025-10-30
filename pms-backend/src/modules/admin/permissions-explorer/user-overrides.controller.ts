@@ -1,3 +1,5 @@
+//src/modules/admin/permissions-explorer/user-overrides.controller.ts
+
 import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { AdminUserOverridesService } from './user-overrides.service';
