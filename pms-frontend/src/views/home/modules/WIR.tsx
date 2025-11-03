@@ -3,11 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../../../api/client";
 import { useAuth } from "../../../hooks/useAuth";
+import { getRoleBaseMatrix } from "../../admin/permissions/AdminPermProjectOverrides";
+import { getModuleSettings } from "../../../api/adminModuleSettings";
+import { normalizeSettings } from "../../admin/moduleSettings/useModuleSettings";
 
-// --- JWT (local to this file) ---
+/* ========================= JWT helpers ========================= */
 function decodeJwtPayload(token: string): any | null {
   try {
-    const [_, b64] = token.split(".");
+    const [, b64] = token.split(".");
     if (!b64) return null;
     const norm = b64.replace(/-/g, "+").replace(/_/g, "/");
     const pad = norm.length % 4 ? "=".repeat(4 - (norm.length % 4)) : "";
@@ -28,6 +31,23 @@ const getClaims = (): any | null => {
   return t ? decodeJwtPayload(t) : null;
 };
 
+// Resolve userId from the JWT (no hooks here)
+function getUserIdFromToken(): string | null {
+  const jwt = getClaims() || {};
+  const uid = jwt.sub || jwt.userId || jwt.uid || jwt.id || null;
+  return uid ? String(uid) : null;
+}
+
+function resolveUserIdFrom(anyClaims?: any, anyUser?: any): string | null {
+  const c = anyClaims || {};
+  const candidates = [
+    c.sub, c.userId, c.uid, c.id,
+    anyUser?.userId, anyUser?.id,
+  ];
+  const hit = candidates.find(v => v !== undefined && v !== null && String(v).trim() !== "");
+  return hit != null ? String(hit) : null;
+}
+
 /* ========================= Role helpers ========================= */
 const normalizeRole = (raw?: string) => {
   const norm = (raw || "").toString().trim().replace(/[_\s-]+/g, "").toLowerCase();
@@ -43,17 +63,224 @@ const normalizeRole = (raw?: string) => {
   }
 };
 
+type RoleKey = 'Client' | 'IH-PMT' | 'Contractor' | 'Consultant' | 'PMC' | 'Supplier';
+const MODULE_CODE = "WIR";
+//const currentUserId = getUserIdFromToken();
+
+/* ========================= Permission helpers ========================= */
+// Normalize an override cell to 'deny' | 'inherit' | undefined
+function readOverrideCell(matrix: any, moduleCode: string, action: string): 'deny' | 'inherit' | undefined {
+  if (!matrix) return undefined;
+  const mod = matrix[moduleCode] ?? matrix[moduleCode?.toLowerCase?.()] ?? matrix[moduleCode?.toUpperCase?.()];
+  if (!mod || typeof mod !== 'object') return undefined;
+  const v = mod[action] ?? mod[action?.toLowerCase?.()] ?? mod[action?.toUpperCase?.()];
+  if (v === false) return 'deny'; // back-compat boolean
+  if (v === 'deny' || v === 'inherit') return v;
+  return undefined;
+}
+
+type DenyCell = 'inherit' | 'deny';
+type OverrideMatrixLite = Record<string, Record<string, DenyCell | undefined>>; // e.g. { WIR: { view: 'inherit'|'deny' } }
+
+async function fetchUserOverrideMatrix(projectId: string, userId: string): Promise<OverrideMatrixLite> {
+  try {
+    const res = await apiGetSafe<any>(`/admin/permissions/projects/${projectId}/users/${userId}/overrides`);
+    const m = (res?.matrix ?? res) || {};
+    return m;
+  } catch {
+    return {};
+  }
+}
+
+function effAllow(
+  baseYes: boolean | undefined,
+  denyCell: DenyCell | undefined
+): boolean {
+  // deny-only overrides: inherit => keep base; deny => force false
+  return !!baseYes && denyCell !== 'deny';
+}
+
+type PmcActingRole = 'Inspector' | 'HOD' | 'Inspector+HOD' | 'ViewerOnly';
+function deducePmcActingRole(effView: boolean, effRaise: boolean, effReview: boolean, effApprove: boolean): PmcActingRole {
+  // Per your rule:
+  // Inspector  => View=true, Raise=false, Review=true,  Approve=false
+  // HOD        => View=true, Raise=false, Review=false, Approve=true
+  // Both       => View=true, Raise=false, Review=true,  Approve=true
+  // Anything else = ViewerOnly (or not eligible)
+  if (effView && !effRaise && effReview && !effApprove) return 'Inspector';
+  if (effView && !effRaise && !effReview && effApprove) return 'HOD';
+  if (effView && !effRaise && effReview && effApprove) return 'Inspector+HOD';
+  return 'ViewerOnly';
+}
+
+/** Find active PMC (already have fetchActivePMCForProjectOnDate), then compute its effective WIR permissions and return role label */
+async function resolvePmcRoleForProjectOnDate(projectId: string, onDateISO: string): Promise<{ label: PmcActingRole; name?: string } | null> {
+  const hit = await fetchActivePMCForProjectOnDate(projectId, onDateISO);
+  if (!hit) return null;
+
+  // base matrix comes from role template (for PMC)
+  const base = await getRoleBaseMatrix(projectId, 'PMC' as any);
+  const baseView = !!base?.WIR?.view;
+  const baseRaise = !!base?.WIR?.raise;
+  const baseReview = !!base?.WIR?.review;
+  const baseApprove = !!base?.WIR?.approve;
+
+  // user overrides (deny-only)
+  const userId = hit.user.userId;
+  const over = await fetchUserOverrideMatrix(projectId, userId);
+  const wirRow = (over?.WIR ?? {}) as Record<'view' | 'raise' | 'review' | 'approve', DenyCell | undefined>;
+
+  const effV = effAllow(baseView, wirRow.view);
+  const effRz = effAllow(baseRaise, wirRow.raise);
+  const effRv = effAllow(baseReview, wirRow.review);
+  const effAp = effAllow(baseApprove, wirRow.approve);
+
+  const label = deducePmcActingRole(effV, effRz, effRv, effAp);
+  return { label, name: displayNameLite(hit.user) };
+}
+// compute effective canRaise = (base allow) AND (NOT user-override deny)
+async function fetchEffectiveRaisePermission(projectId: string, roleKey: RoleKey): Promise<boolean> {
+  const userId = getUserIdFromToken();
+  if (!userId) return false;
+
+  let baseRaise = false;
+  try {
+    const base = await getRoleBaseMatrix(projectId, roleKey);
+    baseRaise = !!base?.WIR?.raise; // base boolean
+  } catch {
+    baseRaise = false;
+  }
+
+  let userDeny = false;
+  try {
+    const res = await apiGetSafe<any>(`/admin/permissions/projects/${projectId}/users/${userId}/overrides`);
+    const matrix = res?.matrix ?? res;
+    userDeny = readOverrideCell(matrix, 'WIR', 'raise') === 'deny';
+  } catch {
+    userDeny = false; // no overrides -> inherit
+  }
+
+  return baseRaise && !userDeny;
+}
+
+// ---- PMC guard helpers (reuse pmcAssignments.tsx shapes) ----
+type MembershipLite = {
+  role?: string | null;
+  project?: { projectId?: string; title?: string } | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  updatedAt?: string | null;
+};
+type UserLite = {
+  userId: string;
+  firstName: string;
+  middleName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  userRoleMemberships?: MembershipLite[];
+};
+
+function displayNameLite(u: UserLite) {
+  return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim() || u.email || `User #${u.userId}`;
+}
+function fmtLocalDateOnly(v?: string | null) {
+  if (!v) return "—";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function isWithinYMD(dateISO: string, startISO?: string | null, endISO?: string | null) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return false;
+  const d = new Date(dateISO + "T00:00:00");
+  const s = startISO ? new Date(startISO) : null;
+  const e = endISO ? new Date(endISO) : null;
+  if (isNaN(+d)) return false;
+  if (s && d < s) return false;
+  if (e && d > e) return false;
+  return true;
+}
+
+async function fetchActivePMCForProjectOnDate(projectId: string, onDateISO: string) {
+  // Try a fast path if your BE supports it in future:
+  // const { data } = await api.get("/admin/assignments", { params: { projectId, role: "PMC" } });
+
+  const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+  const users: UserLite[] = Array.isArray(data) ? data : (data?.users ?? []);
+
+  // Find any PMC whose membership points to this project and covers the date
+  const candidates: {
+    user: UserLite; mem: MembershipLite;
+  }[] = [];
+
+  for (const u of users) {
+    const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+    for (const m of mems) {
+      if (String(m?.role || "").toLowerCase() !== "pmc") continue;
+      if (String(m?.project?.projectId || "") !== String(projectId)) continue;
+      const from = m?.validFrom || undefined;
+      const to = m?.validTo || undefined;
+      if (isWithinYMD(onDateISO, from, to)) {
+        candidates.push({ user: u, mem: m });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Prefer most recently updated membership
+  candidates.sort((a, b) => {
+    const au = Date.parse(a.mem.updatedAt || "") || 0;
+    const bu = Date.parse(b.mem.updatedAt || "") || 0;
+    return bu - au;
+  });
+
+  return candidates[0]; // { user, mem }
+}
+
+async function ensurePMCGuardForSubmit(projectId: string, plannedDateISO?: string | null): Promise<boolean> {
+  const onDate = (plannedDateISO && /^\d{4}-\d{2}-\d{2}$/.test(plannedDateISO)) ? plannedDateISO : todayISO();
+  const hit = await fetchActivePMCForProjectOnDate(projectId, onDate);
+  if (!hit) {
+    alert(
+      `Cannot submit: No active PMC assignment found for this project on ${fmtLocalDateOnly(onDate)}.\n\n` +
+      `Ask Admin to assign a PMC covering the IR date.`
+    );
+    return false;
+  }
+
+  const vf = fmtLocalDateOnly(hit.mem.validFrom);
+  const vt = fmtLocalDateOnly(hit.mem.validTo);
+
+  // NEW: derive PMC acting role from effective permissions
+  let roleLine = '—';
+  try {
+    const r = await resolvePmcRoleForProjectOnDate(projectId, onDate);
+    roleLine = r ? `${r.label}${r.name ? ` (${r.name})` : ''}` : '—';
+  } catch {
+    roleLine = '—';
+  }
+
+  const proceed = window.confirm(
+    `PMC on record: ${displayNameLite(hit.user)}\n` +
+    `Validity: ${vf} → ${vt}\n` +
+    `Acting as: ${roleLine}\n\n` +
+    `Do you want to proceed with submit?`
+  );
+
+  return !!proceed;
+}
+
+/* ========================= Format helpers ========================= */
 const isIsoLike = (v: any) =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
 const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleDateString() : (v ?? ""));
 const fmtDateTime = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
-
 const DISCIPLINES = ["Civil", "MEP", "Finishes"] as const;
 
 /* ========================= Types (UI-lean) ========================= */
 type WIRProps = {
-  hideTopHeader?: boolean;        // <-- suppress the in-tile header row (title + Back)
-  onBackOverride?: () => void;    // keep existing navigate(-1) fallback
+  hideTopHeader?: boolean;
+  onBackOverride?: () => void;
 };
 
 type WirItem = {
@@ -63,42 +290,37 @@ type WirItem = {
   required?: string | null;
   tolerance?: string | null;
   photoCount?: number | null;
-  status?: string | null; // e.g. OK / NCR / Pending
+  status?: string | null;
 };
 
 type WirRecord = {
   wirId: string;
-  code?: string | null; // e.g. IR-0001
+  code?: string | null;
   title: string;
   projectId: string;
   projectCode?: string | null;
   projectTitle?: string | null;
+  bicName?: string | null;
 
-  // core status/health
   status?: string | null;   // Draft | Submitted | Recommended | Approved | Rejected
   health?: string | null;   // Green | Amber | Red | Unknown
 
-  // meta
-  discipline?: string | null; // Civil / MEP / Finishes
+  discipline?: string | null;
   stage?: string | null;
 
-  // schedule-ish
-  forDate?: string | null;   // planned inspection date
-  forTime?: string | null;   // optional
+  forDate?: string | null;
+  forTime?: string | null;
 
-  // location / ref data
   cityTown?: string | null;
   stateName?: string | null;
 
-  // people
   contractorName?: string | null;
   inspectorName?: string | null;
   hodName?: string | null;
+  /** Author (creator) id for draft-visibility rules */
+  authorId?: string | null;
 
-  // items
   items?: WirItem[];
-
-  // misc
   description?: string | null;
   updatedAt?: string | null;
 };
@@ -112,13 +334,15 @@ type FetchState = {
 type NewWirForm = {
   projectCode?: string | null;
   projectTitle?: string | null;
-  activityId?: string | null;      // from Activity Library (later)
-  activityLabel?: string | null;   // display text for now
-  discipline?: string | null;      // Civil / MEP / Finishes
-  dateISO: string;                 // yyyy-mm-dd
-  time12h: string;                 // HH:MM AM/PM
+  activityType?: 'Standard' | 'Custom';
+  customActivityText?: string;
+  activityId?: string | null;
+  activityLabel?: string | null;
+  discipline?: string | null;
+  dateISO: string;           // yyyy-mm-dd
+  time12h: string;           // HH:MM AM/PM
   location?: string | null;
-  details?: string;                // multi-line
+  details?: string;
 
   // attachments
   drawingFiles: File[];
@@ -129,8 +353,8 @@ type NewWirForm = {
   safetyClearanceFiles: File[];
 
   // checklists
-  pickedChecklistIds: string[];    // from library
-  pickedComplianceIds: string[];   // shown in "View Items"
+  pickedChecklistIds: string[];
+  pickedComplianceIds: string[];
 };
 
 type ActivityLite = {
@@ -140,12 +364,7 @@ type ActivityLite = {
   discipline?: string | null;
   status?: string | null;
 };
-
-type ActivityState = {
-  rows: ActivityLite[];
-  loading: boolean;
-  error: string | null;
-};
+type ActivityState = { rows: ActivityLite[]; loading: boolean; error: string | null; };
 
 type ChecklistLite = {
   id: string;
@@ -155,14 +374,9 @@ type ChecklistLite = {
   status?: string | null;
   aiDefault?: boolean | null;
 };
+type ChecklistState = { rows: ChecklistLite[]; loading: boolean; error: string | null; };
 
-type ChecklistState = {
-  rows: ChecklistLite[];
-  loading: boolean;
-  error: string | null;
-};
-
-// --- tiny safe GET with timeout ---
+/* ========================= tiny safe GET with timeout ========================= */
 async function apiGetSafe<T = any>(
   url: string,
   { params, timeoutMs = 12000 }: { params?: any; timeoutMs?: number } = {}
@@ -177,50 +391,54 @@ async function apiGetSafe<T = any>(
   }
 }
 
-/* ========================= Badges (parity with other pages) ========================= */
-function Badge({ kind, value }: { kind: "status" | "health"; value?: string | null }) {
+/* ========================= UI Atoms ========================= */
+/** KPI-style pill (value-only, bold) */
+/** KPI-style pill (value-only, bold; optional label prefix for BIC) */
+function KpiPill({
+  value,
+  tone = "neutral",
+  prefix, // e.g., "BIC"
+}: {
+  value?: string | null;
+  tone?: "neutral" | "amber" | "emerald" | "rose" | "blue" | "gray" | "indigo";
+  prefix?: string;
+}) {
   const v = (value || "").toString().trim();
   if (!v) return null;
 
-  let cls =
-    "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700";
-  if (kind === "status") {
-    const map: Record<string, string> = {
-      Draft: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
-      Submitted: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-      Recommended: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
-      Approved: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-      Rejected: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
-    };
-    cls = map[v] || cls;
-  } else {
-    const map: Record<string, string> = {
-      Green: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-      Amber: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-      Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
-      Unknown: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
-    };
-    cls = map[v] || cls;
-  }
+  const toneCls: Record<string, string> = {
+    neutral: "border dark:border-neutral-800 bg-white dark:bg-neutral-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+    rose: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
+    blue: "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+    gray: "border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-900 dark:text-gray-200",
+    indigo: "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  };
 
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>{v}</span>;
+  return (
+    <span className={`text-xs px-2 py-1 rounded-lg ${toneCls[tone] || toneCls.neutral}`}>
+      {prefix ? <span className="opacity-80 mr-1">{prefix}:</span> : null}
+      <b>{v}</b>
+    </span>
+  );
 }
 
-/* ========================= Small bits ========================= */
-function Pill({ active, onClick, children }: { active?: boolean; onClick?: () => void; children: any }) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        "px-3 py-1.5 rounded-full border text-xs sm:text-sm " +
-        (active
-          ? "bg-emerald-600 text-white border-emerald-700"
-          : "bg-white dark:bg-neutral-900 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800")
-      }
-    >
-      {children}
-    </button>
-  );
+/** Map domain values to KPI tones */
+function toneForStatus(s?: string | null): Parameters<typeof KpiPill>[0]["tone"] {
+  const k = (s || "").toLowerCase();
+  if (k === "approved") return "emerald";
+  if (k === "rejected") return "rose";
+  if (k === "submitted" || k === "recommended") return "amber"; // pending-like
+  if (k === "draft") return "gray";
+  return "neutral";
+}
+function toneForTransmission(t?: string | null): Parameters<typeof KpiPill>[0]["tone"] {
+  const k = (t || "").toLowerCase();
+  if (k.includes("public")) return "emerald";
+  if (k.includes("internal")) return "indigo";
+  if (k.includes("restrict") || k.includes("private")) return "rose";
+  return "neutral";
 }
 
 function SectionCard({ title, children }: { title: string; children: any }) {
@@ -242,6 +460,7 @@ function FieldRow({ label, value, wide = false }: { label: string; value?: any; 
     </div>
   );
 }
+
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -264,7 +483,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
   const { projectId = "" } = useParams<{ projectId: string }>();
   const location = useLocation();
   const navState = (location.state as any) || {};
-
   const navigate = useNavigate();
 
   // prefer role from JWT claims; then navState; then useAuth fallbacks
@@ -283,6 +501,26 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
       (claims as any)?.roleName ??
       ""
     );
+    const [currentUserId, setCurrentUserId] = useState<string | null>(
+  () => resolveUserIdFrom(claimsFromJwt, user)
+);
+
+// refresh when auth context or token changes
+useEffect(() => {
+  setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
+}, [user, claims]); // claims comes from useAuth()
+
+// also pick up token rotations across tabs in the same profile
+useEffect(() => {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "token") {
+      setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}, [user]);
+  const roleKey = (role || "Client") as RoleKey;
 
   // project label from state for immediate header info
   const passedProject = navState?.project as
@@ -294,6 +532,24 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
   const [view, setView] = useState<"list" | "detail" | "new">("list");
   const [activeTab, setActiveTab] = useState<"overview" | "items" | "schedule" | "revisions">("overview");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [canRaise, setCanRaise] = useState<boolean>(false);
+  const [transmissionType, setTransmissionType] = useState<string | null>(null);
+
+  // fetch "transmission type" from Module Settings (project row or module default)
+  async function fetchTransmissionType(pid: string): Promise<string | null> {
+    if (!pid) return null;
+    try {
+      // ask adminModuleSettings for this project's WIR settings;
+      // backend should return merged-with-defaults when no project row exists
+      const raw = await getModuleSettings(pid, MODULE_CODE as any);
+      const norm = normalizeSettings(raw || undefined);
+      const tx = norm?.extra?.transmissionType;
+      return tx ? String(tx) : null;
+    } catch {
+      return null;
+    }
+  }
+
   // Pre-fill project chips in Create view from navigation state
   const [newForm, setNewForm] = useState<NewWirForm>({
     projectCode: passedProject?.code ?? null,
@@ -305,33 +561,24 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     time12h: nowTime12h(),
     location: "",
     details: "",
-
     drawingFiles: [],
     itpFiles: [],
     otherDocs: [],
     photos: [],
     materialApprovalFiles: [],
     safetyClearanceFiles: [],
-
     pickedChecklistIds: [],
     pickedComplianceIds: [],
   });
-  const [activities, setActivities] = useState<ActivityState>({
-    rows: [],
-    loading: false,
-    error: null,
-  });
-  const [checklists, setChecklists] = useState<ChecklistState>({
-    rows: [],
-    loading: false,
-    error: null,
-  });
+
+  const [activities, setActivities] = useState<ActivityState>({ rows: [], loading: false, error: null });
+  const [checklists, setChecklists] = useState<ChecklistState>({ rows: [], loading: false, error: null });
 
   const loadActivities = async () => {
     setActivities(s => ({ ...s, loading: true, error: null }));
     try {
       const data = await apiGetSafe('/admin/ref/activities', {
-        params: { status: 'Active', page: 1, pageSize: 200 /*, discipline: newForm.discipline || undefined*/ },
+        params: { status: 'Active', page: 1, pageSize: 200 },
       });
 
       const raw: any[] =
@@ -439,55 +686,63 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     return map;
   }, [checklists.rows]);
 
-  const resetNewForm = () => setNewForm({
-    projectCode: passedProject?.code ?? null,
-    projectTitle: passedProject?.title ?? null,
-    activityId: null,
-    activityLabel: null,
-    discipline: null,
-    dateISO: todayISO(),
-    time12h: nowTime12h(),
-    location: "",
-    details: "",
-    drawingFiles: [],
-    itpFiles: [],
-    otherDocs: [],
-    photos: [],
-    materialApprovalFiles: [],
-    safetyClearanceFiles: [],
-    pickedChecklistIds: [],
-    pickedComplianceIds: [],
-  });
+  const resetNewForm = () =>
+    setNewForm({
+      projectCode: passedProject?.code ?? null,
+      projectTitle: passedProject?.title ?? null,
+      activityType: 'Standard',
+      customActivityText: '',
+      activityId: null,
+      activityLabel: null,
+      discipline: null,
+      dateISO: todayISO(),
+      time12h: nowTime12h(),
+      location: "",
+      details: "",
+      drawingFiles: [],
+      itpFiles: [],
+      otherDocs: [],
+      photos: [],
+      materialApprovalFiles: [],
+      safetyClearanceFiles: [],
+      pickedChecklistIds: [],
+      pickedComplianceIds: [],
+    });
 
-  const mapWirToForm = (x: any): NewWirForm => ({
-    projectCode: x?.project?.code ?? passedProject?.code ?? null,
-    projectTitle: x?.project?.title ?? passedProject?.title ?? null,
-    activityId: x?.activityId ?? null,
-    activityLabel: x?.activityLabel ?? ([x?.activity?.code, x?.activity?.title].filter(Boolean).join(": ") || null),
-    discipline: x?.discipline ?? null,
-    dateISO: (x?.forDate && String(x.forDate).slice(0, 10)) || todayISO(),
-    time12h: x?.forTime || nowTime12h(),
-    location: x?.cityTown ?? "",
-    details: x?.description ?? "",
+  const mapWirToForm = (x: any): NewWirForm => {
+    const activityId = x?.activityId ?? null;
+    const activityLabel =
+      x?.activityLabel ?? ([x?.activity?.code, x?.activity?.title].filter(Boolean).join(": ") || null);
 
-    // evidence – wire real files later (keep empty arrays for now)
-    drawingFiles: [],
-    itpFiles: [],
-    otherDocs: [],
-    photos: [],
-    materialApprovalFiles: [],
-    safetyClearanceFiles: [],
-
-    // checklists – if backend returns items/checklists, map ids/titles
-    pickedChecklistIds: Array.isArray(x?.items) ? x.items.map((it: any) => it?.name || it?.code || it?.id).filter(Boolean) : [],
-    pickedComplianceIds: [],
-  });
+    const inferredCustom =
+      !activityId && (activityLabel || x?.title) ? 'Custom' : 'Standard';
+    return {
+      projectCode: x?.project?.code ?? passedProject?.code ?? null,
+      projectTitle: x?.project?.title ?? passedProject?.title ?? null,
+      activityId,
+      activityLabel,
+      activityType: inferredCustom,                                 // NEW
+      customActivityText: inferredCustom === 'Custom'               // NEW
+        ? (activityLabel || x?.title || '')
+        : '',
+      discipline: x?.discipline ?? null,
+      dateISO: (x?.forDate && String(x.forDate).slice(0, 10)) || todayISO(),
+      time12h: x?.forTime || nowTime12h(),
+      location: x?.cityTown ?? "",
+      details: x?.description ?? "",
+      drawingFiles: [],
+      itpFiles: [],
+      otherDocs: [],
+      photos: [],
+      materialApprovalFiles: [],
+      safetyClearanceFiles: [],
+      pickedChecklistIds: Array.isArray(x?.items) ? x.items.map((it: any) => it?.name || it?.code || it?.id).filter(Boolean) : [],
+      pickedComplianceIds: [],
+    };
+  };
 
   const loadWir = async (pid: string, wid: string) => {
-    // Try project route first, then admin fallback
-    const { data } = await api.get(`/projects/${pid}/wir/${wid}`).catch(async () => {
-      return await api.get(`/admin/projects/${pid}/wir/${wid}`);
-    });
+    const { data } = await api.get(`/projects/${pid}/wir/${wid}`);
     return data;
   };
 
@@ -514,18 +769,13 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     (api.defaults.headers.common as any).Authorization = `Bearer ${token}`;
   }, [navigate]);
 
-  /* ========================= Load WIR list =========================
-     Replace endpoints with your real ones. Kept forgiving on shapes. */
+  /* ========================= Load WIR list ========================= */
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
-        // Try: /projects/:id/wir
-        const { data } = await api.get(`/projects/${projectId}/wir`).catch(async () => {
-          // Fallback: /admin/projects/:id/wir
-          return await api.get(`/admin/projects/${projectId}/wir`);
-        });
+        const { data } = await api.get(`/projects/${projectId}/wir`);
 
         const arr: any[] = Array.isArray(data) ? data : (Array.isArray(data?.records) ? data.records : []);
         const list: WirRecord[] = arr.map((x) => ({
@@ -546,6 +796,8 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           contractorName: x.contractor?.name ?? x.participants?.contractor ?? null,
           inspectorName: x.inspector?.name ?? x.participants?.inspector ?? null,
           hodName: x.hod?.name ?? x.participants?.hod ?? null,
+          bicName: x.participants?.bic?.name ?? x.bic?.name ?? x.bicName ?? null,
+authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
           items: (x.items || []).map((it: any, i: number) => ({
             id: it.id ?? `it-${i}`,
             name: it.name ?? it.title ?? `Item ${i + 1}`,
@@ -573,123 +825,41 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     return () => { cancelled = true; };
   }, [projectId]);
 
-  // useEffect(() => {
-  //   if (view !== "new") return;
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) { setCanRaise(false); return; }
+    (async () => {
+      const ok = await fetchEffectiveRaisePermission(projectId, roleKey);
+      if (!cancelled) setCanRaise(ok);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, roleKey]);
 
-  //   let cancelled = false;
-  //   (async () => {
-  //     setActivities(s => ({ ...s, loading: true, error: null }));
-  //     try {
-  //       // Ask only for Active. Pull many in one shot.
-  //       const { data } = await api.get('/admin/ref/activities', {
-  //         params: {
-  //           status: 'Active',
-  //           page: 1,
-  //           pageSize: 200,
-  //           // You can also pass discipline to server if you prefer server-side filter:
-  //           // discipline: newForm.discipline || undefined,
-  //         },
-  //       });
-
-  //       // Be forgiving about the payload shape
-  //       const raw: any[] =
-  //         (Array.isArray(data) ? data : null) ||
-  //         (Array.isArray(data?.items) ? data.items : null) ||
-  //         (Array.isArray(data?.records) ? data.records : null) ||
-  //         (Array.isArray(data?.activities) ? data.activities : null) ||
-  //         [];
-
-  //       const rows: ActivityLite[] = raw
-  //         .map((x: any) => ({
-  //           id: String(x.id ?? x.activityId ?? x.code ?? x.slug ?? ''),
-  //           code: x.code ?? null,
-  //           title: x.title ?? x.name ?? null,
-  //           discipline: x.discipline ?? null,
-  //           status: x.status ?? null,
-  //         }))
-  //         .filter(a => a.id); // keep only valid ids
-
-  //       if (!cancelled) setActivities({ rows, loading: false, error: null });
-  //     } catch (e: any) {
-  //       if (!cancelled) setActivities({
-  //         rows: [],
-  //         loading: false,
-  //         error: e?.response?.data?.error || e?.message || 'Failed to load activities',
-  //       });
-  //     }
-  //   })();
-
-  //   return () => { cancelled = true; };
-  // }, [view, newForm.discipline]);
-
-  // useEffect(() => {
-  //   if (view !== "new") return;
-
-  //   let cancelled = false;
-  //   (async () => {
-  //     setChecklists(s => ({ ...s, loading: true, error: null }));
-  //     try {
-  //       const { data } = await api.get('/admin/ref/checklists', {
-  //         params: {
-  //           status: 'Active',
-  //           page: 1,
-  //           pageSize: 200,
-  //           // discipline filter to server (optional but preferred):
-  //           discipline: newForm.discipline || undefined,
-  //         },
-  //       });
-
-  //       const raw: any[] =
-  //         (Array.isArray(data) ? data : null) ||
-  //         (Array.isArray(data?.items) ? data.items : null) ||
-  //         (Array.isArray(data?.records) ? data.records : null) ||
-  //         (Array.isArray(data?.checklists) ? data.checklists : null) ||
-  //         [];
-
-  //       const rows: ChecklistLite[] = raw.map((x: any) => ({
-  //         id: String(x.id ?? x.checklistId ?? x.code ?? x.slug ?? ''),
-  //         code: x.code ?? null,
-  //         title: x.title ?? x.name ?? null,
-  //         discipline: x.discipline ?? null,
-  //         status: x.status ?? null,
-  //         aiDefault: x.aiDefault ?? null,
-  //       })).filter(c => c.id);
-
-  //       if (!cancelled) setChecklists({ rows, loading: false, error: null });
-  //     } catch (e: any) {
-  //       if (!cancelled) setChecklists({
-  //         rows: [],
-  //         loading: false,
-  //         error: e?.response?.data?.error || e?.message || 'Failed to load checklists',
-  //       });
-  //     }
-  //   })();
-
-  //   return () => { cancelled = true; };
-  // }, [view, newForm.discipline]);
+  // fetch transmission type for both list and RO modal
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tt = await fetchTransmissionType(projectId);
+      if (!cancelled) setTransmissionType(tt);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const visibleActivities = useMemo(() => {
     if (!newForm.discipline) return activities.rows;
     return activities.rows.filter(a => (a.discipline || '').toLowerCase() === newForm.discipline!.toLowerCase());
   }, [activities.rows, newForm.discipline]);
 
-
   const visibleChecklists = useMemo(() => {
-    // discipline guard (in case server didn’t filter)
     const disc = (newForm.discipline || "").toLowerCase();
-    let rows = !disc
-      ? checklists.rows
-      : checklists.rows.filter(c => (c.discipline || '').toLowerCase() === disc);
-
+    let rows = !disc ? checklists.rows : checklists.rows.filter(c => (c.discipline || '').toLowerCase() === disc);
     const q = clQuery.trim().toLowerCase();
     if (!q) return rows;
-
     return rows.filter(c => {
       const hay = [c.code, c.title, c.discipline].map(v => (v || "").toLowerCase());
       return hay.some(h => h.includes(q));
     });
   }, [checklists.rows, newForm.discipline, clQuery]);
-
 
   /* ========================= Derived ========================= */
   const filtered = useMemo(() => {
@@ -706,27 +876,19 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
   }, [state.list, q]);
 
   const pageHeading = useMemo(() => {
-    // When editing a saved draft, show "CODE — Title" like the list cards
     if (mode === "edit" && selected) {
       const code = selected.code ? `${selected.code} — ` : "";
       const ttl = selected.title || newForm.activityLabel || "Inspection Request";
       return `${code}${ttl}`;
     }
-    // Default heading for list / create-new
     return "Work Inspection Requests";
-  }, [mode, selected, newForm.activityLabel]);
+  }, [mode, selected, newForm.activityType, newForm.customActivityText, newForm.activityLabel]);
 
   const projectLabel = useMemo(() => {
     const code =
-      newForm.projectCode ??
-      selected?.projectCode ??
-      passedProject?.code ??
-      "";
+      newForm.projectCode ?? selected?.projectCode ?? passedProject?.code ?? "";
     const title =
-      newForm.projectTitle ??
-      selected?.projectTitle ??
-      passedProject?.title ??
-      "";
+      newForm.projectTitle ?? selected?.projectTitle ?? passedProject?.title ?? "";
     if (code || title) return `${code ? code + " — " : ""}${title}`;
     return `Project: ${projectId}`;
   }, [
@@ -744,41 +906,62 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
 
   const kpis = useMemo(() => {
     const total = state.list.length;
-
     let approved = 0, rejected = 0, pending = 0;
-    // Pending = Submitted OR Recommended (Drafts are not pending)
     for (const w of state.list) {
       const st = normStatus(w.status);
       if (st === "approved") approved++;
       else if (st === "rejected") rejected++;
       else if (st === "submitted" || st === "recommended") pending++;
     }
-
     return { total, pending, approved, rejected };
   }, [state.list]);
 
   /* ========================= Actions (stubs) ========================= */
   const onPrimary = async () => {
+    if (!canRaise) { alert("You don't have permission to raise a WIR."); return; }
     const r = normalizeRole(role);
 
-    // From LIST: Contractors click "+Create New WIR"
-    if (r === "Contractor" && view === "list") {
-      openCreateNew();         // ← ensures full reset every time
-      return;
-    }
+    // Contractor: on list -> create, on detail -> submit
+    if (r === "Contractor") {
+      if (view !== "detail") {
+        openCreateNew();
+        return;
+      }
 
-    // From DETAIL: role-based actions
-    if (!selected) return;
+      // Narrow selected non-null for TypeScript
+      const sel = selected;
+      if (!sel) {
+        alert("No WIR selected.");
+        return;
+      }
 
-    try {
-      if (r === "Contractor") {
-        // Submit IR
-        await api.post(`/projects/${projectId}/wir/${selected.wirId}/submit`, { role: r });
+      try {
+        const planned =
+          (sel.forDate && String(sel.forDate).slice(0, 10)) ||
+          newForm.dateISO ||
+          undefined;
+
+        // PMC validity guard
+        const ok = await ensurePMCGuardForSubmit(projectId, planned);
+        if (!ok) return;
+
+        await api.post(`/projects/${projectId}/wir/${sel.wirId}/submit`, { role: r });
         await reloadWirList();
         alert("Submitted.");
         goToList(true);
         return;
+      } catch (e: any) {
+        const s = e?.response?.status;
+        const msg = e?.response?.data?.error || e?.message || "Failed";
+        alert(`Error ${s ?? ''} ${msg}`);
+        return;
       }
+    }
+
+    // Non-contractor roles require a selected WIR (detail view)
+    if (!selected) { alert("Open a WIR first."); return; }
+
+    try {
       if (r === "PMC" || r === "IH-PMT" || r === "Consultant") {
         await api.post(`/projects/${projectId}/wir/${selected.wirId}/recommend`, { role: r });
         await reloadWirList();
@@ -793,7 +976,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
         goToList(true);
         return;
       }
-
       alert("No action available for your role.");
     } catch (e: any) {
       const s = e?.response?.status;
@@ -802,38 +984,33 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     }
   };
 
-
   const onOpen = async (id: string) => {
     try {
       setSelectedId(id);
-
-      // find status from already-fetched list (fast path)
       const row = state.list.find(w => String(w.wirId) === String(id));
       let status = row?.status || "Draft";
-
-      // load full record to prefill fields
       const full = await loadWirListIfNeededAndGet(id);
-
-      // if API didn’t return status earlier, try from full
       status = full?.status || status;
-
-      // pre-fill form (used for showing some text fields even in read-only modal)
       setNewForm(mapWirToForm(full || {}));
-      if (!checklists.rows.length && !checklists.loading) {
-        // fetch once so checklistLabelById can resolve nice labels in RO + Edit
-        loadChecklists();
-      }
+      if (!checklists.rows.length && !checklists.loading) loadChecklists();
 
       const statusLower = (status || "").toLowerCase();
-
-      if (statusLower === "draft") {
-        // DRAFT -> go to editable form as before
+      const authorIdRaw =
+      full?.authorId ??
+      row?.authorId ??
+      full?.createdBy?.userId ??
+      full?.author?.userId ??
+      full?.createdById ??
+      null;
+ const authorId = authorIdRaw != null ? String(authorIdRaw) : "";
+    const me = (currentUserId || getUserIdFromToken() || "") + "";
+    if (statusLower === "draft" && authorId && me && authorId === me) {
+        // my draft -> edit
         setMode("edit");
         setView("new");
         setActiveTab("overview");
         try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { }
       } else {
-        // NON-DRAFT -> open compact read-only modal, keep list in the background
         setMode("readonly");
         setActiveTab("overview");
         setRoViewOpen(true);
@@ -845,14 +1022,11 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     }
   };
 
-
-  // helper: if the single-get is not available, try list as fallback
   const loadWirListIfNeededAndGet = async (id: string) => {
     try {
-      const full = await loadWir(projectId, id); // uses the single-get above
+      const full = await loadWir(projectId, id);
       return full;
     } catch {
-      // fallback: ensure list is fresh, then return from list
       if (!state.list.length) await reloadWirList();
       return state.list.find(w => String(w.wirId) === String(id)) || {};
     }
@@ -875,46 +1049,42 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     setNewForm(f => ({ ...f, [key]: files }));
   };
 
-  // ------ Checklist Library (stub) ------
-  const onAddFromLibrary = async () => {
-    // TODO: replace with modal / picker wired to Checklist Library
-    // Stub: push a fake checklist id
-    setNewForm(f => ({ ...f, pickedChecklistIds: Array.from(new Set([...f.pickedChecklistIds, "chk-001"])) }));
-    alert("Checklist ‘Concrete Pouring – Base’ added (stub).");
-  };
-
   // ------ Compliance View Items (stub) ------
   const onViewCompliance = () => {
-    // TODO: open a modal showing compliance items for selected checklists
     alert(`Compliance items (stub):\n• Safety Helmets\n• Harnesses\n• Permit-to-Work\n(From ${newForm.pickedChecklistIds.length} checklist(s))`);
   };
 
   // Build POST/PATCH body from form
-  const buildWirPayload = () => ({
-    title: newForm.activityLabel || "Inspection Request",
-    code: null,
-    discipline: newForm.discipline,
-    stage: null,
-    forDate: newForm.dateISO,       // yyyy-mm-dd
-    forTime: newForm.time12h,       // "HH:MM AM/PM"
-    cityTown: newForm.location || null,
-    stateName: null,
-    description: newForm.details || null,
-    // For now, map picked checklist ids into simple items (adjust later when real items exist)
-    items: (newForm.pickedChecklistIds || []).map((id) => ({
-      name: id,
-      spec: null,
-      required: null,
-      tolerance: null,
-      photoCount: 0,
-      status: "Unknown",
-    })),
-  });
+  const buildWirPayload = () => {
+    const title =
+      newForm.activityType === 'Custom'
+        ? (newForm.customActivityText || '').trim() || "Inspection Request"
+        : (newForm.activityLabel || "Inspection Request");
+
+    return {
+      title,
+      code: null,
+      discipline: newForm.discipline,
+      stage: null,
+      forDate: newForm.dateISO,
+      forTime: newForm.time12h,
+      cityTown: newForm.location || null,
+      stateName: null,
+      description: newForm.details || null,
+      items: (newForm.pickedChecklistIds || []).map((id) => ({
+        name: id,
+        spec: null,
+        required: null,
+        tolerance: null,
+        photoCount: 0,
+        status: "Unknown",
+      })),
+    };
+  };
 
   const reloadWirList = async () => {
-    const { data } = await api.get(`/projects/${projectId}/wir`).catch(async () => {
-      return await api.get(`/admin/projects/${projectId}/wir`);
-    });
+    const { data } = await api.get(`/projects/${projectId}/wir`);
+
     const arr: any[] = Array.isArray(data) ? data : (Array.isArray(data?.records) ? data.records : []);
     const list: WirRecord[] = arr.map((x) => ({
       wirId: x.wirId ?? x.id,
@@ -934,6 +1104,8 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
       contractorName: x.contractor?.name ?? x.participants?.contractor ?? null,
       inspectorName: x.inspector?.name ?? x.participants?.inspector ?? null,
       hodName: x.hod?.name ?? x.participants?.hod ?? null,
+      bicName: x.participants?.bic?.name ?? x.bic?.name ?? x.bicName ?? null,
+authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
       items: (x.items || []).map((it: any, i: number) => ({
         id: it.id ?? `it-${i}`,
         name: it.name ?? it.title ?? `Item ${i + 1}`,
@@ -950,18 +1122,18 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
   };
 
   // ------ Save/Submit ------
-  // ------ Save/Submit ------
   const canSubmit = () => {
     const basicsOk = !!newForm.discipline && !!newForm.dateISO && !!newForm.time12h;
     const hasAtLeastOneChecklist = (newForm.pickedChecklistIds?.length || 0) > 0;
 
-    // If editing an existing Draft (opened from list), allow Submit without activityId.
-    // Backend only checks status/role on submit anyway.
-    if (selectedId) return basicsOk && hasAtLeastOneChecklist;
+    let hasActivity = false;
+    if (newForm.activityType === 'Custom') {
+      hasActivity = !!newForm.customActivityText?.trim();
+    } else {
+      hasActivity = !!newForm.activityId;
+    }
 
-    // For brand-new form (no ID yet), keep the stricter rule if you want:
-    // (you can drop the activityId here too if desired)
-    const hasActivity = !!newForm.activityId;
+    if (selectedId) return basicsOk && hasActivity && hasAtLeastOneChecklist;
     return hasActivity && basicsOk && hasAtLeastOneChecklist;
   };
 
@@ -970,15 +1142,13 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
       const body = buildWirPayload();
 
       if (!selectedId) {
-        // CREATE (Draft)
-        const { data } = await api.post(`/projects/${projectId}/wir`, body);
+        await api.post(`/projects/${projectId}/wir`, body);
         alert("Draft created.");
         resetNewForm();
         goToList(true);
         return;
       }
 
-      // UPDATE existing Draft
       await api.patch(`/projects/${projectId}/wir/${selectedId}`, body);
       alert("Draft updated.");
       resetNewForm();
@@ -992,9 +1162,11 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
         data?.error ||
         e?.message ||
         "Failed";
-
-      console.error("WIR API error:", { status: s, data });
-      alert(`Error ${s ?? ""} ${msg}`);
+      if (s === 403) {
+        alert(`Not allowed: ${msg || "You can only edit/submit your own Draft WIR."}`);
+      } else {
+        alert(`Error ${s ?? ""} ${msg}`);
+      }
     }
   };
 
@@ -1005,7 +1177,10 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
         return;
       }
 
-      // If it's a brand new form (no selectedId), create Draft first…
+      // Guard: ensure PMC is valid for the chosen date
+      const ok = await ensurePMCGuardForSubmit(projectId, newForm.dateISO);
+      if (!ok) return;
+
       let id = selectedId;
       if (!id) {
         const { data } = await api.post(`/projects/${projectId}/wir`, buildWirPayload());
@@ -1015,11 +1190,10 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
 
       if (!id) throw new Error("Could not determine WIR ID to submit.");
 
-      // …then submit (lock)
       await api.post(`/projects/${projectId}/wir/${id}/submit`, { role: role || "Contractor" });
       alert("WIR submitted.");
-      resetNewForm();     // clear for next
-      goToList(true);     // ← back to List (refresh)
+      resetNewForm();
+      goToList(true);
     } catch (e: any) {
       const s = e?.response?.status;
       const data = e?.response?.data;
@@ -1029,21 +1203,20 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
         data?.error ||
         e?.message ||
         "Failed";
-
       console.error("WIR API error:", { status: s, data });
       alert(`Error ${s ?? ""} ${msg}`);
     }
   };
 
-  // open modal pre-filled with existing selection
+  // ------ Checklist library modal controls ------
   const openChecklistPicker = () => {
     if (isRO) return;
     setClPicked(new Set(newForm.pickedChecklistIds));
     setClLibOpen(true);
   };
 
-  // add/remove inside modal
   const toggleClPick = (id: string) => {
+    if (isRO) return;
     setClPicked(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -1051,30 +1224,46 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     });
   };
 
-  // commit selection from modal
   const confirmChecklistPick = () => {
+    if (isRO) return;
     const ids = Array.from(new Set(clPicked));
-    // sort by label for nicer UX
     ids.sort((a, b) => (checklistLabelById.get(a) || a).localeCompare(checklistLabelById.get(b) || b));
     setNewForm(f => ({ ...f, pickedChecklistIds: ids }));
     setClLibOpen(false);
   };
 
-  // remove from already selected list (outside modal)
   const removeChecklist = (id: string) => {
     setNewForm(f => ({ ...f, pickedChecklistIds: f.pickedChecklistIds.filter(x => x !== id) }));
   };
 
   const openCreateNew = () => {
+    if (!canRaise) { alert("You don't have permission to raise a WIR."); return; }
     setSelectedId(null);
     setMode("create");
-    resetNewForm();            // ← full clean slate (keeps passedProject prefill)
+    resetNewForm();
     setActiveTab("overview");
     setView("new");
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { }
   };
 
-  /* ======= NEW: Esc-to-close & background scroll lock for RO modal ======= */
+  const onOpenFilledForm = () => {
+    if (!selected) return;
+    const url = `/projects/${projectId}/wir/${selected.wirId}?readonly=1`;
+    try { window.open(url, "_blank", "noopener,noreferrer"); } catch { navigate(url); }
+  };
+
+  const onReschedule = () => {
+    if (!selected) return;
+    alert("Reschedule (stub): open date/time picker here.");
+  };
+
+  const onOpenHistory = () => {
+    if (!selected) return;
+    const url = `/projects/${projectId}/wir/${selected.wirId}/history`;
+    try { window.open(url, "_blank", "noopener,noreferrer"); } catch { navigate(url); }
+  };
+
+  /* ======= Modal lifecycle niceties ======= */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && roViewOpen) setRoViewOpen(false);
@@ -1090,10 +1279,29 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
     return () => { document.body.style.overflow = prev; };
   }, [roViewOpen]);
 
+  const checklistStats = useMemo(() => {
+    const items = selected?.items || [];
+    const total = items.length;
+    const mandatory = items.filter((it: any) => {
+      const v = String(it?.required ?? "").toLowerCase();
+      return v === "mandatory" || v === "yes" || it?.required === true;
+    }).length;
+    const critical = items.filter((it: any) => {
+      const s = String(it?.status ?? "").toLowerCase();
+      const sev = String((it as any)?.severity ?? "").toLowerCase();
+      return s === "ncr" || (it as any)?.critical === true || sev === "critical";
+    }).length;
+    return { total, mandatory, critical };
+  }, [selected]);
+
+  useEffect(() => {
+    if (view === "new" && !canRaise) setView("list");
+  }, [view, canRaise]);
+
   /* ========================= Render ========================= */
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
-      {/* Header (can be hidden when wrapped under a page header) */}
+      {/* Header */}
       {!hideTopHeader && (
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-lg sm:text-xl md:text-2xl font-semibold dark:text-white whitespace-normal break-words">
@@ -1107,7 +1315,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           </button>
         </div>
       )}
-      {/* Subheader: project & role chips */}
+
       {/* Subheader: project & role chips */}
       <div className="mt-2 flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -1121,7 +1329,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           )}
         </div>
 
-        {/* KPI Row – show only on List view */}
+        {/* KPI Row – List view only */}
         {view === "list" && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs px-2 py-1 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900">
@@ -1149,21 +1357,21 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
             placeholder="Search IRs by code, title, status, discipline…"
             className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
           />
-          <button
-            onClick={onPrimary}
-            className="shrink-0 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
-          >
-            {primaryActionLabel}
-          </button>
+          {canRaise && (
+            <button
+              onClick={onPrimary}
+              className="shrink-0 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+            >
+              +Create New WIR
+            </button>
+          )}
         </div>
       )}
 
       {/* List */}
       {view === "list" && (
         <div className="mt-4">
-          {state.loading && (
-            <div className="text-sm text-gray-700 dark:text-gray-300">Loading WIRs…</div>
-          )}
+          {state.loading && <div className="text-sm text-gray-700 dark:text-gray-300">Loading WIRs…</div>}
           {state.error && !state.loading && (
             <div className="text-sm text-red-700 dark:text-red-400">{state.error}</div>
           )}
@@ -1191,15 +1399,14 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                     <div className="text-base sm:text-lg font-semibold dark:text-white whitespace-normal break-words">
                       {(w.code ? `${w.code} — ` : "") + w.title}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      <Badge kind="status" value={w.status} />
-                      <Badge kind="health" value={w.health} />
-                      {w.discipline && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700">
-                          {w.discipline}
-                        </span>
-                      )}
+
+                    {/* compact chips row */}
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <KpiPill value={w?.status || "—"} tone={toneForStatus(w?.status)} />
+                      <KpiPill value={transmissionType || "—"} tone={toneForTransmission(transmissionType)} />
+                      <KpiPill prefix="BIC" value={w?.bicName || "—"} tone="neutral" />
                     </div>
+
                     <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
                       {w.forDate ? `For: ${fmtDate(w.forDate)}${w.forTime ? `, ${w.forTime}` : ""}` : ""}
                       {w.updatedAt ? ` · Updated: ${fmtDateTime(w.updatedAt)}` : ""}
@@ -1231,58 +1438,117 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                 }
               />
 
-              {/* Activity (stub select until wired to Activity Library) */}
+              {/* Activity Type */}
               <div>
-                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Select Activity</div>
-
-                <select
-                  className="mt-1 w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800 disabled:opacity-60"
-                  value={newForm.activityId || ""}
-                  disabled={activities.loading || isRO || activities.error === 'none'} // (no-op flag)
-                  onFocus={() => { if (!activities.rows.length && !activities.loading) loadActivities(); }}
-                  onClick={() => { if (!activities.rows.length && !activities.loading) loadActivities(); }}
-                  onChange={(e) => {
-                    const id = e.target.value || null;
-                    const picked = visibleActivities.find(a => String(a.id) === String(id)) || null;
-                    const label = picked ? [picked.code, picked.title].filter(Boolean).join(': ') : null;
-                    setNewForm(f => ({ ...f, activityId: id, activityLabel: label }));
-                  }}
-                >
-                  {!activities.rows.length && !activities.loading && !activities.error && (
-                    <option value="">Click to load…</option>
-                  )}
-                  {activities.loading && <option value="">Loading…</option>}
-                  {activities.error && !activities.loading && (
-                    <option value="" disabled>{activities.error}</option>
-                  )}
-                  {!activities.loading && !activities.error && activities.rows.length === 0 && (
-                    <option value="" disabled>No activities found</option>
-                  )}
-                  {visibleActivities.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {[a.code, a.title].filter(Boolean).join(': ')}{a.discipline ? ` — ${a.discipline}` : ''}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="mt-1 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={loadActivities}
-                    className="text-xs px-2 py-1 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    title="Reload"
-                    disabled={activities.loading}
-                  >
-                    {activities.loading ? 'Loading…' : 'Reload'}
-                  </button>
-                  {newForm.discipline && (
-                    <span className="text-[11px] text-gray-600 dark:text-gray-300">
-                      Filtering by discipline: <b>{newForm.discipline}</b>
-                    </span>
-                  )}
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Activity Type
+                </div>
+                <div className="mt-1 flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="activity-type"
+                      className="accent-emerald-600"
+                      checked={(newForm.activityType || 'Standard') === 'Standard'}
+                      disabled={isRO}
+                      onChange={() =>
+                        setNewForm(f => ({
+                          ...f,
+                          activityType: 'Standard',
+                          // keep previous selection if any; just ensure custom text doesn't get sent
+                        }))
+                      }
+                    />
+                    Standard
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="activity-type"
+                      className="accent-emerald-600"
+                      checked={newForm.activityType === 'Custom'}
+                      disabled={isRO}
+                      onChange={() =>
+                        setNewForm(f => ({
+                          ...f,
+                          activityType: 'Custom',
+                          // when switching to custom, clear standard dropdown selection
+                          activityId: null,
+                          activityLabel: null,
+                        }))
+                      }
+                    />
+                    Custom
+                  </label>
                 </div>
               </div>
 
+              {/* Activity (Standard dropdown or Custom text) */}
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {newForm.activityType === 'Custom' ? 'Activity Details' : 'Select Activity'}
+                </div>
+
+                {newForm.activityType === 'Custom' ? (
+                  <input
+                    className="mt-1 w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                    placeholder="Describe the activity (e.g., PCC for Footing F2, rework on Beam B3)…"
+                    value={newForm.customActivityText || ''}
+                    disabled={isRO}
+                    onChange={(e) => setNewForm(f => ({ ...f, customActivityText: e.target.value }))}
+                  />
+                ) : (
+                  <select
+                    className="mt-1 w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800 disabled:opacity-60"
+                    value={newForm.activityId || ""}
+                    disabled={activities.loading || isRO}
+                    onFocus={() => { if (!activities.rows.length && !activities.loading) loadActivities(); }}
+                    onClick={() => { if (!activities.rows.length && !activities.loading) loadActivities(); }}
+                    onChange={(e) => {
+                      const id = e.target.value || null;
+                      const picked = visibleActivities.find(a => String(a.id) === String(id)) || null;
+                      const label = picked ? [picked.code, picked.title].filter(Boolean).join(': ') : null;
+                      setNewForm(f => ({ ...f, activityId: id, activityLabel: label }));
+                    }}
+                  >
+                    {!activities.rows.length && !activities.loading && !activities.error && (
+                      <option value="">Click to load…</option>
+                    )}
+                    {activities.loading && <option value="">Loading…</option>}
+                    {activities.error && !activities.loading && (
+                      <option value="" disabled>{activities.error}</option>
+                    )}
+                    {!activities.loading && !activities.error && activities.rows.length === 0 && (
+                      <option value="" disabled>No activities found</option>
+                    )}
+                    {visibleActivities.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {[a.code, a.title].filter(Boolean).join(': ')}{a.discipline ? ` — ${a.discipline}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Standard-only helpers */}
+                {newForm.activityType !== 'Custom' && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={loadActivities}
+                      className="text-xs px-2 py-1 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      title="Reload"
+                      disabled={activities.loading}
+                    >
+                      {activities.loading ? 'Loading…' : 'Reload'}
+                    </button>
+                    {newForm.discipline && (
+                      <span className="text-[11px] text-gray-600 dark:text-gray-300">
+                        Filtering by discipline: <b>{newForm.discipline}</b>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Discipline */}
               <div>
@@ -1318,7 +1584,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                     >
                       📅
                     </button>
-
                   </div>
                 </div>
                 <div>
@@ -1340,7 +1605,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                     >
                       🕒
                     </button>
-
                   </div>
                 </div>
               </div>
@@ -1355,12 +1619,11 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                   disabled={isRO}
                   onChange={(e) => setNewForm(f => ({ ...f, location: e.target.value }))}
                 />
-
               </div>
             </div>
           </SectionCard>
 
-          {/* Tile 2: Work Inspection (details) */}
+          {/* Tile 2: Work Inspection */}
           <SectionCard title="Work Inspection">
             <textarea
               rows={5}
@@ -1370,13 +1633,11 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
               disabled={isRO}
               onChange={(e) => setNewForm(f => ({ ...f, details: e.target.value }))}
             />
-
           </SectionCard>
 
           {/* Tile 3: Documents and Evidence */}
           <SectionCard title="Documents and Evidence">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {/* Each tile uses a hidden <input type="file"> */}
               {[
                 { key: "drawingFiles", label: "Attach Drawing", pill: "Drawing", active: hasDrawing },
                 { key: "itpFiles", label: "Attach ITP", pill: "ITP", active: hasITP },
@@ -1399,12 +1660,11 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                       id={inputId}
                       type="file"
                       className="hidden"
-                      multiple={!!t.multiple}
-                      accept={t.accept as any}
+                      multiple={!!(t as any).multiple}
+                      accept={(t as any).accept}
                       disabled={isRO}
                       onChange={onPickFiles(t.key as keyof NewWirForm)}
                     />
-
                     <div className="h-10 w-10 grid place-items-center rounded-lg bg-gray-100 dark:bg-neutral-800">📎</div>
                     <div className="min-w-0">
                       <div className="font-medium text-sm dark:text-white">{t.label}</div>
@@ -1423,7 +1683,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                 );
               })}
             </div>
-            {/* Compact pill row (always visible) */}
+            {/* Compact pill row */}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {hasDrawing && <span className="text-[10px] px-1.5 py-0.5 rounded-full border">Drawing</span>}
               {hasITP && <span className="text-[10px] px-1.5 py-0.5 rounded-full border">ITP</span>}
@@ -1450,8 +1710,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
               >
                 {checklists.loading ? "Loading…" : "Add from Library"}
               </button>
-
-
               {newForm.discipline && (
                 <span className="text-[11px] text-gray-600 dark:text-gray-300">
                   Filtering by discipline: <b>{newForm.discipline}</b>
@@ -1467,7 +1725,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
             {newForm.pickedChecklistIds.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {newForm.pickedChecklistIds.map(id => {
-                  const label = checklistLabelById.get(id) || id;  // fallback to id if not found
+                  const label = checklistLabelById.get(id) || id;
                   return (
                     <span key={id} className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-700 flex items-center gap-1">
                       {label}
@@ -1485,9 +1743,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                 })}
               </div>
             )}
-
           </SectionCard>
-
 
           {/* Tile 5: Compliance Checklist */}
           <SectionCard title="Compliance Checklist">
@@ -1507,45 +1763,37 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           {/* Actions + Note */}
           <div className="flex flex-wrap items-center gap-3">
             {mode !== "readonly" ? (
-              <>
-                <button onClick={onSaveDraft} className="px-4 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800">
-                  Save Draft
-                </button>
-                <button
-                  onClick={onSubmitNew}
-                  disabled={!canSubmit()}
-                  className={
-                    "px-4 py-2 rounded text-sm text-white " +
-                    (canSubmit() ? "bg-emerald-600 hover:bg-emerald-700" : "bg-emerald-400 cursor-not-allowed")
-                  }
-                >
-                  Submit
-                </button>
-              </>
+              canRaise ? (
+                <>
+                  <button onClick={onSaveDraft} className="px-4 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800">
+                    Save Draft
+                  </button>
+                  <button
+                    onClick={onSubmitNew}
+                    disabled={!canSubmit()}
+                    className={
+                      "px-4 py-2 rounded text-sm text-white " +
+                      (canSubmit() ? "bg-emerald-600 hover:bg-emerald-700" : "bg-emerald-400 cursor-not-allowed")
+                    }
+                  >
+                    Submit
+                  </button>
+                </>
+              ) : (
+                <div className="px-3 py-2 rounded border dark:border-neutral-800 text-sm text-gray-600 dark:text-gray-300">
+                  You don't have permission to raise a WIR.
+                </div>
+              )
             ) : (
               <div className="px-3 py-2 rounded border dark:border-neutral-800 text-sm text-gray-600 dark:text-gray-300">
                 Read-only — this WIR is {selected?.status || "Submitted"}.
               </div>
             )}
 
+            {/* Library Modal */}
             {clLibOpen && (
               <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="w-full max-w-2xl rounded-2xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xl">
-                  <button
-                    onClick={() => {
-                      if (!isRO) {
-                        setClPicked(new Set(newForm.pickedChecklistIds));
-                        setClLibOpen(true);
-                        if (!checklists.rows.length && !checklists.loading) loadChecklists();
-                      }
-                    }}
-                    className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm disabled:opacity-60"
-                    disabled={isRO}
-                  >
-                    {checklists.loading ? "Loading…" : "Add from Library"}
-                  </button>
-
-
                   <div className="p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <input
@@ -1574,23 +1822,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                           {visibleChecklists.map(c => {
                             const label = [c.code, c.title].filter(Boolean).join(": ");
                             const picked = clPicked.has(c.id);
-                            const toggleClPick = (id: string) => {
-                              if (isRO) return;
-                              setClPicked(prev => {
-                                const next = new Set(prev);
-                                if (next.has(id)) next.delete(id); else next.add(id);
-                                return next;
-                              });
-                            };
-
-                            const confirmChecklistPick = () => {
-                              if (isRO) return;
-                              const ids = Array.from(new Set(clPicked));
-                              ids.sort((a, b) => (checklistLabelById.get(a) || a).localeCompare(checklistLabelById.get(b) || b));
-                              setNewForm(f => ({ ...f, pickedChecklistIds: ids }));
-                              setClLibOpen(false);
-                            };
-
                             return (
                               <li key={c.id} className="p-2">
                                 <label className="flex items-start gap-3 cursor-pointer">
@@ -1634,7 +1865,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
                         >
                           Add Selected
                         </button>
-
                       </div>
                     </div>
                   </div>
@@ -1648,6 +1878,7 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           </div>
         </div>
       )}
+
       {/* ===== Read-only View Modal for Submitted/Locked WIR ===== */}
       {roViewOpen && selected && (
         <div
@@ -1672,121 +1903,84 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
 
             {/* Header (sticky) */}
             <div className="sticky top-0 z-10 p-3 sm:p-4 border-b dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-white/70">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">
                     {projectLabel}
                   </div>
-                  <div className="text-base sm:text-lg font-semibold dark:text-white truncate">
+                  <div className="text-base sm:text-lg font-semibold dark:text-white break-words">
                     {(selected.code ? `${selected.code} — ` : "") + (selected.title || "Inspection Request")}
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge kind="status" value={selected.status} />
-                  <Badge kind="health" value={selected.health} />
-                  <button
-                    onClick={() => setRoViewOpen(false)}
-                    className="text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  >
-                    Close
-                  </button>
+
+                  {/* badges placed under title to avoid cropping */}
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <KpiPill value={selected?.status || "—"} tone={toneForStatus(selected?.status)} />
+                    <KpiPill value={transmissionType || "—"} tone={toneForTransmission(transmissionType)} />
+                    <KpiPill prefix="BIC" value={selected?.bicName || "—"} tone="neutral" />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Body (scrollable) */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
-              {/* Overview */}
-              <SectionCard title="Overview">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <FieldRow label="Discipline" value={selected.discipline || "—"} />
-                  <FieldRow label="Stage" value={selected.stage || "—"} />
+              {/* Submission Summary */}
+              <SectionCard title="Submission Summary">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <FieldRow
-                    label="Scheduled For"
+                    label="Activity & Area"
+                    value={[
+                      newForm.activityLabel || selected?.title || "—",
+                      (newForm.location || selected?.cityTown || "").trim() || "—",
+                    ].join(" — ")}
+                  />
+                  <FieldRow
+                    label="Schedule"
                     value={
-                      selected.forDate
-                        ? `${fmtDate(selected.forDate)}${selected.forTime ? `, ${selected.forTime}` : ""}`
+                      selected?.forDate
+                        ? `${fmtDate(selected.forDate)}${selected?.forTime ? ` · ${selected.forTime}` : ""}`
                         : "—"
                     }
                   />
-                  <FieldRow label="Updated" value={selected.updatedAt ? fmtDateTime(selected.updatedAt) : "—"} />
+                  <FieldRow label="Discipline" value={selected?.discipline || "—"} />
+                  <FieldRow
+                    label="Checklist"
+                    value={`${checklistStats.total} items · ${checklistStats.mandatory} mandatory · ${checklistStats.critical} critical`}
+                  />
+                  <FieldRow label="Inspector" value={selected?.inspectorName || "—"} />
+                  <FieldRow label="Ball in Court" value={`BIC: ${selected?.bicName || "—"}`} />
+                  <FieldRow label="Follow up" value="Not Required" />
+                </div>
+
+                <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+                  Last update: <b>{selected?.status || "—"}</b>
+                  {selected?.updatedAt ? ` — ${fmtDateTime(selected.updatedAt)}` : ""}
+                  {" · "}
+                  <button
+                    onClick={onOpenHistory}
+                    className="underline underline-offset-2 text-emerald-700 dark:text-emerald-300 hover:opacity-90"
+                  >
+                    Open full history
+                  </button>
                 </div>
               </SectionCard>
 
-              {/* Location */}
-              <SectionCard title="Location">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <FieldRow label="City/Town" value={selected.cityTown || "—"} />
-                  <FieldRow label="State" value={selected.stateName || "—"} />
+              {/* Actions */}
+              <SectionCard title="Actions">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={onOpenFilledForm}
+                    className="px-3 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    Open Filled Form (read-only)
+                  </button>
+                  <button
+                    onClick={onReschedule}
+                    className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                  >
+                    Reschedule
+                  </button>
                 </div>
-              </SectionCard>
-
-              {/* People */}
-              <SectionCard title="People">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <FieldRow label="Contractor" value={selected.contractorName || "—"} />
-                  <FieldRow label="Inspector" value={selected.inspectorName || "—"} />
-                  <FieldRow label="HOD" value={selected.hodName || "—"} />
-                </div>
-              </SectionCard>
-
-              {/* Description */}
-              <SectionCard title="Description">
-                <div className="text-sm dark:text-white whitespace-pre-wrap">
-                  {newForm.details || selected.description || "—"}
-                </div>
-              </SectionCard>
-
-              {/* Items */}
-              <SectionCard title="Items">
-                {Array.isArray(selected.items) && selected.items.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-2">
-                    {selected.items.map((it) => (
-                      <div
-                        key={it.id}
-                        className="rounded-lg border dark:border-neutral-800 p-3 text-sm dark:text-white"
-                      >
-                        <div className="font-medium">
-                          {checklistLabelById.get(it.name || it.id) || it.name || it.id}
-                        </div>
-                        <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
-                          {[
-                            it.spec ? `Spec: ${it.spec}` : "",
-                            it.required ? `Req: ${it.required}` : "",
-                            it.tolerance ? `Tol: ${it.tolerance}` : "",
-                            typeof it.photoCount === "number" ? `Photos: ${it.photoCount}` : "",
-                            it.status ? `Status: ${it.status}` : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" • ")}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-600 dark:text-gray-300">No items.</div>
-                )}
-              </SectionCard>
-
-              {/* Checklists (from form mapping) */}
-              <SectionCard title="Checklists">
-                {newForm.pickedChecklistIds.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {newForm.pickedChecklistIds.map((id) => {
-                      const label = checklistLabelById.get(id) || id;
-                      return (
-                        <span
-                          key={id}
-                          className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-700"
-                        >
-                          {label}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-600 dark:text-gray-300">No checklists selected.</div>
-                )}
               </SectionCard>
             </div>
 
@@ -1804,9 +1998,6 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
           </div>
         </div>
       )}
-
     </section>
-
   );
-
 }
