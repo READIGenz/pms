@@ -67,6 +67,7 @@ type RoleKey = 'Client' | 'IH-PMT' | 'Contractor' | 'Consultant' | 'PMC' | 'Supp
 const MODULE_CODE = "WIR";
 //const currentUserId = getUserIdFromToken();
 
+
 /* ========================= Permission helpers ========================= */
 // Normalize an override cell to 'deny' | 'inherit' | undefined
 function readOverrideCell(matrix: any, moduleCode: string, action: string): 'deny' | 'inherit' | undefined {
@@ -113,31 +114,62 @@ function deducePmcActingRole(effView: boolean, effRaise: boolean, effReview: boo
   return 'ViewerOnly';
 }
 
-/** Find active PMC (already have fetchActivePMCForProjectOnDate), then compute its effective WIR permissions and return role label */
-async function resolvePmcRoleForProjectOnDate(projectId: string, onDateISO: string): Promise<{ label: PmcActingRole; name?: string } | null> {
-  const hit = await fetchActivePMCForProjectOnDate(projectId, onDateISO);
-  if (!hit) return null;
+type ActingPmc = { user: UserLite; role: PmcActingRole };
 
-  // base matrix comes from role template (for PMC)
+async function resolvePmcActingRolesForProjectOnDate(projectId: string, onDateISO: string): Promise<ActingPmc[]> {
   const base = await getRoleBaseMatrix(projectId, 'PMC' as any);
   const baseView = !!base?.WIR?.view;
   const baseRaise = !!base?.WIR?.raise;
   const baseReview = !!base?.WIR?.review;
   const baseApprove = !!base?.WIR?.approve;
 
-  // user overrides (deny-only)
-  const userId = hit.user.userId;
-  const over = await fetchUserOverrideMatrix(projectId, userId);
-  const wirRow = (over?.WIR ?? {}) as Record<'view' | 'raise' | 'review' | 'approve', DenyCell | undefined>;
+  const all = await fetchActivePMCsForProjectOnDate(projectId, onDateISO);
+  const out: ActingPmc[] = [];
 
-  const effV = effAllow(baseView, wirRow.view);
-  const effRz = effAllow(baseRaise, wirRow.raise);
-  const effRv = effAllow(baseReview, wirRow.review);
-  const effAp = effAllow(baseApprove, wirRow.approve);
+  for (const hit of all) {
+    const userId = hit.user.userId;
+    const over = await fetchUserOverrideMatrix(projectId, userId);
+    const row = (over?.WIR ?? {}) as Record<'view' | 'raise' | 'review' | 'approve', DenyCell | undefined>;
 
-  const label = deducePmcActingRole(effV, effRz, effRv, effAp);
-  return { label, name: displayNameLite(hit.user) };
+    const effV = effAllow(baseView, row.view);
+    const effRz = effAllow(baseRaise, row.raise);
+    const effRv = effAllow(baseReview, row.review);
+    const effAp = effAllow(baseApprove, row.approve);
+
+    const label = deducePmcActingRole(effV, effRz, effRv, effAp);
+    if (label !== 'ViewerOnly') out.push({ user: hit.user, role: label });
+  }
+  return out;
 }
+
+// NEW: fetch ALL PMCs active for this project on a date (sorted by most recently updated)
+async function fetchActivePMCsForProjectOnDate(projectId: string, onDateISO: string) {
+  const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+  const users: UserLite[] = Array.isArray(data) ? data : (data?.users ?? []);
+
+  const candidates: { user: UserLite; mem: MembershipLite }[] = [];
+  for (const u of users) {
+    const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+    for (const m of mems) {
+      if (String(m?.role || "").toLowerCase() !== "pmc") continue;
+      if (String(m?.project?.projectId || "") !== String(projectId)) continue;
+      const from = m?.validFrom || undefined;
+      const to = m?.validTo || undefined;
+      if (isWithinYMD(onDateISO, from, to)) {
+        candidates.push({ user: u, mem: m });
+      }
+    }
+  }
+
+  candidates.sort((a, b) => {
+    const au = Date.parse(a.mem.updatedAt || "") || 0;
+    const bu = Date.parse(b.mem.updatedAt || "") || 0;
+    return bu - au;
+  });
+
+  return candidates; // array of { user, mem }
+}
+
 // compute effective canRaise = (base allow) AND (NOT user-override deny)
 async function fetchEffectiveRaisePermission(projectId: string, roleKey: RoleKey): Promise<boolean> {
   const userId = getUserIdFromToken();
@@ -167,6 +199,7 @@ async function fetchEffectiveRaisePermission(projectId: string, roleKey: RoleKey
 type MembershipLite = {
   role?: string | null;
   project?: { projectId?: string; title?: string } | null;
+  company?: { companyId?: string; name?: string | null } | null;
   validFrom?: string | null;
   validTo?: string | null;
   updatedAt?: string | null;
@@ -177,11 +210,31 @@ type UserLite = {
   middleName?: string | null;
   lastName?: string | null;
   email?: string | null;
+  countryCode?: string | null;
+  phone?: string | null;
+  company?: { name?: string | null } | null;
   userRoleMemberships?: MembershipLite[];
 };
 
 function displayNameLite(u: UserLite) {
   return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim() || u.email || `User #${u.userId}`;
+}
+function displayPhone(u: Partial<UserLite> | any) {
+  const cc = String(u?.countryCode ?? "").replace(/\D+/g, "");
+  const ph = String(u?.phone ?? "").replace(/\D+/g, "");
+  if (!ph) return "";
+  // default to India (91) if cc missing; aligns with long-term rule
+  return `+${cc || "91"}${ph}`;
+}
+function getCompanyNameForProjectPMC(u: UserLite, pid: string) {
+  const mems = u.userRoleMemberships || [];
+  // Prefer PMC membership tied to this project (scope: Project) and read its company name
+  const projMem =
+    mems.find(m => String(m.project?.projectId || "") === String(pid) && String(m.role || "").toLowerCase() === "pmc");
+  if (projMem?.company?.name) return projMem.company.name;
+  // Fallback: any company-scoped membership with PMC role
+  const anyPmc = mems.find(m => !m.project?.projectId && String(m.role || "").toLowerCase() === "pmc");
+  return anyPmc?.company?.name || null;
 }
 function fmtLocalDateOnly(v?: string | null) {
   if (!v) return "—";
@@ -200,74 +253,21 @@ function isWithinYMD(dateISO: string, startISO?: string | null, endISO?: string 
   return true;
 }
 
-async function fetchActivePMCForProjectOnDate(projectId: string, onDateISO: string) {
-  // Try a fast path if your BE supports it in future:
-  // const { data } = await api.get("/admin/assignments", { params: { projectId, role: "PMC" } });
-
-  const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-  const users: UserLite[] = Array.isArray(data) ? data : (data?.users ?? []);
-
-  // Find any PMC whose membership points to this project and covers the date
-  const candidates: {
-    user: UserLite; mem: MembershipLite;
-  }[] = [];
-
-  for (const u of users) {
-    const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-    for (const m of mems) {
-      if (String(m?.role || "").toLowerCase() !== "pmc") continue;
-      if (String(m?.project?.projectId || "") !== String(projectId)) continue;
-      const from = m?.validFrom || undefined;
-      const to = m?.validTo || undefined;
-      if (isWithinYMD(onDateISO, from, to)) {
-        candidates.push({ user: u, mem: m });
-      }
-    }
-  }
-
-  if (candidates.length === 0) return null;
-
-  // Prefer most recently updated membership
-  candidates.sort((a, b) => {
-    const au = Date.parse(a.mem.updatedAt || "") || 0;
-    const bu = Date.parse(b.mem.updatedAt || "") || 0;
-    return bu - au;
-  });
-
-  return candidates[0]; // { user, mem }
-}
-
 async function ensurePMCGuardForSubmit(projectId: string, plannedDateISO?: string | null): Promise<boolean> {
   const onDate = (plannedDateISO && /^\d{4}-\d{2}-\d{2}$/.test(plannedDateISO)) ? plannedDateISO : todayISO();
-  const hit = await fetchActivePMCForProjectOnDate(projectId, onDate);
-  if (!hit) {
+  const roles = await resolvePmcActingRolesForProjectOnDate(projectId, onDate);
+  if (!roles.length) {
     alert(
       `Cannot submit: No active PMC assignment found for this project on ${fmtLocalDateOnly(onDate)}.\n\n` +
       `Ask Admin to assign a PMC covering the IR date.`
     );
     return false;
   }
-
-  const vf = fmtLocalDateOnly(hit.mem.validFrom);
-  const vt = fmtLocalDateOnly(hit.mem.validTo);
-
-  // NEW: derive PMC acting role from effective permissions
-  let roleLine = '—';
-  try {
-    const r = await resolvePmcRoleForProjectOnDate(projectId, onDate);
-    roleLine = r ? `${r.label}${r.name ? ` (${r.name})` : ''}` : '—';
-  } catch {
-    roleLine = '—';
-  }
-
-  const proceed = window.confirm(
-    `PMC on record: ${displayNameLite(hit.user)}\n` +
-    `Validity: ${vf} → ${vt}\n` +
-    `Acting as: ${roleLine}\n\n` +
-    `Do you want to proceed with submit?`
+  const list = roles.map(r => `${displayNameLite(r.user)} — ${r.role}`).join("\n");
+  return window.confirm(
+    `Eligible on ${fmtLocalDateOnly(onDate)}:\n${list}\n\n` +
+    `Proceed with submit?`
   );
-
-  return !!proceed;
 }
 
 /* ========================= Format helpers ========================= */
@@ -343,6 +343,8 @@ type NewWirForm = {
   time12h: string;           // HH:MM AM/PM
   location?: string | null;
   details?: string;
+  inspectorUserId?: string | null;
+  hodUserId?: string | null;
 
   // attachments
   drawingFiles: File[];
@@ -501,25 +503,25 @@ export default function WIR({ hideTopHeader, onBackOverride }: WIRProps) {
       (claims as any)?.roleName ??
       ""
     );
-    const [currentUserId, setCurrentUserId] = useState<string | null>(
-  () => resolveUserIdFrom(claimsFromJwt, user)
-);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(
+    () => resolveUserIdFrom(claimsFromJwt, user)
+  );
 
-// refresh when auth context or token changes
-useEffect(() => {
-  setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
-}, [user, claims]); // claims comes from useAuth()
+  // refresh when auth context or token changes
+  useEffect(() => {
+    setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
+  }, [user, claims]); // claims comes from useAuth()
 
-// also pick up token rotations across tabs in the same profile
-useEffect(() => {
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === "token") {
-      setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
-    }
-  };
-  window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
-}, [user]);
+  // also pick up token rotations across tabs in the same profile
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "token") {
+        setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [user]);
   const roleKey = (role || "Client") as RoleKey;
 
   // project label from state for immediate header info
@@ -529,8 +531,7 @@ useEffect(() => {
 
   const [q, setQ] = useState("");
   const [state, setState] = useState<FetchState>({ list: [], loading: true, error: null });
-  const [view, setView] = useState<"list" | "detail" | "new">("list");
-  const [activeTab, setActiveTab] = useState<"overview" | "items" | "schedule" | "revisions">("overview");
+  const [view, setView] = useState<"list" | "new">("list");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [canRaise, setCanRaise] = useState<boolean>(false);
   const [transmissionType, setTransmissionType] = useState<string | null>(null);
@@ -557,6 +558,8 @@ useEffect(() => {
     activityId: null,
     activityLabel: null,
     discipline: null,
+    inspectorUserId: null,
+    hodUserId: null,
     dateISO: todayISO(),
     time12h: nowTime12h(),
     location: "",
@@ -655,6 +658,134 @@ useEffect(() => {
   const [mode, setMode] = useState<ViewMode>("create");
   const isRO = mode === "readonly";
 
+  // === Dispatch modal state ===
+  type DispatchCandidate = UserLite & {
+    companyName?: string | null;
+    displayPhone?: string | null;
+    acting?: 'Inspector' | 'Inspector+HOD' | 'HOD';
+  };
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [dispatchWirId, setDispatchWirId] = useState<string | null>(null);
+  const [dispatchPick, setDispatchPick] = useState<string | null>(null);
+  const [dispatchSearch, setDispatchSearch] = useState("");
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchErr, setDispatchErr] = useState<string | null>(null);
+  const [dispatchCandidates, setDispatchCandidates] = useState<DispatchCandidate[]>([]);
+
+  // load Inspector suggestions for a given date (Inspector / Inspector+HOD)
+  async function loadInspectorSuggestions(pid: string, onDateISO: string) {
+    setDispatchLoading(true); setDispatchErr(null);
+    try {
+      const roles = await resolvePmcActingRolesForProjectOnDate(pid, onDateISO); // returns ActingPmc[]
+      const insp = roles.filter(r => r.role === 'Inspector' || r.role === 'Inspector+HOD');
+      const uniq = new Map<string, DispatchCandidate>();
+      for (const r of insp) {
+        const u = r.user;
+        uniq.set(String(u.userId), {
+          ...u,
+          companyName: getCompanyNameForProjectPMC(u, pid),
+          displayPhone: displayPhone(u),
+          acting: r.role as any,
+        });
+      }
+      setDispatchCandidates(Array.from(uniq.values()));
+    } catch (e: any) {
+      setDispatchErr(e?.message || "Failed to load suggestions");
+      setDispatchCandidates([]);
+    } finally {
+      setDispatchLoading(false);
+    }
+  }
+
+  function roleLabelFromActing(a?: 'Inspector' | 'Inspector+HOD' | 'HOD' | null) {
+    if (a === 'Inspector+HOD') return 'Both';
+    if (a === 'HOD') return 'HOD';
+    return 'Inspector';
+  }
+  async function onDispatchSend() {
+    if (!dispatchWirId) return;
+    if (!dispatchPick) { alert("Please pick a recipient."); return; }
+
+    // Resolve the picked candidate and WIR meta for the confirmation text
+    const candidate = dispatchCandidates.find(u => String(u.userId) === String(dispatchPick)) || null;
+    const roleLabel = roleLabelFromActing(candidate?.acting || null);
+
+    // Try to get code/title for the dialog (from list first; fallback to fetch)
+    let wirMeta = state.list.find(w => String(w.wirId) === String(dispatchWirId)) || null;
+    if (!wirMeta) {
+      try {
+        const full = await loadWir(projectId, dispatchWirId);
+        wirMeta = {
+          wirId: String(full?.wirId || full?.id || dispatchWirId),
+          code: full?.code ?? full?.irCode ?? null,
+          title: full?.title ?? full?.name ?? "Inspection Request",
+        } as any;
+      } catch { /* ignore */ }
+    }
+
+    const wirCodeTitle = [wirMeta?.code, wirMeta?.title || "Inspection Request"].filter(Boolean).join(" ");
+    const companyText = (candidate?.companyName || "").toString().trim();
+    const personText = joinWithDots(
+      roleLabel,
+      candidate ? displayNameLite(candidate) : '',
+      companyText
+    );
+
+    // Confirmation dialog (Cancel / OK)
+    const ok = window.confirm(`Send WIR: ${wirCodeTitle}\n${personText}`);
+    if (!ok) return;
+
+    try {
+      // 1) Submit WIR
+      await api.post(`/projects/${projectId}/wir/${dispatchWirId}/submit`, { role: role || "Contractor" });
+
+      // 2) Update BIC to chosen user
+      try {
+        await api.post(`/projects/${projectId}/wir/${dispatchWirId}/bic`, { userId: dispatchPick });
+      } catch {
+        // Fallback if dedicated endpoint not present
+        await api.patch(`/projects/${projectId}/wir/${dispatchWirId}`, { participants: { bicUserId: dispatchPick } });
+      }
+
+      // 3) Optimistic UI: set BIC name in the list immediately
+      if (candidate) {
+        const bicNameNow = displayNameLite(candidate);
+        setState(s => ({
+          ...s,
+          list: s.list.map(w =>
+            String(w.wirId) === String(dispatchWirId) ? { ...w, bicName: bicNameNow } : w
+          ),
+        }));
+      }
+
+      // Close modal & refresh
+      setDispatchOpen(false);
+      setDispatchWirId(null);
+      setDispatchPick(null);
+      resetNewForm();
+      goToList(true);
+    } catch (e: any) {
+      const s = e?.response?.status;
+      const msg = e?.response?.data?.error || e?.message || "Failed to dispatch";
+      alert(`Error ${s ?? ""} ${msg}`);
+    }
+  }
+
+  function openDispatchModal(wirId: string, onDateISO: string) {
+    setDispatchWirId(wirId);
+    setDispatchPick(null);
+    setDispatchSearch("");
+    setDispatchOpen(true);
+    loadInspectorSuggestions(projectId, onDateISO);
+  }
+
+  function joinWithDots(...parts: Array<string | null | undefined>) {
+    return parts
+      .map(p => (p ?? '').toString().trim())
+      .filter(Boolean)
+      .join(' · ');
+  }
+
   // Attachment “pills” (derived)
   const hasDrawing = newForm.drawingFiles.length > 0;
   const hasITP = newForm.itpFiles.length > 0;
@@ -667,15 +798,6 @@ useEffect(() => {
     () => state.list.find((w) => String(w.wirId) === String(selectedId)) || null,
     [state.list, selectedId]
   );
-
-  // Role-based primary actions (UI only; wire to APIs later)
-  const primaryActionLabel = useMemo(() => {
-    const r = normalizeRole(role);
-    if (r === "Contractor") return view === "detail" ? "Submit IR" : "+Create New WIR";
-    if (r === "PMC" || r === "IH-PMT" || r === "Consultant") return "Recommend";
-    if (r === "Admin" || r === "Client") return "Approve";
-    return "Action";
-  }, [role, view]);
 
   const checklistLabelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -695,6 +817,8 @@ useEffect(() => {
       activityId: null,
       activityLabel: null,
       discipline: null,
+      inspectorUserId: null,
+      hodUserId: null,
       dateISO: todayISO(),
       time12h: nowTime12h(),
       location: "",
@@ -797,7 +921,7 @@ useEffect(() => {
           inspectorName: x.inspector?.name ?? x.participants?.inspector ?? null,
           hodName: x.hod?.name ?? x.participants?.hod ?? null,
           bicName: x.participants?.bic?.name ?? x.bic?.name ?? x.bicName ?? null,
-authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
+          authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
           items: (x.items || []).map((it: any, i: number) => ({
             id: it.id ?? `it-${i}`,
             name: it.name ?? it.title ?? `Item ${i + 1}`,
@@ -882,7 +1006,7 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
       return `${code}${ttl}`;
     }
     return "Work Inspection Requests";
-  }, [mode, selected, newForm.activityType, newForm.customActivityText, newForm.activityLabel]);
+  }, [mode, selected]);
 
   const projectLabel = useMemo(() => {
     const code =
@@ -923,39 +1047,8 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
 
     // Contractor: on list -> create, on detail -> submit
     if (r === "Contractor") {
-      if (view !== "detail") {
-        openCreateNew();
-        return;
-      }
-
-      // Narrow selected non-null for TypeScript
-      const sel = selected;
-      if (!sel) {
-        alert("No WIR selected.");
-        return;
-      }
-
-      try {
-        const planned =
-          (sel.forDate && String(sel.forDate).slice(0, 10)) ||
-          newForm.dateISO ||
-          undefined;
-
-        // PMC validity guard
-        const ok = await ensurePMCGuardForSubmit(projectId, planned);
-        if (!ok) return;
-
-        await api.post(`/projects/${projectId}/wir/${sel.wirId}/submit`, { role: r });
-        await reloadWirList();
-        alert("Submitted.");
-        goToList(true);
-        return;
-      } catch (e: any) {
-        const s = e?.response?.status;
-        const msg = e?.response?.data?.error || e?.message || "Failed";
-        alert(`Error ${s ?? ''} ${msg}`);
-        return;
-      }
+      openCreateNew();
+      return;
     }
 
     // Non-contractor roles require a selected WIR (detail view)
@@ -996,23 +1089,21 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
 
       const statusLower = (status || "").toLowerCase();
       const authorIdRaw =
-      full?.authorId ??
-      row?.authorId ??
-      full?.createdBy?.userId ??
-      full?.author?.userId ??
-      full?.createdById ??
-      null;
- const authorId = authorIdRaw != null ? String(authorIdRaw) : "";
-    const me = (currentUserId || getUserIdFromToken() || "") + "";
-    if (statusLower === "draft" && authorId && me && authorId === me) {
+        full?.authorId ??
+        row?.authorId ??
+        full?.createdBy?.userId ??
+        full?.author?.userId ??
+        full?.createdById ??
+        null;
+      const authorId = authorIdRaw != null ? String(authorIdRaw) : "";
+      const me = (currentUserId || getUserIdFromToken() || "") + "";
+      if (statusLower === "draft" && authorId && me && authorId === me) {
         // my draft -> edit
         setMode("edit");
         setView("new");
-        setActiveTab("overview");
         try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { }
       } else {
         setMode("readonly");
-        setActiveTab("overview");
         setRoViewOpen(true);
       }
     } catch (e: any) {
@@ -1033,7 +1124,7 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
   };
 
   const onBack = () => {
-    if (view === "detail" || view === "new") {
+    if (view === "new") {
       setView("list");
       setSelectedId(null);
       return;
@@ -1105,7 +1196,7 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
       inspectorName: x.inspector?.name ?? x.participants?.inspector ?? null,
       hodName: x.hod?.name ?? x.participants?.hod ?? null,
       bicName: x.participants?.bic?.name ?? x.bic?.name ?? x.bicName ?? null,
-authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
+      authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
       items: (x.items || []).map((it: any, i: number) => ({
         id: it.id ?? `it-${i}`,
         name: it.name ?? it.title ?? `Item ${i + 1}`,
@@ -1176,24 +1267,24 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
         alert("Select activity, discipline, date/time, and at least one checklist to submit.");
         return;
       }
-
       // Guard: ensure PMC is valid for the chosen date
       const ok = await ensurePMCGuardForSubmit(projectId, newForm.dateISO);
       if (!ok) return;
 
+      // Confirm submit, then open Dispatch modal (mobile-first)
+      if (!window.confirm("Submit this WIR now?")) return;
+
+      // Ensure a WIR exists (create draft if needed)
       let id = selectedId;
       if (!id) {
         const { data } = await api.post(`/projects/${projectId}/wir`, buildWirPayload());
         id = String(data?.wirId || data?.id);
         setSelectedId(id || null);
       }
-
       if (!id) throw new Error("Could not determine WIR ID to submit.");
 
-      await api.post(`/projects/${projectId}/wir/${id}/submit`, { role: role || "Contractor" });
-      alert("WIR submitted.");
-      resetNewForm();
-      goToList(true);
+      // Open Dispatch modal. Actual API submit + BIC update will happen on Send.
+      openDispatchModal(id, newForm.dateISO);
     } catch (e: any) {
       const s = e?.response?.status;
       const data = e?.response?.data;
@@ -1203,7 +1294,7 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
         data?.error ||
         e?.message ||
         "Failed";
-      console.error("WIR API error:", { status: s, data });
+      console.error("WIR submit prep error:", { status: s, data });
       alert(`Error ${s ?? ""} ${msg}`);
     }
   };
@@ -1241,7 +1332,6 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
     setSelectedId(null);
     setMode("create");
     resetNewForm();
-    setActiveTab("overview");
     setView("new");
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { }
   };
@@ -1293,6 +1383,40 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
     }).length;
     return { total, mandatory, critical };
   }, [selected]);
+
+  const pickedCandidate = useMemo(
+    () => dispatchCandidates.find(u => String(u.userId) === String(dispatchPick || "")) || null,
+    [dispatchPick, dispatchCandidates]
+  );
+
+  // ===== AI Routing & Summary (derived text for Dispatch modal) =====
+  const aiRouting = useMemo(() => {
+    // Title of WIR
+    const wirTitle =
+      (selected?.title && String(selected.title).trim()) ||
+      (newForm.activityType === 'Custom'
+        ? (newForm.customActivityText || '').trim()
+        : (newForm.activityLabel || '').trim()) ||
+      "Inspection Request";
+
+    // Date of inspection
+    const whenISO =
+      (selected?.forDate && String(selected.forDate)) ||
+      (newForm.dateISO && String(newForm.dateISO)) ||
+      "";
+
+    // Activity (selected or custom)
+    const activityText =
+      (newForm.activityType === 'Custom'
+        ? (newForm.customActivityText || '').trim()
+        : (newForm.activityLabel || '').trim()) || wirTitle;
+
+    const totalChecklist = (newForm.pickedChecklistIds?.length ?? 0) || (selected?.items?.length ?? 0) || 0;
+    return {
+      subject: `${wirTitle}${whenISO ? ` — ${fmtDate(whenISO)}` : ""}`,
+      summary: `Request inspection for "${activityText}". Auto attached ${totalChecklist} checklist items.`
+    };
+  }, [selected, newForm.activityType, newForm.customActivityText, newForm.activityLabel, newForm.dateISO, newForm.pickedChecklistIds]);
 
   useEffect(() => {
     if (view === "new" && !canRaise) setView("list");
@@ -1768,6 +1892,14 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
                   <button onClick={onSaveDraft} className="px-4 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800">
                     Save Draft
                   </button>
+                  {selectedId && (
+                    <button
+                      onClick={() => goToList(false)}
+                      className="px-4 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    >
+                      Close
+                    </button>
+                  )}
                   <button
                     onClick={onSubmitNew}
                     disabled={!canSubmit()}
@@ -1948,6 +2080,7 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
                     value={`${checklistStats.total} items · ${checklistStats.mandatory} mandatory · ${checklistStats.critical} critical`}
                   />
                   <FieldRow label="Inspector" value={selected?.inspectorName || "—"} />
+                  <FieldRow label="HOD" value={selected?.hodName || "—"} />
                   <FieldRow label="Ball in Court" value={`BIC: ${selected?.bicName || "—"}`} />
                   <FieldRow label="Follow up" value="Not Required" />
                 </div>
@@ -1998,6 +2131,171 @@ authorId: x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId
           </div>
         </div>
       )}
+      {/* ===== Dispatch Work Inspection (mobile-first) ===== */}
+      {dispatchOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-stretch justify-center p-0 sm:p-4">
+          <div
+            className="relative w-full max-w-md h-dvh sm:h-auto sm:max-h-[90dvh] bg-white dark:bg-neutral-900 rounded-none sm:rounded-2xl border dark:border-neutral-800 shadow-2xl flex flex-col"
+            role="dialog" aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close (top-right) */}
+            <button
+              onClick={() => setDispatchOpen(false)}
+              aria-label="Close"
+              className="absolute right-3 top-3 z-20 rounded-full border dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 p-2 shadow"
+            >✕</button>
+
+            {/* Header */}
+            <div className="p-4 border-b dark:border-neutral-800">
+              <div className="text-base sm:text-lg font-semibold dark:text-white">
+                Dispatch Work Inspection
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Visibility pill (Transmission type) */}
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Visibility</div>
+                <KpiPill
+                  prefix="Visibility"
+                  value={transmissionType || "—"}
+                  tone={toneForTransmission(transmissionType)}
+                />
+              </div>
+
+              {/* Recipients tile */}
+              <SectionCard title="Recipients">
+                {/* Selected inspector box (read-only) */}
+                <div className="mb-3">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                    Selected Inspector
+                  </div>
+                  <div className="w-full text-sm border rounded-lg px-3 py-2 bg-gray-50 dark:bg-neutral-800
+                  dark:text-white dark:border-neutral-800">
+                    {pickedCandidate ? `${displayNameLite(pickedCandidate)}${pickedCandidate.acting ? ` — ${pickedCandidate.acting}` : ""}`
+                      : "— None selected —"}
+                  </div>
+                </div>
+                {/* Search */}
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    value={dispatchSearch}
+                    onChange={(e) => setDispatchSearch(e.target.value)}
+                    placeholder="Search by name or company"
+                    className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  />
+                  <button
+                    onClick={() => setDispatchSearch("")}
+                    className="text-xs px-2 py-1 rounded border dark:border-neutral-800"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {/* Label moved below search */}
+                <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                  AI Suggestions
+                </div>
+
+                {/* List (clickable items; no radios) */}
+                <div className="max-h-72 overflow-auto rounded border dark:border-neutral-800">
+                  {dispatchLoading ? (
+                    <div className="p-3 text-sm text-gray-600 dark:text-gray-300">Loading…</div>
+                  ) : dispatchErr ? (
+                    <div className="p-3 text-sm text-rose-600 dark:text-rose-400">{dispatchErr}</div>
+                  ) : dispatchCandidates.length === 0 ? (
+                    <div className="p-3 text-sm text-gray-600 dark:text-gray-300">No suggestions.</div>
+                  ) : (
+                    <ul className="divide-y dark:divide-neutral-800">
+                      {dispatchCandidates
+                        .filter(u => {
+                          const q = dispatchSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          const hay = [
+                            displayNameLite(u),
+                            u.companyName || "",
+                            u.email || ""
+                          ].join(" ").toLowerCase();
+                          return hay.includes(q);
+                        })
+                        .map(u => {
+                          const isPicked = String(dispatchPick || "") === String(u.userId);
+                          return (
+                            <li key={u.userId} className="p-0">
+                              <button
+                                type="button"
+                                onClick={() => setDispatchPick(String(u.userId))}
+                                aria-pressed={isPicked}
+                                className={
+                                  "w-full text-left p-2 flex items-start gap-3 transition rounded " +
+                                  (isPicked
+                                    ? "bg-emerald-50 dark:bg-emerald-900/20 ring-2 ring-emerald-500/60"
+                                    : "hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                }
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium dark:text-white break-words">
+                                    {displayNameLite(u)}{u.acting ? ` — ${u.acting}` : ""}
+                                  </div>
+                                  <div className="text-xs text-gray-600 dark:text-gray-300 break-words">
+                                    {u.companyName || "—"}
+                                  </div>
+                                  <div className="text-xs text-gray-600 dark:text-gray-300 break-words">
+                                    {[u.displayPhone, u.email].filter(Boolean).join(" • ") || "—"}
+                                  </div>
+                                </div>
+                                {isPicked && (
+                                  <span className="ml-2 text-sm">✔</span>
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  )}
+                </div>
+              </SectionCard>
+              {/* AI Routing & Summary */}
+              <SectionCard title="AI Routing & Summary">
+                <div className="grid grid-cols-1 gap-3 text-sm">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                      Subject
+                    </div>
+                    <div className="w-full border rounded-lg px-3 py-2 bg-gray-50 dark:bg-neutral-800 dark:text-white dark:border-neutral-800">
+                      {aiRouting.subject}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Auto-summary</div>
+                    <div className="w-full border rounded-lg px-3 py-2 bg-gray-50 dark:bg-neutral-800 dark:text-white dark:border-neutral-800">{aiRouting.summary}</div>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 sm:p-4 border-t dark:border-neutral-800 flex gap-2">
+              <button
+                onClick={() => setDispatchOpen(false)}
+                className="w-full text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onDispatchSend}
+                className="w-full text-sm px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                disabled={!dispatchPick}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </section>
   );
 }
