@@ -1,5 +1,5 @@
 //pms-backend/src/modules/project-modules/wir/wir.service.ts
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { Prisma, WirStatus, WirItemStatus, ProjectHealth } from '@prisma/client';
 
@@ -11,6 +11,13 @@ const toWirItemStatus = (s?: string | null): WirItemStatus | undefined => {
   if (n === 'pending') return WirItemStatus.Pending;
   if (n === 'unknown') return WirItemStatus.Unknown;
   return undefined; // unknown label -> omit
+};
+
+const name = (u?: { firstName?: string | null; lastName?: string | null } | null) => {
+  if (!u) return null;
+  const f = (u.firstName || '').trim();
+  const l = (u.lastName || '').trim();
+  return (f && l) ? `${f} ${l}` : (f || l || null);
 };
 
 type CreateWirInput = {
@@ -43,6 +50,41 @@ type UpdateWirInput = Partial<CreateWirInput> & { status?: WirStatus | null; hea
 export class WirService {
   constructor(private prisma: PrismaService) { }
 
+  async canDeleteDraft(projectId: string, wirId: string, userId: string) {
+    const w = await this.prisma.wir.findFirst({
+      where: { wirId, projectId },
+      select: { status: true, createdById: true },
+    });
+    if (!w) return false;
+    const isDraft = String(w.status || '').toLowerCase() === 'draft';
+    const isAuthor = String(w.createdById || '') === String(userId || '');
+    return isDraft && isAuthor;
+  }
+
+  async deleteDraft(projectId: string, wirId: string) {
+    const w = await this.prisma.wir.findFirst({ where: { wirId, projectId } });
+    if (!w) throw new NotFoundException('WIR not found');
+    if (String(w.status || '').toLowerCase() !== 'draft') {
+      throw new BadRequestException('Only Draft WIR can be deleted');
+    }
+    // If you keep child tables (items, attachments), delete in a tx:
+    return this.prisma.$transaction(async (tx) => {
+      await tx.wirItem.deleteMany({ where: { wirId } });
+      return tx.wir.delete({ where: { wirId } });
+    });
+  }
+
+  async delete(projectId: string, wirId: string, userId: string) {
+    const ok = await this.canDeleteDraft(projectId, wirId, userId);
+    if (!ok) {
+      throw new ForbiddenException('Only the author can delete a Draft WIR');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.wirItem.deleteMany({ where: { wirId } });
+      return tx.wir.delete({ where: { wirId } });
+    });
+  }
+
   /* ---------- Mapping to FE shape ---------- */
   private toFE(w: any) {
     return {
@@ -60,14 +102,18 @@ export class WirService {
       forTime: w.forTime,
       cityTown: w.cityTown,
       stateName: w.stateName,
-      contractorName: w.contractor?.fullName ?? w.contractor?.firstName ?? null,
-      inspectorName: w.inspector?.fullName ?? w.inspector?.firstName ?? null,
-      hodName: w.hod?.fullName ?? w.hod?.firstName ?? null,
-      authorId: w.createdById ?? w.createdBy?.userId ?? null,
-      items: (w.items || []).map((it: {
-        id: string; name: string; spec?: string | null; required?: string | null;
-        tolerance?: string | null; photoCount?: number | null; status?: string | null;
-      }) => ({
+
+      contractorName: name(w.contractor),
+      inspectorName: name(w.inspector),
+      hodName: name(w.hod),
+
+      // Ball-In-Court
+      bicUserId: w.bicUserId ?? w.bic?.userId ?? null,
+      bicName: name(w.bic),
+
+      createdById: w.createdById ?? w.createdBy?.userId ?? null,
+
+      items: (w.items || []).map((it: any) => ({
         id: it.id,
         name: it.name,
         spec: it.spec,
@@ -123,82 +169,89 @@ export class WirService {
         lastName: true
       }
     },
+    bic: {
+      select: {
+        userId: true,
+        firstName: true,
+        lastName: true
+      }
+    },
     items: true,
   } as const;
 
   /* ---------- Project-role helpers ---------- */
-// Adjust these to your schema; assumed ProjectMember with roleName/role enum
-private async getProjectRole(userId: string, projectId: string): Promise<string | null> {
-  // Example: ProjectMember(userId, projectId, roleName)
-  const m = await this.prisma.userRoleMembership.findFirst({
-    where: { projectId, userId },
-    select: { role: true }, // or { role: true } if enum
-  });
-  // Normalize to canonical UI keys: 'Contractor', 'Client', 'PMC', 'IH-PMT', 'Consultant', 'Admin', etc.
-  const raw = (m?.role || '').toString().trim().toLowerCase().replace(/[_\s-]+/g, '');
-  switch (raw) {
-    case 'contractor': return 'Contractor';
-    case 'client': return 'Client';
-    case 'pmc': return 'PMC';
-    case 'ihpmt': return 'IH-PMT';
-    case 'consultant': return 'Consultant';
-    case 'admin': return 'Admin';
-    case 'supplier': return 'Supplier';
-    default: return m?.role || null;
+  // Adjust these to your schema; assumed ProjectMember with roleName/role enum
+  private async getProjectRole(userId: string, projectId: string): Promise<string | null> {
+    // Example: ProjectMember(userId, projectId, roleName)
+    const m = await this.prisma.userRoleMembership.findFirst({
+      where: { projectId, userId },
+      select: { role: true }, // or { role: true } if enum
+    });
+    // Normalize to canonical UI keys: 'Contractor', 'Client', 'PMC', 'IH-PMT', 'Consultant', 'Admin', etc.
+    const raw = (m?.role || '').toString().trim().toLowerCase().replace(/[_\s-]+/g, '');
+    switch (raw) {
+      case 'contractor': return 'Contractor';
+      case 'client': return 'Client';
+      case 'pmc': return 'PMC';
+      case 'ihpmt': return 'IH-PMT';
+      case 'consultant': return 'Consultant';
+      case 'admin': return 'Admin';
+      case 'supplier': return 'Supplier';
+      default: return m?.role || null;
+    }
   }
-}
 
-private async isContractorForProject(userId: string, projectId: string): Promise<boolean> {
-  const role = await this.getProjectRole(userId, projectId);
-  return role === 'Contractor';
-}
+  private async isContractorForProject(userId: string, projectId: string): Promise<boolean> {
+    const role = await this.getProjectRole(userId, projectId);
+    return role === 'Contractor';
+  }
 
   /* ---------- List & Get ---------- */
   async list(projectId: string, userId: string) {
-  const isCtr = await this.isContractorForProject(userId, projectId);
+    const isCtr = await this.isContractorForProject(userId, projectId);
 
-  // Everyone sees non-drafts. Drafts are visible only to the author AND only if the viewer is a Contractor.
-  const where: Prisma.WirWhereInput = isCtr
-    ? {
+    // Everyone sees non-drafts. Drafts are visible only to the author AND only if the viewer is a Contractor.
+    const where: Prisma.WirWhereInput = isCtr
+      ? {
         projectId,
         OR: [
           { status: { not: WirStatus.Draft } },
           { AND: [{ status: WirStatus.Draft }, { createdById: userId }] },
         ],
       }
-    : {
+      : {
         projectId,
         status: { not: WirStatus.Draft },
       };
 
-  const rows = await this.prisma.wir.findMany({
-    where,
-    include: this.baseInclude,
-    orderBy: { updatedAt: 'desc' },
-  });
+    const rows = await this.prisma.wir.findMany({
+      where,
+      include: this.baseInclude,
+      orderBy: { updatedAt: 'desc' },
+    });
 
-  return rows.map(r => this.toFE(r));
-}
-
-  // before: async get(projectId: string, wirId: string)
-async get(projectId: string, wirId: string, userId: string) {
-  const row = await this.prisma.wir.findFirst({
-    where: { wirId, projectId },
-    include: this.baseInclude,
-  });
-  if (!row) throw new NotFoundException('WIR not found');
-
-  if (row.status === WirStatus.Draft) {
-    const isCtr = await this.isContractorForProject(userId, projectId);
-    const isAuthor = !!row.createdById && row.createdById === userId;
-    if (!(isCtr && isAuthor)) {
-      // You can choose 404 to avoid leaking existence; spec asked 403/404.
-      throw new ForbiddenException('Draft is visible only to its author (Contractor).');
-    }
+    return rows.map(r => this.toFE(r));
   }
 
-  return this.toFE(row);
-}
+  // before: async get(projectId: string, wirId: string)
+  async get(projectId: string, wirId: string, userId: string) {
+    const row = await this.prisma.wir.findFirst({
+      where: { wirId, projectId },
+      include: this.baseInclude,
+    });
+    if (!row) throw new NotFoundException('WIR not found');
+
+    if (row.status === WirStatus.Draft) {
+      const isCtr = await this.isContractorForProject(userId, projectId);
+      const isAuthor = !!row.createdById && row.createdById === userId;
+      if (!(isCtr && isAuthor)) {
+        // You can choose 404 to avoid leaking existence; spec asked 403/404.
+        throw new ForbiddenException('Draft is visible only to its author (Contractor).');
+      }
+    }
+
+    return this.toFE(row);
+  }
 
   // --- Generate next WIR code inside a transaction
   private async nextWirCode(tx: Prisma.TransactionClient): Promise<string> {
@@ -273,20 +326,20 @@ async get(projectId: string, wirId: string, userId: string) {
   }
 
   private async ensureEditableByAuthor(projectId: string, wirId: string, userId: string) {
-  const row = await this.prisma.wir.findUnique({ where: { wirId } });
-  if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
-  if (row.status !== WirStatus.Draft) throw new ForbiddenException('Only Draft can be edited');
+    const row = await this.prisma.wir.findUnique({ where: { wirId } });
+    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+    if (row.status !== WirStatus.Draft) throw new ForbiddenException('Only Draft can be edited');
 
-  const isCtr = await this.isContractorForProject(userId, projectId);
-  if (!isCtr) throw new ForbiddenException('Only Contractors can edit Draft WIRs');
+    const isCtr = await this.isContractorForProject(userId, projectId);
+    if (!isCtr) throw new ForbiddenException('Only Contractors can edit Draft WIRs');
 
-  if (row.createdById && row.createdById !== userId) {
-    throw new ForbiddenException('Only author can edit this Draft');
+    if (row.createdById && row.createdById !== userId) {
+      throw new ForbiddenException('Only author can edit this Draft');
+    }
+    return row;
   }
-  return row;
-}
 
-  async update(projectId: string, wirId: string, patch: UpdateWirInput, userId:string) {
+  async update(projectId: string, wirId: string, patch: UpdateWirInput, userId: string) {
     await this.ensureEditableByAuthor(projectId, wirId, userId);
     const { status, ...rest } = patch || {};
     const data: Prisma.WirUpdateInput = {
@@ -323,6 +376,9 @@ async get(projectId: string, wirId: string, userId: string) {
       include: this.baseInclude,
     });
     if (row.projectId !== projectId) throw new ForbiddenException('Project mismatch');
+    if (row.status === WirStatus.Draft) {
+      data.bic = row.contractorId ? { connect: { userId: row.contractorId } } : { disconnect: true };
+    }
     return this.toFE(row);
     // Items CRUD can be separate endpoints; kept simple for now.
   }
@@ -348,26 +404,28 @@ async get(projectId: string, wirId: string, userId: string) {
   }
 
   async submit(projectId: string, wirId: string, roleFromBody: string, userId: string) {
-  const row = await this.prisma.wir.findUnique({ where: { wirId } });
-  if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+    const row = await this.prisma.wir.findUnique({ where: { wirId } });
+    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
-  const isCtr = await this.isContractorForProject(userId, projectId);
-  if (!isCtr) throw new ForbiddenException('Only Contractors can submit a WIR');
+    const isCtr = await this.isContractorForProject(userId, projectId);
+    if (!isCtr) throw new ForbiddenException('Only Contractors can submit a WIR');
 
-  // Only author can submit their Draft
-  if (row.status === WirStatus.Draft && row.createdById && row.createdById !== userId) {
-    throw new ForbiddenException('Only the author can submit this Draft');
+    // Only author can submit their Draft
+    if (row.status === WirStatus.Draft && row.createdById && row.createdById !== userId) {
+      throw new ForbiddenException('Only the author can submit this Draft');
+    }
+
+    this.ensure(this.canSubmit('Contractor', row.status), 'Not allowed to submit in current status');
+
+    const nextBicUserId = row.inspectorId ?? row.hodId ?? null;
+
+    const updated = await this.prisma.wir.update({
+      where: { wirId },
+      data: { status: WirStatus.Submitted, bicUserId: nextBicUserId },
+      include: this.baseInclude,
+    });
+    return this.toFE(updated);
   }
-
-  this.ensure(this.canSubmit('Contractor', row.status), 'Not allowed to submit in current status');
-
-  const updated = await this.prisma.wir.update({
-    where: { wirId },
-    data: { status: WirStatus.Submitted },
-    include: this.baseInclude,
-  });
-  return this.toFE(updated);
-}
 
   async recommend(projectId: string, wirId: string, role: string) {
     const row = await this.prisma.wir.findUnique({ where: { wirId } });
@@ -375,7 +433,7 @@ async get(projectId: string, wirId: string, userId: string) {
     this.ensure(this.canRecommend(role, row.status), 'Not allowed to recommend in current status');
     const updated = await this.prisma.wir.update({
       where: { wirId },
-      data: { status: WirStatus.Recommended },
+      data: { status: WirStatus.Recommended, bicUserId: row.hodId ?? null },
       include: this.baseInclude,
     });
     return this.toFE(updated);
@@ -385,9 +443,14 @@ async get(projectId: string, wirId: string, userId: string) {
     const row = await this.prisma.wir.findUnique({ where: { wirId } });
     if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
     this.ensure(this.canApprove(role, row.status), 'Not allowed to approve in current status');
+
     const updated = await this.prisma.wir.update({
       where: { wirId },
-      data: { status: WirStatus.Approved, health: row.health ?? ProjectHealth.Green },
+      data: {
+        status: WirStatus.Approved,
+        health: row.health ?? ProjectHealth.Green,
+        bicUserId: row.contractorId ?? null,
+      },
       include: this.baseInclude,
     });
     return this.toFE(updated);
@@ -397,11 +460,17 @@ async get(projectId: string, wirId: string, userId: string) {
     const row = await this.prisma.wir.findUnique({ where: { wirId } });
     if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
     this.ensure(this.canReject(role, row.status), 'Not allowed to reject in current status');
+
     const updated = await this.prisma.wir.update({
       where: { wirId },
-      data: { status: WirStatus.Rejected, health: ProjectHealth.Red },
+      data: {
+        status: WirStatus.Rejected,
+        health: ProjectHealth.Red,
+        bicUserId: row.contractorId ?? null,
+      },
       include: this.baseInclude,
     });
     return this.toFE(updated);
   }
+
 }

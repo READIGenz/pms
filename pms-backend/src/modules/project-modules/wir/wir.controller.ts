@@ -1,5 +1,5 @@
 // pms-backend/src/modules/project-modules/wir/wir.controller.ts
-import { Body, Controller, Get, Param, Patch, Post, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards, Req, Delete, ForbiddenException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../common/guards/jwt.guard';
 import { WirService } from './wir.service';
 import { Request as ExpressRequest } from 'express';
@@ -98,5 +98,19 @@ export class WirController {
   ) {
     const role = (body?.role ?? body?.userRole ?? '').toString();
     return await this.svc.reject(projectId, wirId, role);
+  }
+
+  @Delete(':wirId')
+  async remove(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Req() req: any,
+  ) {
+    // Optional guard: only author (Contractor) can hard-delete when status=Draft
+    const userId = String(req.user?.userId ?? req.user?.sub ?? '');
+    const ok = await this.svc.canDeleteDraft(projectId, wirId, userId);
+    if (!ok) throw new ForbiddenException('Only the author can delete a Draft WIR.');
+
+    return this.svc.deleteDraft(projectId, wirId);
   }
 }
