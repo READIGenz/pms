@@ -1,4 +1,4 @@
-// src/prisma/prisma.service.ts
+// pms-backend/src/prisma/prisma.service.ts
 import { INestApplication, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
 

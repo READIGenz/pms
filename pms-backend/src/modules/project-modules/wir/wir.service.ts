@@ -1,7 +1,7 @@
 //pms-backend/src/modules/project-modules/wir/wir.service.ts
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { Prisma, WirStatus, WirItemStatus, ProjectHealth } from '@prisma/client';
+import { Prisma, WirStatus, WirItemStatus, ProjectHealth, WirAction } from '@prisma/client';
 
 const toWirItemStatus = (s?: string | null): WirItemStatus | undefined => {
   if (!s) return undefined;
@@ -62,14 +62,24 @@ export class WirService {
   }
 
   async deleteDraft(projectId: string, wirId: string) {
-    const w = await this.prisma.wir.findFirst({ where: { wirId, projectId } });
-    if (!w) throw new NotFoundException('WIR not found');
-    if (String(w.status || '').toLowerCase() !== 'draft') {
-      throw new BadRequestException('Only Draft WIR can be deleted');
-    }
-    // If you keep child tables (items, attachments), delete in a tx:
     return this.prisma.$transaction(async (tx) => {
+      const w = await tx.wir.findFirst({ where: { wirId, projectId } });
+      if (!w) throw new NotFoundException('WIR not found');
+      if (String(w.status || '').toLowerCase() !== 'draft') {
+        throw new BadRequestException('Only Draft WIR can be deleted');
+      }
+
       await tx.wirItem.deleteMany({ where: { wirId } });
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Deleted,
+        fromStatus: w.status,
+        toStatus: null,
+        fromBicUserId: w.bicUserId ?? null,
+        toBicUserId: null,
+      });
+
       return tx.wir.delete({ where: { wirId } });
     });
   }
@@ -100,6 +110,11 @@ export class WirService {
       stage: w.stage,
       forDate: w.forDate,
       forTime: w.forTime,
+      rescheduleForDate: w.rescheduleForDate ?? null,
+      rescheduleForTime: w.rescheduleForTime ?? null,
+      rescheduleReason: w.rescheduleReason ?? null,
+      rescheduledById: w.rescheduledById ?? null,
+      rescheduledByName: name(w.rescheduledBy),
       cityTown: w.cityTown,
       stateName: w.stateName,
 
@@ -129,60 +144,17 @@ export class WirService {
 
   private baseInclude = {
     project: { select: { projectId: true, code: true, title: true } },
-    contractor: {
-      select: {
-        userId: true,
-        firstName: true,
-        middleName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        code: true
-      }
-    },
-    inspector: {
-      select: {
-        userId: true,
-        firstName: true,
-        middleName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        code: true
-      }
-    },
-    hod: {
-      select: {
-        userId: true,
-        firstName: true,
-        middleName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        code: true
-      }
-    },
-    createdBy: {
-      select: {
-        userId: true,
-        firstName: true,
-        lastName: true
-      }
-    },
-    bic: {
-      select: {
-        userId: true,
-        firstName: true,
-        lastName: true
-      }
-    },
+    contractor: { select: { userId: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, code: true } },
+    inspector: { select: { userId: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, code: true } },
+    hod: { select: { userId: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, code: true } },
+    createdBy: { select: { userId: true, firstName: true, lastName: true } },
+    bic: { select: { userId: true, firstName: true, lastName: true } },
+    rescheduledBy: { select: { userId: true, firstName: true, lastName: true } },
     items: true,
   } as const;
 
   /* ---------- Project-role helpers ---------- */
-  // Adjust these to your schema; assumed ProjectMember with roleName/role enum
   private async getProjectRole(userId: string, projectId: string): Promise<string | null> {
-    // Example: ProjectMember(userId, projectId, roleName)
     const m = await this.prisma.userRoleMembership.findFirst({
       where: { projectId, userId },
       select: { role: true }, // or { role: true } if enum
@@ -272,15 +244,11 @@ export class WirService {
     return `WIR-${next}`;
   }
 
-  // --- your existing create logic, now wrapped to assign code if absent
   async create(projectId: string, dto: any, createdById?: string) {
-    // keep dto contract unchanged; ignore any incoming dto.code and always generate
-    // (if you want to allow explicit code in future, gate this with: if (!dto.code) ...)
     const attempt = async (tx: Prisma.TransactionClient) => {
       const code = await this.nextWirCode(tx);
-      return tx.wir.create({
+      const created = await tx.wir.create({
         data: {
-          // minimal, unchanged mapping
           projectId,
           title: dto?.title ?? 'Inspection Request',
           discipline: dto?.discipline ?? null,
@@ -291,8 +259,7 @@ export class WirService {
           stateName: dto?.stateName ?? null,
           description: dto?.description ?? null,
           createdById: createdById ?? null,
-          code, // <-- NEW: persist generated code
-          // items creation stays exactly as you already had it (if any)
+          code,
           ...(Array.isArray(dto?.items) && dto.items.length
             ? {
               items: {
@@ -308,19 +275,32 @@ export class WirService {
             }
             : {}),
         },
+        include: this.baseInclude,
       });
+
+      const actorName = await this.resolveActorName(createdById);
+      await this.recordHistory(tx, {
+        projectId,
+        wirId: created.wirId,
+        action: WirAction.Created,
+        actorUserId: createdById ?? null,
+        actorName,
+        toStatus: created.status,
+        toBicUserId: created.bicUserId ?? null,
+        notes: dto?.__note || null,
+        meta: { code: created.code },
+      });
+
+      return created;
     };
 
-    // simple retry on unique race (parallel creates)
     for (let i = 0; i < 3; i++) {
       try {
-        return await this.prisma.$transaction((tx) => attempt(tx));
+        const created = await this.prisma.$transaction((tx) => attempt(tx));
+        return this.toFE(created);
       } catch (e: any) {
-        const isUnique =
-          e?.code === 'P2002' || // Prisma unique constraint
-          /unique/i.test(String(e?.message || ''));
-        if (!isUnique || i === 2) throw e; // rethrow if not a unique clash or after retries
-        // else loop to try again and get the next code
+        const isUnique = e?.code === 'P2002' || /unique/i.test(String(e?.message || ''));
+        if (!isUnique || i === 2) throw e;
       }
     }
   }
@@ -341,46 +321,66 @@ export class WirService {
 
   async update(projectId: string, wirId: string, patch: UpdateWirInput, userId: string) {
     await this.ensureEditableByAuthor(projectId, wirId, userId);
-    const { status, ...rest } = patch || {};
-    const data: Prisma.WirUpdateInput = {
-      code: rest.code ?? undefined,
-      title: rest.title ?? undefined,
-      discipline: (rest.discipline as any) ?? undefined,
-      stage: rest.stage ?? undefined,
-      forDate: rest.forDate ? new Date(rest.forDate) : undefined,
-      forTime: rest.forTime ?? undefined,
-      cityTown: rest.cityTown ?? undefined,
-      stateName: rest.stateName ?? undefined,
-      contractor: rest.contractorId
-        ? { connect: { userId: rest.contractorId } }
-        : rest.contractorId === null
-          ? { disconnect: true }
-          : undefined,
-      inspector: rest.inspectorId
-        ? { connect: { userId: rest.inspectorId } }
-        : rest.inspectorId === null
-          ? { disconnect: true }
-          : undefined,
-      hod: rest.hodId
-        ? { connect: { userId: rest.hodId } }
-        : rest.hodId === null
-          ? { disconnect: true }
-          : undefined,
-      description: rest.description ?? undefined,
-      health: (rest.health as any) ?? undefined,
-    };
 
-    const row = await this.prisma.wir.update({
-      where: { wirId },
-      data,
-      include: this.baseInclude,
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.wir.findUnique({
+        where: { wirId },
+        select: { status: true, bicUserId: true }
+      });
+
+      const { status, ...rest } = patch || {};
+      const data: Prisma.WirUpdateInput = {
+        code: rest.code ?? undefined,
+        title: rest.title ?? undefined,
+        discipline: (rest.discipline as any) ?? undefined,
+        stage: rest.stage ?? undefined,
+        forDate: rest.forDate ? new Date(rest.forDate) : undefined,
+        forTime: rest.forTime ?? undefined,
+        cityTown: rest.cityTown ?? undefined,
+        stateName: rest.stateName ?? undefined,
+        contractor: rest.contractorId
+          ? { connect: { userId: rest.contractorId } }
+          : rest.contractorId === null
+            ? { disconnect: true }
+            : undefined,
+        inspector: rest.inspectorId
+          ? { connect: { userId: rest.inspectorId } }
+          : rest.inspectorId === null
+            ? { disconnect: true }
+            : undefined,
+        hod: rest.hodId
+          ? { connect: { userId: rest.hodId } }
+          : rest.hodId === null
+            ? { disconnect: true }
+            : undefined,
+        description: rest.description ?? undefined,
+        health: (rest.health as any) ?? undefined,
+      };
+
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data,
+        include: this.baseInclude,
+      });
+      if (updated.projectId !== projectId) throw new ForbiddenException('Project mismatch');
+
+      const actorName = await this.resolveActorName(userId);
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Updated,
+        actorUserId: userId,
+        actorName,
+        fromStatus: before?.status ?? null,
+        toStatus: updated.status ?? null,
+        fromBicUserId: before?.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+        // keep small patch meta for traceability (exclude noisy fields if you wish)
+        meta: { patch: { ...rest } }
+      });
+
+      return this.toFE(updated);
     });
-    if (row.projectId !== projectId) throw new ForbiddenException('Project mismatch');
-    if (row.status === WirStatus.Draft) {
-      data.bic = row.contractorId ? { connect: { userId: row.contractorId } } : { disconnect: true };
-    }
-    return this.toFE(row);
-    // Items CRUD can be separate endpoints; kept simple for now.
   }
 
   /* ---------- Actions (status machine) ---------- */
@@ -404,73 +404,301 @@ export class WirService {
   }
 
   async submit(projectId: string, wirId: string, roleFromBody: string, userId: string) {
-    const row = await this.prisma.wir.findUnique({ where: { wirId } });
-    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({ where: { wirId } });
+      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
-    const isCtr = await this.isContractorForProject(userId, projectId);
-    if (!isCtr) throw new ForbiddenException('Only Contractors can submit a WIR');
+      const isCtr = await this.isContractorForProject(userId, projectId);
+      if (!isCtr) throw new ForbiddenException('Only Contractors can submit a WIR');
 
-    // Only author can submit their Draft
-    if (row.status === WirStatus.Draft && row.createdById && row.createdById !== userId) {
-      throw new ForbiddenException('Only the author can submit this Draft');
-    }
+      if (row.status === WirStatus.Draft && row.createdById && row.createdById !== userId) {
+        throw new ForbiddenException('Only the author can submit this Draft');
+      }
+      this.ensure(this.canSubmit('Contractor', row.status), 'Not allowed to submit in current status');
 
-    this.ensure(this.canSubmit('Contractor', row.status), 'Not allowed to submit in current status');
+      const nextBicUserId = row.inspectorId ?? row.hodId ?? null;
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: { status: WirStatus.Submitted, bicUserId: nextBicUserId },
+        include: this.baseInclude,
+      });
 
-    const nextBicUserId = row.inspectorId ?? row.hodId ?? null;
+      const actorName = await this.resolveActorName(userId);
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Submitted,
+        actorUserId: userId,
+        actorName,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+      });
 
-    const updated = await this.prisma.wir.update({
-      where: { wirId },
-      data: { status: WirStatus.Submitted, bicUserId: nextBicUserId },
-      include: this.baseInclude,
+      return this.toFE(updated);
     });
-    return this.toFE(updated);
   }
 
   async recommend(projectId: string, wirId: string, role: string) {
-    const row = await this.prisma.wir.findUnique({ where: { wirId } });
-    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
-    this.ensure(this.canRecommend(role, row.status), 'Not allowed to recommend in current status');
-    const updated = await this.prisma.wir.update({
-      where: { wirId },
-      data: { status: WirStatus.Recommended, bicUserId: row.hodId ?? null },
-      include: this.baseInclude,
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({ where: { wirId } });
+      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+      this.ensure(this.canRecommend(role, row.status), 'Not allowed to recommend in current status');
+
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: { status: WirStatus.Recommended, bicUserId: row.hodId ?? null },
+        include: this.baseInclude,
+      });
+
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Recommended,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+      });
+
+      return this.toFE(updated);
     });
-    return this.toFE(updated);
   }
 
   async approve(projectId: string, wirId: string, role: string) {
-    const row = await this.prisma.wir.findUnique({ where: { wirId } });
-    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
-    this.ensure(this.canApprove(role, row.status), 'Not allowed to approve in current status');
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({ where: { wirId } });
+      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+      this.ensure(this.canApprove(role, row.status), 'Not allowed to approve in current status');
 
-    const updated = await this.prisma.wir.update({
-      where: { wirId },
-      data: {
-        status: WirStatus.Approved,
-        health: row.health ?? ProjectHealth.Green,
-        bicUserId: row.contractorId ?? null,
-      },
-      include: this.baseInclude,
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: {
+          status: WirStatus.Approved,
+          health: row.health ?? ProjectHealth.Green,
+          bicUserId: row.contractorId ?? null,
+        },
+        include: this.baseInclude,
+      });
+
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Approved,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+      });
+
+      return this.toFE(updated);
     });
-    return this.toFE(updated);
   }
 
   async reject(projectId: string, wirId: string, role: string) {
-    const row = await this.prisma.wir.findUnique({ where: { wirId } });
-    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
-    this.ensure(this.canReject(role, row.status), 'Not allowed to reject in current status');
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({ where: { wirId } });
+      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
-    const updated = await this.prisma.wir.update({
+      this.ensure(this.canReject(role, row.status), 'Not allowed to reject in current status');
+
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: {
+          status: WirStatus.Rejected,
+          health: ProjectHealth.Red,
+          bicUserId: row.contractorId ?? null,
+        },
+        include: this.baseInclude,
+      });
+
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Rejected,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+      });
+
+      return this.toFE(updated);
+    });
+  }
+
+  private async recordHistory(
+    tx: Prisma.TransactionClient,
+    args: {
+      projectId: string;
+      wirId: string;
+      action: WirAction;
+      actorUserId?: string | null;
+      actorName?: string | null;
+      fromStatus?: WirStatus | null;
+      toStatus?: WirStatus | null;
+      fromBicUserId?: string | null;
+      toBicUserId?: string | null;
+      notes?: string | null;
+      meta?: any;
+    }
+  ) {
+    // Use UNCHECKED so we can set FK scalars directly
+    const payload: Prisma.WirHistoryUncheckedCreateInput = {
+      projectId: args.projectId,
+      wirId: args.wirId,
+      action: args.action,
+      actorUserId: args.actorUserId ?? null,
+      actorName: args.actorName ?? null,
+      fromStatus: args.fromStatus ?? null,
+      toStatus: args.toStatus ?? null,
+      fromBicUserId: args.fromBicUserId ?? null,
+      toBicUserId: args.toBicUserId ?? null,
+      notes: args.notes ?? null,
+      meta: args.meta ?? undefined,
+    };
+
+    await tx.wirHistory.create({ data: payload });
+  }
+  private async resolveActorName(userId?: string | null): Promise<string | null> {
+    if (!userId) return null;
+    const u = await this.prisma.user.findUnique({
+      where: { userId },
+      select: { firstName: true, lastName: true }
+    });
+    if (!u) return null;
+    const f = (u.firstName || '').trim();
+    const l = (u.lastName || '').trim();
+    return (f && l) ? `${f} ${l}` : (f || l || null);
+  }
+
+  async history(projectId: string, wirId: string) {
+    const rows = await this.prisma.wirHistory.findMany({
+      where: { projectId, wirId },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // FE-friendly mapping + serial number
+    return rows.map((r, idx) => ({
+      sNo: idx + 1,
+      id: r.id,
+      date: r.createdAt,
+      action: r.action,
+      by: r.actorName || r.actorUserId || null,
+      fromStatus: r.fromStatus || null,
+      toStatus: r.toStatus || null,
+      notes: r.notes || null,
+    }));
+  }
+
+  async reschedule(
+  projectId: string,
+  wirId: string,
+  userId: string,
+  body: {
+    role?: string;
+    currentDateISO?: string;
+    currentTime12h?: string;
+    newDateISO: string;
+    newTime12h: string;
+    notes?: string | null;
+  }
+) {
+  const newDateISO = (body?.newDateISO || '').trim();
+  const newTime12h = (body?.newTime12h || '').trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDateISO)) {
+    throw new BadRequestException('newDateISO must be YYYY-MM-DD');
+  }
+  if (!/^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(newTime12h)) {
+    throw new BadRequestException('newTime12h must be HH:MM AM/PM');
+  }
+
+  return await this.prisma.$transaction(async (tx) => {
+    const row = await tx.wir.findUnique({
+      where: { wirId },
+      include: this.baseInclude,
+    });
+    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+
+    // ----- Permission guard (simple & predictable)
+    // Rule: Reschedule is allowed when status is not Draft.
+    // Contractor can reschedule only if they are the author OR the current BIC.
+    // PMC / IH-PMT / Consultant / Admin / Client can reschedule any non-Draft in this project.
+    if (row.status === WirStatus.Draft) {
+      throw new ForbiddenException('Cannot reschedule a Draft WIR');
+    }
+
+    const actorRole = await this.getProjectRole(userId, projectId); // uses your existing helper
+    const isContractor = actorRole === 'Contractor';
+    const isPrivileged =
+      actorRole === 'PMC' ||
+      actorRole === 'IH-PMT' ||
+      actorRole === 'Consultant' ||
+      actorRole === 'Admin' ||
+      actorRole === 'Client';
+
+    if (isContractor) {
+      const isAuthor = !!row.createdById && row.createdById === userId;
+      const isBIC = !!row.bicUserId && row.bicUserId === userId;
+      if (!isAuthor && !isBIC) {
+        throw new ForbiddenException('Contractor can reschedule only own/BIC WIR');
+      }
+    } else if (!isPrivileged) {
+      throw new ForbiddenException('Not allowed to reschedule');
+    }
+
+    // ----- Compute new schedule
+    const newForDate = new Date(`${newDateISO}T00:00:00.000Z`); // store as date-only at UTC midnight (DB is timestamptz)
+    const newForTime = newTime12h.toUpperCase();
+
+    const before = { forDate: row.forDate, forTime: row.forTime };
+
+    const actorName = await this.resolveActorName(userId);
+
+    const updated = await tx.wir.update({
       where: { wirId },
       data: {
-        status: WirStatus.Rejected,
-        health: ProjectHealth.Red,
-        bicUserId: row.contractorId ?? null,
+        // official schedule
+        forDate: newForDate,
+        forTime: newForTime,
+
+        // audit/reschedule fields (also surfaced in toFE)
+        rescheduleForDate: newForDate,
+        rescheduleForTime: newForTime,
+        rescheduleReason: body?.notes ?? null,
+        rescheduledById: userId,
       },
       include: this.baseInclude,
     });
+
+    await this.recordHistory(tx, {
+      projectId,
+      wirId,
+      action: WirAction.Rescheduled,
+      actorUserId: userId,
+      actorName,
+      fromStatus: row.status,
+      toStatus: updated.status,
+      fromBicUserId: row.bicUserId ?? null,
+      toBicUserId: updated.bicUserId ?? null,
+      notes: body?.notes ?? null,
+      meta: {
+        schedule: {
+          from: { date: before.forDate, time: before.forTime },
+          to: { date: updated.forDate, time: updated.forTime },
+          clientSent: {
+            currentDateISO: body?.currentDateISO ?? null,
+            currentTime12h: body?.currentTime12h ?? null,
+            newDateISO,
+            newTime12h,
+          },
+        },
+      },
+    });
+
     return this.toFE(updated);
-  }
+  });
+}
 
 }

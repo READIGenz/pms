@@ -1,3 +1,5 @@
+//pms-backend/prisma/schema.prisma
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -295,6 +297,8 @@ model User {
   wirAsHod                   Wir[]     @relation("WirHodUser")
   wirsCreated                Wir[]     @relation("WirCreatedBy")
   wirsBic                    Wir[]     @relation("WirBicUser")
+  wirsRescheduled            Wir[]     @relation("WirRescheduledByUser")
+
   // 1:M shortcuts
   projectsAsClient           Project[] @relation("ProjectClientUser")
   companiesAsServiceProvider Company[] @relation("CompanyServiceProviderUser")
@@ -802,6 +806,13 @@ model Wir {
   forDate DateTime? @db.Timestamptz(6)
   forTime String?
 
+  // reschedule when inspection is moved
+  rescheduleForDate DateTime?  @db.Timestamptz(6)
+  rescheduleForTime String?
+  rescheduleReason  String?
+  rescheduledById   String?     @db.Uuid
+  rescheduledBy     User?       @relation("WirRescheduledByUser", fields: [rescheduledById], references: [userId], onUpdate: Cascade, onDelete: SetNull)
+
   // location (denormalized for quick display)
   cityTown  String?
   stateName String?
@@ -829,6 +840,8 @@ model Wir {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
+  histories WirHistory[] @relation("WirToHistory")
+
   @@index([projectId])
   @@index([status])
   @@index([discipline, stage])
@@ -855,4 +868,51 @@ model WirItem {
 
   @@index([wirId])
   @@map("WirItem")
+}
+
+// =============================WIR History =============================
+
+enum WirAction {
+  Created
+  Updated
+  Submitted
+  Recommended
+  Approved
+  Rejected
+  Deleted
+  BicChanged
+  ItemsChanged
+  NoteAdded
+  Rescheduled
+
+  @@map("WirAction")
+}
+
+model WirHistory {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId     String     @db.Uuid
+  wirId         String     @db.Uuid
+
+  action        WirAction
+  // who did it
+  actorUserId   String?    @db.Uuid
+  actorName     String?
+
+  // status/bic deltas (optional)
+  fromStatus    WirStatus?
+  toStatus      WirStatus?
+  fromBicUserId String?    @db.Uuid
+  toBicUserId   String?    @db.Uuid
+
+  // free-form note; also allow small payloads in meta if needed
+  notes         String?
+  meta          Json?
+
+  createdAt     DateTime   @default(now()) @db.Timestamptz(6)
+
+  wir   Wir @relation("WirToHistory", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([wirId, createdAt], map: "wirhist_wir_created_idx")
+  @@index([projectId, createdAt], map: "wirhist_project_created_idx")
+  @@map("WirHistory")
 }

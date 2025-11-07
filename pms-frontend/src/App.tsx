@@ -32,8 +32,10 @@ import HomeLayout from './views/home/HomeLayout';
 import Welcome from './views/home/Welcome';
 import Tiles from './views/home/Tiles';
 import MyProjects from './views/home/MyProjects';
-import WIR from './views/home/modules/WIR';
-//import WIRHomeShell from './views/home/modules/WIRHomeShell';
+import WIR_Contractor from './views/home/modules/WIR/WIR.Contractor';
+import WIR_PMC from './views/home/modules/WIR/WIR.PMC';
+import WIR_IHPMT from './views/home/modules/WIR/WIR.IHPMT';
+import WIR_Client from './views/home/modules/WIR/WIR.Client';
 
 // Optional generic landing
 function Landing() {
@@ -106,7 +108,10 @@ export default function App() {
           <Route index element={<Welcome />} />
           <Route path="tiles" element={<Tiles />} />
           <Route path="my-projects" element={<MyProjects />} />
-          <Route path="projects/:projectId/wir" element={<WIR />} />
+          <Route path="contractor/projects/:projectId/wir" element={<WIR_Contractor />} />
+          <Route path="pmc/projects/:projectId/wir" element={<WIR_PMC />} />
+          <Route path="ihpmt/projects/:projectId/wir" element={<WIR_IHPMT />} />
+          <Route path="client/projects/:projectId/wir" element={<WIR_Client />} />
         </Route>
 
         {/* Fallback */}

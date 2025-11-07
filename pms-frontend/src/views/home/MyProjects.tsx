@@ -42,23 +42,34 @@ const normalizeRole = (raw?: string) => {
     }
 };
 
+// --- Role → WIR path resolver ---
+const wirPathForRole = (role: string, projectId: string) => {
+  switch (normalizeRole(role)) {
+    case 'Contractor': return `/home/contractor/projects/${projectId}/wir`;
+    case 'PMC':        return `/home/pmc/projects/${projectId}/wir`;
+    case 'IH-PMT':     return `/home/ihpmt/projects/${projectId}/wir`;
+    case 'Client':     return `/home/client/projects/${projectId}/wir`;     
+    default:           return `/home/projects/${projectId}/wir`;            
+  }
+};
+
 const gotoWir = (
-    navigate: ReturnType<typeof useNavigate>,
-    role: string,
-    proj: Project
+  navigate: ReturnType<typeof useNavigate>,
+  role: string,
+  proj: Project
 ) => {
-    const r = normalizeRole(role);
-navigate(`/home/projects/${proj.projectId}/wir`, {
-            state: {
-            role: r,
-            project: {
-                projectId: proj.projectId,
-                code: proj.code,
-                title: proj.title,
-            },
-        },
-        replace: false,
-    });
+  const path = wirPathForRole(role, proj.projectId);
+  navigate(path, {
+    state: {
+      role: normalizeRole(role),
+      project: {
+        projectId: proj.projectId,
+        code: proj.code,
+        title: proj.title,
+      },
+    },
+    replace: false,
+  });
 };
 
 const projectRouteForRole = (role?: string, projectId?: string) => {

@@ -113,4 +113,24 @@ export class WirController {
 
     return this.svc.deleteDraft(projectId, wirId);
   }
+
+  // pms-backend/src/modules/project-modules/wir/wir.controller.ts
+@Get(':wirId/history')
+async history(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+) {
+  return this.svc.history(projectId, wirId);
+}
+
+@Post(':wirId/reschedule')
+async reschedule(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Body() body: any,
+  @Req() req: ExpressRequest,
+) {
+  const userId = this.getUserId(req);
+  return this.svc.reschedule(projectId, wirId, userId, body || {});
+}
 }
