@@ -6,6 +6,7 @@ import { useAuth } from "../../../../hooks/useAuth";
 import { getRoleBaseMatrix } from "../../../admin/permissions/AdminPermProjectOverrides";
 import { getModuleSettings } from "../../../../api/adminModuleSettings";
 import { normalizeSettings } from "../../../admin/moduleSettings/useModuleSettings";
+import { useScrollLock } from "../../../../hooks/useScrollLock";
 
 /* ========================= JWT helpers ========================= */
 function decodeJwtPayload(token: string): any | null {
@@ -119,16 +120,16 @@ async function fetchUserOverrideMatrix(
 }
 
 async function resolveAutoHodForDate(projectId: string, onDateISO: string): Promise<UserLite | null> {
-  // Reuse the same roles resolver you already have
-  const roles = await resolvePmcActingRolesForProjectOnDate(projectId, onDateISO);
+    // Reuse the same roles resolver you already have
+    const roles = await resolvePmcActingRolesForProjectOnDate(projectId, onDateISO);
 
-  // Prefer a pure HOD first…
-  const pureHod = roles.find(r => r.role === "HOD");
-  if (pureHod) return pureHod.user;
+    // Prefer a pure HOD first…
+    const pureHod = roles.find(r => r.role === "HOD");
+    if (pureHod) return pureHod.user;
 
-  // …else accept Inspector+HOD (they can act as HOD)
-  const both = roles.find(r => r.role === "Inspector+HOD");
-  return both ? both.user : null;
+    // …else accept Inspector+HOD (they can act as HOD)
+    const both = roles.find(r => r.role === "Inspector+HOD");
+    return both ? both.user : null;
 }
 
 function effAllow(baseYes: boolean | undefined, denyCell: DenyCell | undefined): boolean {
@@ -143,7 +144,7 @@ function deducePmcActingRole(
     effReview: boolean,
     effApprove: boolean
 ): PmcActingRole {
-    // Per your rule:
+    // Per rule:
     // Inspector  => View=true, Raise=false, Review=true,  Approve=false
     // HOD        => View=true, Raise=false, Review=false, Approve=true
     // Both       => View=true, Raise=false, Review=true,  Approve=true
@@ -383,6 +384,9 @@ type WirRecord = {
     items?: WirItem[];
     description?: string | null;
     updatedAt?: string | null;
+
+    wasRescheduled?: boolean;     // derived boolean
+    lastRescheduledAt?: string | null; // optional display/tooltip
 };
 
 type FetchState = {
@@ -451,6 +455,86 @@ async function apiGetSafe<T = any>(
     } finally {
         clearTimeout(timer);
     }
+}
+
+// --- Checklist items-count cache ---
+type ChecklistCountMap = Record<string, number>;
+const CHECKLIST_DETAIL_PATH = (id: string) => `/admin/ref/checklists/${encodeURIComponent(id)}`;
+
+// ---- Checklist details -> Runner items (expanded) ----
+type ChecklistDetail = {
+    id?: string;
+    code?: string | null;
+    title?: string | null;
+    items?: any[];   // some backends use "items"
+    lines?: any[];   // some use "lines"
+};
+
+type RunnerItem = {
+    id: string;
+    title: string;
+    code?: string | null;
+    unit?: string | null;
+    tolerance?: string | null;
+    required?: any;
+    status?: string | null;
+    tags?: string[];
+};
+
+async function fetchChecklistDetail(id: string): Promise<ChecklistDetail | null> {
+    try {
+        const data = await apiGetSafe<any>(CHECKLIST_DETAIL_PATH(id), { timeoutMs: 12000 });
+        if (!data) return null;
+        return {
+            id: String(data.id ?? id),
+            code: data.code ?? null,
+            title: data.title ?? data.name ?? null,
+            items: Array.isArray(data.items) ? data.items : undefined,
+            lines: Array.isArray(data.lines) ? data.lines : undefined,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function normalizeRunnerItems(detail: ChecklistDetail): RunnerItem[] {
+    const rows = (detail.items ?? detail.lines ?? []) as any[];
+    return rows.map((r: any, i: number): RunnerItem => {
+        // common field aliases
+        const code = r.code ?? r.itemCode ?? null;
+        const title = (r.title ?? r.name ?? r.label ?? `Item ${i + 1}`) as string;
+        const unit = r.unit ?? r.uom ?? r.measureUnit ?? null;
+        const tolerance = r.tolerance ?? r.spec ?? r.specification ?? null;
+        const required = r.required ?? r.mandatory ?? null;
+        const status = r.status ?? null;
+
+        // tags/labels
+        const tags: string[] = [];
+        const tagCandidates = [r.tags, r.labels, r.tag, r.label, r.tagsCsv, r.labelsCsv].filter(Boolean);
+        for (const c of tagCandidates) {
+            if (Array.isArray(c)) c.forEach((t) => t && tags.push(String(t)));
+            else if (typeof c === "string") c.split(/[,\|]/g).forEach((t) => t && tags.push(t.trim()));
+        }
+
+        return {
+            id: String(r.id ?? `${detail.id ?? "cl"}.${i}`),
+            title,
+            code,
+            unit,
+            tolerance,
+            required,
+            status,
+            tags: Array.from(new Set(tags)).slice(0, 10),
+        };
+    });
+}
+
+function extractChecklistIds(w: WirRecord): string[] {
+    // We store selected checklists into WIR.items with .name = checklistId during create.
+    // Accept a few shapes defensively.
+    return (w.items || [])
+        .map((it: any) => String(it?.name ?? it?.code ?? it?.id ?? "").trim())
+        .filter(Boolean);
 }
 
 /* ========================= UI Atoms ========================= */
@@ -575,6 +659,71 @@ function listFileNames(arr?: File[] | null, max = 3) {
     return { shown, extra, total: names.length };
 }
 
+/* ========================= Runner helpers/pills ========================= */
+function DotSep({ left, right }: { left?: string | null; right?: string | null }) {
+    const a = (left || "").toString().trim();
+    const b = (right || "").toString().trim();
+    return (
+        <div className="text-xs text-gray-600 dark:text-gray-300">
+            {[a || "—", b || "—"].filter(Boolean).join(" • ")}
+        </div>
+    );
+}
+
+function SoftPill({ label }: { label?: string | null }) {
+    const v = (label || "").toString().trim();
+    if (!v) return null;
+    return (
+        <span className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-full border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+            {v}
+        </span>
+    );
+}
+
+function requiredToLabel(v: any): "Mandatory" | "Optional" | "—" {
+    const s = (v ?? "").toString().trim().toLowerCase();
+    if (v === true || s === "mandatory" || s === "yes" || s === "y" || s === "true") return "Mandatory";
+    if (v === false || s === "optional" || s === "no" || s === "n" || s === "false") return "Optional";
+    return "—";
+}
+
+function splitCodeTitle(raw?: string | null): { code?: string; title?: string } {
+    const s = (raw || "").trim();
+    if (!s) return {};
+    const parts = s.split(":");
+    if (parts.length > 1) {
+        return { code: parts[0].trim(), title: parts.slice(1).join(":").trim() || undefined };
+    }
+    return { title: s };
+}
+
+function inferTags(it: any): string[] {
+    // Accept common shapes: array, comma/pipe-separated strings, generic 'labels'
+    const out: string[] = [];
+    const candidates: any[] = [
+        it?.tags,
+        it?.tag,
+        it?.labels,
+        it?.label,
+        it?.tagsCsv,
+        it?.labelsCsv,
+    ].filter((x) => x != null);
+
+    for (const c of candidates) {
+        if (Array.isArray(c)) {
+            for (const t of c) {
+                const s = (t ?? "").toString().trim();
+                if (s) out.push(s);
+            }
+        } else if (typeof c === "string") {
+            const parts = c.split(/[,\|]/g).map((z) => z.trim()).filter(Boolean);
+            out.push(...parts);
+        }
+    }
+    // Deduplicate
+    return Array.from(new Set(out)).slice(0, 10);
+}
+
 export type WirHistoryRow = {
     sNo: number;
     id: string;
@@ -634,6 +783,10 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
         String(w?.authorId || '') === String(currentUserId || '') &&
         normalizeRole(role) === 'Contractor';
 
+    const [clCounts, setClCounts] = useState<ChecklistCountMap>({});
+    const [clCountsLoading, setClCountsLoading] = useState(false);
+
+
     // refresh when auth context or token changes
     useEffect(() => {
         setCurrentUserId(resolveUserIdFrom(getClaims() || {}, user));
@@ -662,6 +815,11 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [canRaise, setCanRaise] = useState<boolean>(false);
     const [transmissionType, setTransmissionType] = useState<string | null>(null);
+
+    // Read-only Runner expansion
+    const [runnerItems, setRunnerItems] = useState<RunnerItem[]>([]);
+    const [runnerLoading, setRunnerLoading] = useState(false);
+    const [runnerError, setRunnerError] = useState<string | null>(null);
 
     // fetch "transmission type" from Module Settings (project row or module default)
     async function fetchTransmissionType(pid: string): Promise<string | null> {
@@ -701,6 +859,43 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
         pickedChecklistIds: [],
         pickedComplianceIds: [],
     });
+
+    async function fetchChecklistCountOnce(id: string): Promise<number> {
+        try {
+            const data = await apiGetSafe<any>(CHECKLIST_DETAIL_PATH(id), { timeoutMs: 10000 });
+            // Prefer explicit itemsCount, else fall back to items length if present.
+            const cnt = Number(
+                (data?.itemsCount ??
+                    (Array.isArray(data?.items) ? data.items.length : undefined) ??
+                    (Array.isArray(data?.lines) ? data.lines.length : undefined) ??
+                    0)
+            );
+            setClCounts(prev => (prev[id] == null ? { ...prev, [id]: cnt } : prev));
+            return cnt;
+        } catch {
+            // Cache a zero to avoid refetch storms; you can remove if you prefer.
+            setClCounts(prev => (prev[id] == null ? { ...prev, [id]: 0 } : prev));
+            return 0;
+        }
+    }
+
+    async function warmChecklistCounts(rows: WirRecord[]) {
+        const ids = new Set<string>();
+        for (const w of rows) extractChecklistIds(w).forEach(id => ids.add(id));
+        const missing = Array.from(ids).filter(id => clCounts[id] == null);
+        if (!missing.length) return;
+
+        setClCountsLoading(true);
+        try {
+            await Promise.all(missing.map(id => fetchChecklistCountOnce(id)));
+        } finally {
+            setClCountsLoading(false);
+        }
+    }
+
+    function totalItemsForWir(w: WirRecord): number {
+        return extractChecklistIds(w).reduce((sum, id) => sum + (clCounts[id] ?? 0), 0);
+    }
 
     const [activities, setActivities] = useState<ActivityState>({ rows: [], loading: false, error: null });
     const [checklists, setChecklists] = useState<ChecklistState>({ rows: [], loading: false, error: null });
@@ -791,6 +986,8 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     const [clQuery, setClQuery] = useState("");
     const [clPicked, setClPicked] = useState<Set<string>>(new Set());
     const [roViewOpen, setRoViewOpen] = useState(false);
+    const [roTab, setRoTab] = useState<'document' | 'discussion'>('document');
+    const [docTab, setDocTab] = useState<'overview' | 'runner'>('overview');
 
     type ViewMode = "create" | "edit" | "readonly";
     const [mode, setMode] = useState<ViewMode>("create");
@@ -809,7 +1006,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     const [dispatchLoading, setDispatchLoading] = useState(false);
     const [dispatchErr, setDispatchErr] = useState<string | null>(null);
     const [dispatchCandidates, setDispatchCandidates] = useState<DispatchCandidate[]>([]);
-const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
+    const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
 
     // load Inspector suggestions for a given date (Inspector / Inspector+HOD)
     async function loadInspectorSuggestions(pid: string, onDateISO: string) {
@@ -844,80 +1041,80 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
     }
 
     async function onDispatchSend() {
-  if (!dispatchWirId) return;
-  if (!dispatchPick) {
-    alert("Please pick a recipient (Inspector).");
-    return;
-  }
-
-  // Guard: only Contractors can submit a Draft
-  if (normalizeRole(role) !== "Contractor") {
-    alert("Only Contractors can submit a WIR. Open this IR as Contractor (author).");
-    return;
-  }
-
-  // Identify the chosen inspector (for nice confirm + optimistic BIC)
-  const candidate = dispatchCandidates.find(u => String(u.userId) === String(dispatchPick)) || null;
-  const wirMeta = state.list.find(w => String(w.wirId) === String(dispatchWirId)) || null;
-  const wirCodeTitle = [wirMeta?.code, wirMeta?.title || "Inspection Request"].filter(Boolean).join(" ");
-  const ok = window.confirm(
-    `Send ${wirCodeTitle} to ${candidate ? displayNameLite(candidate) : "selected inspector"}?`
-  );
-  if (!ok) return;
-
-  try {
-    // A) Figure out the auto HOD for this date
-    const hodUser = await resolveAutoHodForDate(projectId, dispatchDateISO || newForm.dateISO || todayISO());
-    const hodId = hodUser ? String(hodUser.userId) : null;
-
-    // B) Figure out the contractor = author of WIR (fallback to current user)
-    const authorIdRaw =
-      wirMeta?.authorId ??
-      (await (async () => {
-        try {
-          const full = await loadWir(projectId, dispatchWirId);
-          return full?.authorId ?? full?.createdBy?.userId ?? full?.author?.userId ?? null;
-        } catch {
-          return null;
+        if (!dispatchWirId) return;
+        if (!dispatchPick) {
+            alert("Please pick a recipient (Inspector).");
+            return;
         }
-      })());
-    const contractorId = String(authorIdRaw || currentUserId || getUserIdFromToken() || "");
 
-    // C) Persist all participants on the draft BEFORE submit
-    await api.patch(`/projects/${projectId}/wir/${dispatchWirId}`, {
-      inspectorId: dispatchPick,
-      hodId: hodId || null,           // ← assign HOD irrespective of pick
-      contractorId: contractorId || null // ← assign contractor = author
-    });
+        // Guard: only Contractors can submit a Draft
+        if (normalizeRole(role) !== "Contractor") {
+            alert("Only Contractors can submit a WIR. Open this IR as Contractor (author).");
+            return;
+        }
 
-    // D) Submit (status → Submitted; server sets BIC)
-    await api.post(`/projects/${projectId}/wir/${dispatchWirId}/submit`, { role: "Contractor" });
+        // Identify the chosen inspector (for nice confirm + optimistic BIC)
+        const candidate = dispatchCandidates.find(u => String(u.userId) === String(dispatchPick)) || null;
+        const wirMeta = state.list.find(w => String(w.wirId) === String(dispatchWirId)) || null;
+        const wirCodeTitle = [wirMeta?.code, wirMeta?.title || "Inspection Request"].filter(Boolean).join(" ");
+        const ok = window.confirm(
+            `Send ${wirCodeTitle} to ${candidate ? displayNameLite(candidate) : "selected inspector"}?`
+        );
+        if (!ok) return;
 
-    // E) Optimistic UI for BIC chip
-    if (candidate) {
-      const bicNameNow = displayNameLite(candidate);
-      setState(s => ({
-        ...s,
-        list: s.list.map(w => (String(w.wirId) === String(dispatchWirId) ? { ...w, bicName: bicNameNow } : w))
-      }));
+        try {
+            // A) Figure out the auto HOD for this date
+            const hodUser = await resolveAutoHodForDate(projectId, dispatchDateISO || newForm.dateISO || todayISO());
+            const hodId = hodUser ? String(hodUser.userId) : null;
+
+            // B) Figure out the contractor = author of WIR (fallback to current user)
+            const authorIdRaw =
+                wirMeta?.authorId ??
+                (await (async () => {
+                    try {
+                        const full = await loadWir(projectId, dispatchWirId);
+                        return full?.authorId ?? full?.createdBy?.userId ?? full?.author?.userId ?? null;
+                    } catch {
+                        return null;
+                    }
+                })());
+            const contractorId = String(authorIdRaw || currentUserId || getUserIdFromToken() || "");
+
+            // C) Persist all participants on the draft BEFORE submit
+            await api.patch(`/projects/${projectId}/wir/${dispatchWirId}`, {
+                inspectorId: dispatchPick,
+                hodId: hodId || null,           // ← assign HOD irrespective of pick
+                contractorId: contractorId || null // ← assign contractor = author
+            });
+
+            // D) Submit (status → Submitted; server sets BIC)
+            await api.post(`/projects/${projectId}/wir/${dispatchWirId}/submit`, { role: "Contractor" });
+
+            // E) Optimistic UI for BIC chip
+            if (candidate) {
+                const bicNameNow = displayNameLite(candidate);
+                setState(s => ({
+                    ...s,
+                    list: s.list.map(w => (String(w.wirId) === String(dispatchWirId) ? { ...w, bicName: bicNameNow } : w))
+                }));
+            }
+
+            // Close + refresh
+            setDispatchOpen(false);
+            setDispatchWirId(null);
+            setDispatchPick(null);
+            resetNewForm();
+            goToList(true);
+        } catch (e: any) {
+            const s = e?.response?.status;
+            const msg = e?.response?.data?.error || e?.message || "Failed to dispatch";
+            if (s === 403) {
+                alert("Not allowed: Only the Contractor who authored this Draft can submit, and only while status is Draft.");
+            } else {
+                alert(`Error ${s ?? ""} ${msg}`);
+            }
+        }
     }
-
-    // Close + refresh
-    setDispatchOpen(false);
-    setDispatchWirId(null);
-    setDispatchPick(null);
-    resetNewForm();
-    goToList(true);
-  } catch (e: any) {
-    const s = e?.response?.status;
-    const msg = e?.response?.data?.error || e?.message || "Failed to dispatch";
-    if (s === 403) {
-      alert("Not allowed: Only the Contractor who authored this Draft can submit, and only while status is Draft.");
-    } else {
-      alert(`Error ${s ?? ""} ${msg}`);
-    }
-  }
-}
 
     function openDispatchModal(wirId: string, onDateISO: string) {
         setDispatchWirId(wirId);
@@ -1108,9 +1305,22 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
                     })),
                     description: x.description ?? x.notes ?? null,
                     updatedAt: x.updatedAt ?? x.modifiedAt ?? x.createdAt ?? null,
+
+                    // NEW ↓ prefer direct flags/columns if backend sends them
+                    wasRescheduled:
+                        !!(
+                            x.rescheduledAt ||
+                            x.rescheduledById ||
+                            x.flags?.rescheduled === true ||
+                            (Array.isArray(x.history) && x.history.some((h: any) =>
+                                String(h?.action || "").toLowerCase().includes("resched")
+                            ))
+                        ),
                 }));
 
                 if (!cancelled) setState({ list, loading: false, error: null });
+                setState({ list, loading: false, error: null });
+                warmChecklistCounts(list);
             } catch (e: any) {
                 if (!cancelled)
                     setState({
@@ -1498,7 +1708,8 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
             forDate: x.forDate ?? x.plannedDate ?? null,
             forTime: x.forTime ?? null,
             cityTown: x.cityTown ?? x.location?.cityTown ?? null,
-            stateName: x.state?.name ?? (typeof x.state === "string" ? x.state : null),
+            stateName:
+                x.state?.name ?? (typeof x.state === "string" ? x.state : null),
             contractorName:
                 x.contractor?.name ??
                 x.participants?.contractor?.name ?? x.participants?.contractor ??
@@ -1517,20 +1728,38 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
             bicName:
                 x.participants?.bic?.name ?? x.bic?.name ?? x.bicName ?? null,
             authorId:
-                x.authorId ?? x.createdBy?.userId ?? x.createdById ?? x.author?.userId ?? null,
+                x.authorId ??
+                x.createdBy?.userId ??
+                x.createdById ??
+                x.author?.userId ??
+                null,
             items: (x.items || []).map((it: any, i: number) => ({
                 id: it.id ?? `it-${i}`,
                 name: it.name ?? it.title ?? `Item ${i + 1}`,
                 spec: it.spec ?? it.specification ?? null,
                 required: it.required ?? it.requirement ?? null,
                 tolerance: it.tolerance ?? null,
-                photoCount: it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
+                photoCount:
+                    it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
                 status: it.status ?? null,
             })),
             description: x.description ?? x.notes ?? null,
             updatedAt: x.updatedAt ?? x.modifiedAt ?? x.createdAt ?? null,
+
+            // NEW ↓ prefer direct flags/columns if backend sends them
+            wasRescheduled:
+                !!(
+                    x.rescheduledAt ||
+                    x.rescheduledById ||
+                    x.flags?.rescheduled === true ||
+                    (Array.isArray(x.history) && x.history.some((h: any) =>
+                        String(h?.action || "").toLowerCase().includes("resched")
+                    ))
+                ),
         }));
+
         setState({ list, loading: false, error: null });
+        warmChecklistCounts(list);
     };
 
     // ------ Save/Submit ------
@@ -1710,15 +1939,6 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
         return () => window.removeEventListener("keydown", onKey);
     }, [roViewOpen]);
 
-    useEffect(() => {
-        if (!roViewOpen) return;
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => {
-            document.body.style.overflow = prev;
-        };
-    }, [roViewOpen]);
-
     const checklistStats = useMemo(() => {
         const items = selected?.items || [];
         const total = items.length;
@@ -1781,15 +2001,6 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
     }, [view, canRaise]);
 
     useEffect(() => {
-        if (!dispatchOpen) return;
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => {
-            document.body.style.overflow = prev;
-        };
-    }, [dispatchOpen]);
-
-    useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape" && dispatchOpen) setDispatchOpen(false);
         };
@@ -1809,6 +2020,36 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
             loadChecklists();
         }
     }, [newForm.discipline, clLibOpen]);
+
+    useEffect(() => {
+        // Only when a WIR is selected AND we are in RO modal -> Document -> Runner
+        if (!selected || !roViewOpen || roTab !== 'document' || docTab !== 'runner') return;
+        const ids = extractChecklistIds(selected);
+        if (!ids.length) {
+            setRunnerItems([]);
+            setRunnerError(null);
+            setRunnerLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        (async () => {
+            setRunnerLoading(true);
+            setRunnerError(null);
+            try {
+                const details = await Promise.all(ids.map((id) => fetchChecklistDetail(id)));
+                const all = (details.filter(Boolean) as ChecklistDetail[])
+                    .flatMap((d) => normalizeRunnerItems(d));
+                if (!cancelled) setRunnerItems(all);
+            } catch (e: any) {
+                if (!cancelled) setRunnerError(e?.message || "Failed to load checklist items");
+            } finally {
+                if (!cancelled) setRunnerLoading(false);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [selected?.wirId, roViewOpen, roTab, docTab]);
 
     /* ======== Custom Time Picker UI state ======== */
     const [timePickerOpen, setTimePickerOpen] = useState(false);
@@ -1844,20 +2085,11 @@ const [dispatchDateISO, setDispatchDateISO] = useState<string>(todayISO());
     const [resTpMinute, setResTpMinute] = useState(0);
     const [resTpAP, setResTpAP] = useState<"AM" | "PM">("AM");
 
-    // Scroll lock for reschedule modal
-    useEffect(() => {
-        if (!resOpen) return;
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => { document.body.style.overflow = prev; };
-    }, [resOpen]);
+    // Lock page scroll whenever any layered modal is open
+    const anyModalOpen =
+        roViewOpen || dispatchOpen || clLibOpen || resOpen || filledOpen || histOpen;
 
-    useEffect(() => {
-        if (!filledOpen) return;
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => { document.body.style.overflow = prev; };
-    }, [filledOpen]);
+    useScrollLock(anyModalOpen);
 
     function openResTP(which: "cur" | "new") {
         const src = which === "cur" ? resCurTime : resNewTime;
@@ -2065,14 +2297,36 @@ ${styleEls}
                                             <KpiPill value={transmissionType || "—"} tone={toneForTransmission(transmissionType)} />
                                             <KpiPill prefix="BIC" value={w?.bicName || "—"} tone="neutral" />
                                         </div>
+                                        <div
+                                            className="mt-1 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:whitespace-normal"
+                                        >
+                                            {/* NEW: clock icon when rescheduled */}
+                                            {w.wasRescheduled ? (
+                                                <span
+                                                    title="Rescheduled"
+                                                    aria-label="Rescheduled"
+                                                    className="inline-flex items-center text-[11px] px-1.5 py-0.5 rounded-md border dark:border-neutral-800 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        width="14"
+                                                        height="14"
+                                                        className="mr-1"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path d="M12 1.75a10.25 10.25 0 1 0 0 20.5 10.25 10.25 0 0 0 0-20.5Zm0 1.5a8.75 8.75 0 1 1 0 17.5 8.75 8.75 0 0 1 0-17.5Zm-.75 3.75v5.06l4.02 2.41.75-1.25-3.27-1.96V7h-1.5Z" />
+                                                    </svg>
+                                                    Rescheduled
+                                                </span>
+                                            ) : null}
+                                        </div>
                                         <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
                                             {joinWithDots(
                                                 w.forDate ? fmtDate(w.forDate) : null,
                                                 w.forTime || null,
-                                                `${(w.items?.length ?? 0)} items`
+                                                clCountsLoading ? "calculating…" : `${totalItemsForWir(w)} items`
                                             )}
                                         </div>
-
 
                                         {/* bottom action row with Delete button (author-only Drafts) */}
                                         {canDeleteFromList(w) && (
@@ -2916,70 +3170,226 @@ ${styleEls}
                                     </div>
                                 </div>
                             </div>
+
+                            {/* NEW: Primary Tabs — Document / Discussion */}
+                            <div className="mt-3 flex items-center gap-1">
+                                {[
+                                    { k: 'document' as const, label: 'Document' },
+                                    { k: 'discussion' as const, label: 'Discussion' },
+                                ].map(t => {
+                                    const on = roTab === t.k;
+                                    return (
+                                        <button
+                                            key={t.k}
+                                            onClick={() => setRoTab(t.k)}
+                                            className={
+                                                "px-3 py-1.5 rounded-lg text-sm border transition " +
+                                                (on
+                                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                                    : "bg-white dark:bg-neutral-900 dark:text-white dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                            }
+                                        >
+                                            {t.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* NEW: Document Sub-Tabs — Overview / Runner (only show when Document is active) */}
+                            {roTab === 'document' && (
+                                <div className="mt-2 flex items-center gap-1">
+                                    {[
+                                        { k: 'overview' as const, label: 'Overview' },
+                                        { k: 'runner' as const, label: 'Runner' },
+                                    ].map(t => {
+                                        const on = docTab === t.k;
+                                        return (
+                                            <button
+                                                key={t.k}
+                                                onClick={() => setDocTab(t.k)}
+                                                className={
+                                                    "px-2.5 py-1 rounded-md text-xs border transition " +
+                                                    (on
+                                                        ? "bg-indigo-600 text-white border-indigo-600"
+                                                        : "bg-white dark:bg-neutral-900 dark:text-white dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                                }
+                                            >
+                                                {t.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
+
 
                         {/* Body (scrollable) */}
                         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
-                            {/* Submission Summary */}
-                            <SectionCard title="Submission Summary">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                                    <FieldRow
-                                        label="Activity & Area"
-                                        value={[
-                                            newForm.activityLabel || selected?.title || "—",
-                                            (newForm.location || selected?.cityTown || "").trim() || "—",
-                                        ].join(" — ")}
-                                    />
-                                    <FieldRow
-                                        label="Schedule"
-                                        value={
-                                            selected?.forDate
-                                                ? `${fmtDate(selected.forDate)}${selected?.forTime ? ` · ${selected.forTime}` : ""}`
-                                                : "—"
-                                        }
-                                    />
-                                    <FieldRow label="Discipline" value={selected?.discipline || "—"} />
-                                    <FieldRow
-                                        label="Checklist"
-                                        value={`${checklistStats.total} items · ${checklistStats.mandatory} mandatory · ${checklistStats.critical} critical`}
-                                    />
-                                    <FieldRow label="Inspector of Record" value={selected?.inspectorName || "—"} />
-                                    <FieldRow label="Contractor" value={selected?.contractorName || "—"} />  {/* ⬅ add this */}
-                                    <FieldRow label="HOD" value={selected?.hodName || "—"} />               {/* ⬅ and this */}
-                                    <FieldRow label="Ball in Court" value={`BIC: ${selected?.bicName || "—"}`} />
-                                    <FieldRow label="Follow up" value="Not Required" />
-                                </div>
+                            {/* DOCUMENT TABS */}
+                            {roTab === 'document' && (
+                                <>
+                                    {docTab === 'overview' && (
+                                        <>
+                                            {/* Submission Summary — unchanged content */}
+                                            <SectionCard title="Submission Summary">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                                    <FieldRow
+                                                        label="Activity & Area"
+                                                        value={[
+                                                            newForm.activityLabel || selected?.title || "—",
+                                                            (newForm.location || selected?.cityTown || "").trim() || "—",
+                                                        ].join(" — ")}
+                                                    />
+                                                    <FieldRow
+                                                        label="Schedule"
+                                                        value={
+                                                            selected?.forDate
+                                                                ? `${fmtDate(selected.forDate)}${selected?.forTime ? ` · ${selected.forTime}` : ""}`
+                                                                : "—"
+                                                        }
+                                                    />
+                                                    <FieldRow label="Discipline" value={selected?.discipline || "—"} />
+                                                    <FieldRow
+                                                        label="Checklist"
+                                                        value={`${checklistStats.total} items · ${checklistStats.mandatory} mandatory · ${checklistStats.critical} critical`}
+                                                    />
+                                                    <FieldRow label="Inspector of Record" value={selected?.inspectorName || "—"} />
+                                                    <FieldRow label="Contractor" value={selected?.contractorName || "—"} />
+                                                    <FieldRow label="HOD" value={selected?.hodName || "—"} />
+                                                    <FieldRow label="Ball in Court" value={`BIC: ${selected?.bicName || "—"}`} />
+                                                    <FieldRow label="Follow up" value="Not Required" />
+                                                </div>
 
-                                <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
-                                    Last update: <b>{selected?.status || "—"}</b>
-                                    {selected?.updatedAt ? ` — ${fmtDateTime(selected.updatedAt)}` : ""}{" "}
-                                    ·{" "}
-                                    <button
-                                        onClick={onOpenHistory}
-                                        className="underline underline-offset-2 text-emerald-700 dark:text-emerald-300 hover:opacity-90"
-                                    >
-                                        Open full history
-                                    </button>
-                                </div>
-                            </SectionCard>
+                                                <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+                                                    Last update: <b>{selected?.status || "—"}</b>
+                                                    {selected?.updatedAt ? ` — ${fmtDateTime(selected.updatedAt)}` : ""}{" "}
+                                                    ·{" "}
+                                                    <button
+                                                        onClick={onOpenHistory}
+                                                        className="underline underline-offset-2 text-emerald-700 dark:text-emerald-300 hover:opacity-90"
+                                                    >
+                                                        Open full history
+                                                    </button>
+                                                </div>
+                                            </SectionCard>
 
-                            {/* Actions */}
-                            <SectionCard title="Actions">
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        onClick={onOpenFilledForm}
-                                        className="px-3 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                    >
-                                        Open Filled Form (read-only)
-                                    </button>
-                                    <button
-                                        onClick={onReschedule}
-                                        className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
-                                    >
-                                        Reschedule
-                                    </button>
-                                </div>
-                            </SectionCard>
+                                            {/* Actions — unchanged content */}
+                                            <SectionCard title="Actions">
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        onClick={onOpenFilledForm}
+                                                        className="px-3 py-2 rounded border dark:border-neutral-800 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                    >
+                                                        Open Filled Form (read-only)
+                                                    </button>
+                                                    <button
+                                                        onClick={onReschedule}
+                                                        className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                                                    >
+                                                        Reschedule
+                                                    </button>
+                                                </div>
+                                            </SectionCard>
+                                        </>
+                                    )}
+
+                                    {docTab === 'runner' && (
+                                        <SectionCard title={`Runner · Checklist Items (${runnerItems.length})`}>
+                                            {runnerLoading ? (
+                                                <div className="text-sm text-gray-700 dark:text-gray-300">Loading…</div>
+                                            ) : runnerError ? (
+                                                <div className="text-sm text-rose-700 dark:text-rose-400">{runnerError}</div>
+                                            ) : runnerItems.length === 0 ? (
+                                                <div className="text-sm text-gray-700 dark:text-gray-300">No checklist items found for this WIR.</div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                    {runnerItems.map((it, i) => {
+                                                        const tol = (it.tolerance || "").toString().trim();
+                                                        const activityTitle = (newForm.activityLabel || selected?.title || "Activity").toString();
+                                                        const activityCode = (selected?.code || "").toString();
+                                                        const reqLabel = requiredToLabel(it.required);
+
+                                                        return (
+                                                            <div key={it.id || `runner-${i}`} className="rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                                                                {/* Heading: Title — Tol */}
+                                                                <div className="text-sm font-semibold dark:text-white break-words">
+                                                                    {it.title}{tol ? <span className="opacity-70"> — {tol}</span> : null}
+                                                                </div>
+
+                                                                {/* Meta: Activity Title • Activity Code */}
+                                                                <div className="mt-0.5">
+                                                                    <DotSep left={activityTitle} right={activityCode || "—"} />
+                                                                </div>
+
+                                                                {/* Pills */}
+                                                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                                                    <SoftPill label={reqLabel} />
+                                                                    <SoftPill label={it.unit ? `Unit: ${it.unit}` : ""} />
+                                                                    <SoftPill label={tol ? `Tol: ${tol}` : ""} />
+                                                                    {it.status ? <SoftPill label={`Status: ${String(it.status)}`} /> : null}
+                                                                    {it.code ? <SoftPill label={`Code: ${it.code}`} /> : null}
+                                                                </div>
+
+                                                                {/* Tags */}
+                                                                <div className="mt-2">
+                                                                    {it.tags && it.tags.length ? (
+                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                            {it.tags.map((t, k) => (
+                                                                                <span key={`${it.id}-tag-${k}`} className="text-[11px] px-2 py-0.5 rounded-md border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+                                                                                    #{t}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">No tags</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </SectionCard>
+                                    )}
+                                </>
+                            )}
+
+                            {/* DISCUSSION TAB */}
+                            {roTab === 'discussion' && (
+                                <>
+                                    <SectionCard title="Thread">
+                                        <div className="space-y-3">
+                                            {/* Placeholder messages */}
+                                            <div className="text-sm">
+                                                <div className="font-medium dark:text-white">Inspector</div>
+                                                <div className="text-gray-700 dark:text-gray-300">Please upload ITP for footing F2.</div>
+                                                <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Today 10:32 AM</div>
+                                            </div>
+                                            <div className="text-sm">
+                                                <div className="font-medium dark:text-white">Contractor</div>
+                                                <div className="text-gray-700 dark:text-gray-300">Shared in Documents & Evidence.</div>
+                                                <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Today 11:05 AM</div>
+                                            </div>
+                                        </div>
+                                    </SectionCard>
+
+                                    <SectionCard title="Add a comment">
+                                        <div className="flex items-start gap-2">
+                                            <textarea
+                                                rows={3}
+                                                placeholder="Write a message to the project team…"
+                                                className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                                            />
+                                            <button
+                                                className="shrink-0 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                                            // onClick={postComment} // wire later
+                                            >
+                                                Send
+                                            </button>
+                                        </div>
+                                    </SectionCard>
+                                </>
+                            )}
                         </div>
 
                         {/* Footer (sticky) */}
@@ -3151,39 +3561,59 @@ ${styleEls}
                                 </div>
                             </SectionCard>
 
-                            {/* Checklist Items */}
+                            {/* Checklist Items
                             <SectionCard title={`Checklist Items (${selected?.items?.length || 0})`}>
                                 {(!selected?.items || selected.items.length === 0) ? (
                                     <div className="text-sm text-gray-600 dark:text-gray-300">No items.</div>
                                 ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="min-w-full text-sm border dark:border-neutral-800 rounded-lg overflow-hidden">
-                                            <thead className="bg-gray-50 dark:bg-neutral-800">
-                                                <tr>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">#</th>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">Item</th>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">Spec</th>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">Required</th>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">Tolerance</th>
-                                                    <th className="text-left px-3 py-2 border-b dark:border-neutral-800">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {selected.items.map((it, i) => (
-                                                    <tr key={it.id || i} className="align-top">
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800">{i + 1}</td>
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800 break-words">{it.name || "—"}</td>
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800 break-words">{it.spec || "—"}</td>
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800">{it.required ?? "—"}</td>
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800">{it.tolerance ?? "—"}</td>
-                                                        <td className="px-3 py-2 border-b dark:border-neutral-800">{it.status ?? "—"}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <ul className="divide-y dark:divide-neutral-800 rounded-lg border dark:border-neutral-800 overflow-hidden">
+                                        {selected.items.map((it: any, i: number) => {
+                                            const raw = String(it?.name ?? "").trim();
+                                            // Try to split "CODE: Title" -> show as "CODE • Title"
+                                            const parts = raw.split(":");
+                                            const code = parts.length > 1 ? parts[0].trim() : "";
+                                            const title = parts.length > 1 ? parts.slice(1).join(":").trim() : (raw || "—");
+
+                                            // Optional meta line (keeps UI tidy, but no extra functions)
+                                            const meta: string[] = [];
+                                            if (it?.spec) meta.push(String(it.spec));
+                                            if (it?.required != null && it.required !== "") meta.push(`Required: ${it.required}`);
+                                            if (it?.tolerance) meta.push(`Tol: ${it.tolerance}`);
+
+                                            return (
+                                                <li key={it.id ?? i} className="p-3 sm:p-3.5">
+                                                    <div className="flex items-start gap-2">
+                                                        <div className="pt-0.5 text-xs opacity-60 w-6 shrink-0">{i + 1}.</div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-sm font-medium dark:text-white break-words">
+                                                                {code ? (
+                                                                    <>
+                                                                        <span className="font-mono">{code}</span>
+                                                                        <span className="mx-1">•</span>
+                                                                        <span>{title}</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <span>{title}</span>
+                                                                )}
+                                                            </div>
+
+                                                            {meta.length > 0 && (
+                                                                <div className="mt-0.5 text-xs text-gray-600 dark:text-gray-300 break-words">
+                                                                    {meta.join(" · ")}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="ml-2 shrink-0 text-xs px-2 py-1 rounded border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800">
+                                                            {it?.status ?? "—"}
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
                                 )}
-                            </SectionCard>
+                            </SectionCard>  */}
 
                             {/* Notes/Description */}
                             <SectionCard title="Description / Notes">
