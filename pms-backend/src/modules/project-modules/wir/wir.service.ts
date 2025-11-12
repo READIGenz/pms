@@ -34,6 +34,8 @@ type CreateWirInput = {
   inspectorId?: string | null;
   hodId?: string | null;
   description?: string | null;
+  refChecklistIds?: string[];
+  materializeItemsFromRef?: boolean;
   items?: Array<{
     name: string;
     spec?: string | null;
@@ -70,6 +72,7 @@ export class WirService {
       }
 
       await tx.wirItem.deleteMany({ where: { wirId } });
+      await tx.wirChecklist.deleteMany({ where: { wirId } });
       await this.recordHistory(tx, {
         projectId,
         wirId,
@@ -91,8 +94,78 @@ export class WirService {
     }
     return this.prisma.$transaction(async (tx) => {
       await tx.wirItem.deleteMany({ where: { wirId } });
+      await tx.wirChecklist.deleteMany({ where: { wirId } });
       return tx.wir.delete({ where: { wirId } });
     });
+  }
+
+  async addChecklist(projectId: string, wirId: string, refChecklistId: string, materialize = true) {
+    return this.prisma.$transaction(async (tx) => {
+      const w = await tx.wir.findUnique({ where: { wirId }, select: { projectId: true } });
+      if (!w || w.projectId !== projectId) throw new NotFoundException('WIR not found');
+
+      const ref = await tx.refChecklist.findUnique({
+        where: { id: refChecklistId },
+        include: { items: { orderBy: { seq: 'asc' } } },
+      });
+      if (!ref) throw new NotFoundException('RefChecklist not found');
+
+      const order = await tx.wirChecklist.count({ where: { wirId } });
+      await tx.wirChecklist.create({
+        data: {
+          wirId,
+          checklistId: ref.id,
+          checklistCode: ref.code ?? null,
+          checklistTitle: ref.title,
+          discipline: ref.discipline,
+          versionLabel: ref.versionLabel ?? null,
+          itemsCount: ref.items.length,
+          itemIds: ref.items.map(i => i.id),
+          order,
+        },
+      });
+
+      if (materialize && ref.items.length) {
+        await tx.wirItem.createMany({
+          data: ref.items.map((ri, i) => ({
+            wirId,
+            checklistId: ref.id,
+            itemId: ri.id,
+            sourceChecklistId: ref.id,
+            sourceChecklistItemId: ri.id,
+            seq: ri.seq ?? i + 1,
+            name: ri.text,
+            spec: ri.requirement ?? null,
+            required: ri.critical ? 'Yes' : null,
+            tolerance: ri.tolerance ?? null,
+            photoCount: 0,
+            status: 'Unknown',
+            code: ri.itemCode ?? null,
+            unit: ri.units ?? null,
+            tags: ri.tags ?? [],
+          })),
+        });
+      }
+
+      return tx.wir.findUnique({ where: { wirId }, include: this.baseInclude });
+    }).then(this.toFE.bind(this));
+  }
+
+  async removeChecklist(projectId: string, wirChecklistId: string, deleteItemsToo = true) {
+    return this.prisma.$transaction(async (tx) => {
+      const wc = await tx.wirChecklist.findUnique({
+        where: { id: wirChecklistId },
+        select: { id: true, wirId: true, checklistId: true, wir: { select: { projectId: true } } },
+      });
+      if (!wc || wc.wir.projectId !== projectId) throw new NotFoundException('WIR checklist not found');
+
+      if (deleteItemsToo) {
+        await tx.wirItem.deleteMany({ where: { wirId: wc.wirId, checklistId: wc.checklistId } });
+      }
+      await tx.wirChecklist.delete({ where: { id: wirChecklistId } });
+
+      return tx.wir.findUnique({ where: { wirId: wc.wirId }, include: this.baseInclude });
+    }).then(this.toFE.bind(this));
   }
 
   /* ---------- Mapping to FE shape ---------- */
@@ -101,20 +174,25 @@ export class WirService {
       wirId: w.wirId,
       code: w.code,
       title: w.title,
+
       projectId: w.projectId,
       projectCode: w.project?.code ?? null,
       projectTitle: w.project?.title ?? null,
+
       status: w.status,
       health: w.health,
       discipline: w.discipline,
       stage: w.stage,
+
       forDate: w.forDate,
       forTime: w.forTime,
+
       rescheduleForDate: w.rescheduleForDate ?? null,
       rescheduleForTime: w.rescheduleForTime ?? null,
       rescheduleReason: w.rescheduleReason ?? null,
       rescheduledById: w.rescheduledById ?? null,
       rescheduledByName: name(w.rescheduledBy),
+
       cityTown: w.cityTown,
       stateName: w.stateName,
 
@@ -130,19 +208,40 @@ export class WirService {
 
       items: (w.items || []).map((it: any) => ({
         id: it.id,
+        checklistId: it.checklistId ?? null,
+        itemId: it.itemId ?? null,
+        seq: it.seq ?? null,
+
         name: it.name,
         spec: it.spec,
         required: it.required,
         tolerance: it.tolerance,
         photoCount: it.photoCount,
         status: it.status,
+
+        code: it.code ?? null,
+        unit: it.unit ?? null,
+        tags: it.tags ?? [],
+
+        updatedAt: it.updatedAt ?? w.updatedAt,
+      })),
+
+      checklists: (w.checklists || []).map((c: any) => ({
+        id: c.id,
+        checklistId: c.checklistId,
+        code: c.checklistCode ?? null,
+        title: c.checklistTitle ?? null,
+        discipline: c.discipline ?? null,
+        versionLabel: c.versionLabel ?? null,
+        itemsCount: c.itemsCount ?? 0,
+        order: c.order ?? 0,
       })),
       description: w.description,
       updatedAt: w.updatedAt,
     };
   }
 
-  private baseInclude = {
+  private baseInclude: Prisma.WirInclude = {
     project: { select: { projectId: true, code: true, title: true } },
     contractor: { select: { userId: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, code: true } },
     inspector: { select: { userId: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, code: true } },
@@ -150,8 +249,9 @@ export class WirService {
     createdBy: { select: { userId: true, firstName: true, lastName: true } },
     bic: { select: { userId: true, firstName: true, lastName: true } },
     rescheduledBy: { select: { userId: true, firstName: true, lastName: true } },
-    items: true,
-  } as const;
+    checklists: { orderBy: { order: 'asc' }, select: { id: true, checklistId: true, checklistCode: true, checklistTitle: true, discipline: true, versionLabel: true, itemsCount: true, order: true, }, },
+    items: { orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }] },
+  };
 
   /* ---------- Project-role helpers ---------- */
   private async getProjectRole(userId: string, projectId: string): Promise<string | null> {
@@ -247,6 +347,8 @@ export class WirService {
   async create(projectId: string, dto: any, createdById?: string) {
     const attempt = async (tx: Prisma.TransactionClient) => {
       const code = await this.nextWirCode(tx);
+
+      // 1) create WIR (unchanged)
       const created = await tx.wir.create({
         data: {
           projectId,
@@ -263,12 +365,13 @@ export class WirService {
           ...(Array.isArray(dto?.items) && dto.items.length
             ? {
               items: {
-                create: dto.items.map((it: any) => ({
+                create: dto.items.map((it: any, idx: number) => ({
+                  seq: idx + 1,                          // NEW: ensure stable display ordering
                   name: it?.name ?? 'Item',
                   spec: it?.spec ?? null,
                   required: it?.required ?? null,
                   tolerance: it?.tolerance ?? null,
-                  photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : null,
+                  photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : 0,
                   status: toWirItemStatus(it?.status) ?? WirItemStatus.Unknown,
                 })),
               },
@@ -278,6 +381,75 @@ export class WirService {
         include: this.baseInclude,
       });
 
+      // 2) NEW: attach ref checklists (snapshot) + optional item materialization
+      const refIds: string[] = Array.isArray(dto?.refChecklistIds) ? dto.refChecklistIds : [];
+      const shouldMaterialize = dto?.materializeItemsFromRef !== false; // default true
+
+      if (refIds.length) {
+        // fetch ref checklists + items once
+        const refs = await tx.refChecklist.findMany({
+          where: { id: { in: refIds } },
+          include: { items: { orderBy: { seq: 'asc' } } },
+        });
+
+        // snapshot each ref into WirChecklist with counts
+        await Promise.all(
+          refs.map((ref, idx) =>
+            tx.wirChecklist.create({
+              data: {
+                wirId: created.wirId,
+                checklistId: ref.id,
+                checklistCode: ref.code ?? null,
+                checklistTitle: ref.title,
+                discipline: ref.discipline,
+                versionLabel: ref.versionLabel ?? null,
+                itemsCount: ref.items.length,
+                itemIds: ref.items.map((i) => i.id),
+                order: idx, // preserve selection order
+              },
+            })
+          )
+        );
+
+        // materialize working items (runner copy) with provenance + denorms
+        if (shouldMaterialize) {
+          const materialItems = refs.flatMap((ref) =>
+            ref.items.map((ri, i) => ({
+              wirId: created.wirId,
+
+              // attach actual pair (so later joins to live ref also work)
+              checklistId: ref.id,
+              itemId: ri.id,
+
+              // UI order (stable)
+              seq: ri.seq ?? i + 1,
+
+              // working copy fields used by FE
+              name: ri.text,
+              spec: ri.requirement ?? null,
+              required: ri.critical ? 'Yes' : null,
+              tolerance: ri.tolerance ?? null,
+              photoCount: 0,
+              status: WirItemStatus.Unknown,
+
+              // provenance snapshot
+              sourceChecklistId: ref.id,
+              sourceChecklistItemId: ri.id,
+
+              // quick denorms
+              code: ri.itemCode ?? null,
+              unit: ri.units ?? null,
+              tags: ri.tags ?? [],
+            }))
+          );
+
+          if (materialItems.length) {
+            await tx.wirItem.createMany({ data: materialItems });
+          }
+        }
+      }
+
+      // 3) history (unchanged)
       const actorName = await this.resolveActorName(createdById);
       await this.recordHistory(tx, {
         projectId,
@@ -288,10 +460,14 @@ export class WirService {
         toStatus: created.status,
         toBicUserId: created.bicUserId ?? null,
         notes: dto?.__note || null,
-        meta: { code: created.code },
+        meta: { code: created.code, refChecklistIds: refIds, materialized: !!shouldMaterialize },
       });
 
-      return created;
+      // 4) return hydrated WIR (now includes checklists)
+      return tx.wir.findUnique({
+        where: { wirId: created.wirId },
+        include: this.baseInclude,
+      });
     };
 
     for (let i = 0; i < 3; i++) {
@@ -592,113 +768,113 @@ export class WirService {
   }
 
   async reschedule(
-  projectId: string,
-  wirId: string,
-  userId: string,
-  body: {
-    role?: string;
-    currentDateISO?: string;
-    currentTime12h?: string;
-    newDateISO: string;
-    newTime12h: string;
-    notes?: string | null;
-  }
-) {
-  const newDateISO = (body?.newDateISO || '').trim();
-  const newTime12h = (body?.newTime12h || '').trim();
+    projectId: string,
+    wirId: string,
+    userId: string,
+    body: {
+      role?: string;
+      currentDateISO?: string;
+      currentTime12h?: string;
+      newDateISO: string;
+      newTime12h: string;
+      notes?: string | null;
+    }
+  ) {
+    const newDateISO = (body?.newDateISO || '').trim();
+    const newTime12h = (body?.newTime12h || '').trim();
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDateISO)) {
-    throw new BadRequestException('newDateISO must be YYYY-MM-DD');
-  }
-  if (!/^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(newTime12h)) {
-    throw new BadRequestException('newTime12h must be HH:MM AM/PM');
-  }
-
-  return await this.prisma.$transaction(async (tx) => {
-    const row = await tx.wir.findUnique({
-      where: { wirId },
-      include: this.baseInclude,
-    });
-    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
-
-    // ----- Permission guard (simple & predictable)
-    // Rule: Reschedule is allowed when status is not Draft.
-    // Contractor can reschedule only if they are the author OR the current BIC.
-    // PMC / IH-PMT / Consultant / Admin / Client can reschedule any non-Draft in this project.
-    if (row.status === WirStatus.Draft) {
-      throw new ForbiddenException('Cannot reschedule a Draft WIR');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDateISO)) {
+      throw new BadRequestException('newDateISO must be YYYY-MM-DD');
+    }
+    if (!/^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(newTime12h)) {
+      throw new BadRequestException('newTime12h must be HH:MM AM/PM');
     }
 
-    const actorRole = await this.getProjectRole(userId, projectId); // uses your existing helper
-    const isContractor = actorRole === 'Contractor';
-    const isPrivileged =
-      actorRole === 'PMC' ||
-      actorRole === 'IH-PMT' ||
-      actorRole === 'Consultant' ||
-      actorRole === 'Admin' ||
-      actorRole === 'Client';
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({
+        where: { wirId },
+        include: this.baseInclude,
+      });
+      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
-    if (isContractor) {
-      const isAuthor = !!row.createdById && row.createdById === userId;
-      const isBIC = !!row.bicUserId && row.bicUserId === userId;
-      if (!isAuthor && !isBIC) {
-        throw new ForbiddenException('Contractor can reschedule only own/BIC WIR');
+      // ----- Permission guard (simple & predictable)
+      // Rule: Reschedule is allowed when status is not Draft.
+      // Contractor can reschedule only if they are the author OR the current BIC.
+      // PMC / IH-PMT / Consultant / Admin / Client can reschedule any non-Draft in this project.
+      if (row.status === WirStatus.Draft) {
+        throw new ForbiddenException('Cannot reschedule a Draft WIR');
       }
-    } else if (!isPrivileged) {
-      throw new ForbiddenException('Not allowed to reschedule');
-    }
 
-    // ----- Compute new schedule
-    const newForDate = new Date(`${newDateISO}T00:00:00.000Z`); // store as date-only at UTC midnight (DB is timestamptz)
-    const newForTime = newTime12h.toUpperCase();
+      const actorRole = await this.getProjectRole(userId, projectId); // uses your existing helper
+      const isContractor = actorRole === 'Contractor';
+      const isPrivileged =
+        actorRole === 'PMC' ||
+        actorRole === 'IH-PMT' ||
+        actorRole === 'Consultant' ||
+        actorRole === 'Admin' ||
+        actorRole === 'Client';
 
-    const before = { forDate: row.forDate, forTime: row.forTime };
+      if (isContractor) {
+        const isAuthor = !!row.createdById && row.createdById === userId;
+        const isBIC = !!row.bicUserId && row.bicUserId === userId;
+        if (!isAuthor && !isBIC) {
+          throw new ForbiddenException('Contractor can reschedule only own/BIC WIR');
+        }
+      } else if (!isPrivileged) {
+        throw new ForbiddenException('Not allowed to reschedule');
+      }
 
-    const actorName = await this.resolveActorName(userId);
+      // ----- Compute new schedule
+      const newForDate = new Date(`${newDateISO}T00:00:00.000Z`); // store as date-only at UTC midnight (DB is timestamptz)
+      const newForTime = newTime12h.toUpperCase();
 
-    const updated = await tx.wir.update({
-      where: { wirId },
-      data: {
-        // official schedule
-        forDate: newForDate,
-        forTime: newForTime,
+      const before = { forDate: row.forDate, forTime: row.forTime };
 
-        // audit/reschedule fields (also surfaced in toFE)
-        rescheduleForDate: newForDate,
-        rescheduleForTime: newForTime,
-        rescheduleReason: body?.notes ?? null,
-        rescheduledById: userId,
-      },
-      include: this.baseInclude,
-    });
+      const actorName = await this.resolveActorName(userId);
 
-    await this.recordHistory(tx, {
-      projectId,
-      wirId,
-      action: WirAction.Rescheduled,
-      actorUserId: userId,
-      actorName,
-      fromStatus: row.status,
-      toStatus: updated.status,
-      fromBicUserId: row.bicUserId ?? null,
-      toBicUserId: updated.bicUserId ?? null,
-      notes: body?.notes ?? null,
-      meta: {
-        schedule: {
-          from: { date: before.forDate, time: before.forTime },
-          to: { date: updated.forDate, time: updated.forTime },
-          clientSent: {
-            currentDateISO: body?.currentDateISO ?? null,
-            currentTime12h: body?.currentTime12h ?? null,
-            newDateISO,
-            newTime12h,
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: {
+          // official schedule
+          forDate: newForDate,
+          forTime: newForTime,
+
+          // audit/reschedule fields (also surfaced in toFE)
+          rescheduleForDate: newForDate,
+          rescheduleForTime: newForTime,
+          rescheduleReason: body?.notes ?? null,
+          rescheduledById: userId,
+        },
+        include: this.baseInclude,
+      });
+
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Rescheduled,
+        actorUserId: userId,
+        actorName,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+        notes: body?.notes ?? null,
+        meta: {
+          schedule: {
+            from: { date: before.forDate, time: before.forTime },
+            to: { date: updated.forDate, time: updated.forTime },
+            clientSent: {
+              currentDateISO: body?.currentDateISO ?? null,
+              currentTime12h: body?.currentTime12h ?? null,
+              newDateISO,
+              newTime12h,
+            },
           },
         },
-      },
-    });
+      });
 
-    return this.toFE(updated);
-  });
-}
+      return this.toFE(updated);
+    });
+  }
 
 }
