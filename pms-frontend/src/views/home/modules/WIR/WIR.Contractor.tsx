@@ -7,7 +7,15 @@ import { getRoleBaseMatrix } from "../../../admin/permissions/AdminPermProjectOv
 import { getModuleSettings } from "../../../../api/adminModuleSettings";
 import { normalizeSettings } from "../../../admin/moduleSettings/useModuleSettings";
 import { useScrollLock } from "../../../../hooks/useScrollLock";
-import { getRefChecklistMeta, listRefChecklistItems, RefChecklistMeta, RefChecklistItem } from "../../../../api/RefChecklists";
+import { getRefChecklistMeta, listRefChecklistItems, RefChecklistMeta, RefChecklistItem, formatTolerance } from "../../../../api/RefChecklists";
+
+/* ========================= Debug helpers ========================= */
+const DEBUG = true;
+const log = (...a: any[]) => DEBUG && console.log("[WIR]", ...a);
+const group = (label: string, ...rest: any[]) =>
+  DEBUG && console.groupCollapsed("[WIR]", label, ...rest);
+const groupEnd = () => DEBUG && console.groupEnd();
+
 /* ========================= JWT helpers ========================= */
 function decodeJwtPayload(token: string): any | null {
   try {
@@ -101,6 +109,51 @@ function readOverrideCell(
   return undefined;
 }
 
+/* SoftPill — small pill with optional value & tone */
+type SoftTone = "neutral" | "info" | "success" | "warning" | "danger" | "gray";
+
+function SoftPill({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label?: string | null;
+  value?: string | null;
+  tone?: SoftTone;
+}) {
+  const l = (label ?? "").toString().trim();
+  const v = (value ?? "").toString().trim();
+
+  if (!l && !v) return null;
+
+  const toneCls: Record<SoftTone, string> = {
+    neutral:
+      "border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200",
+    info:
+      "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+    success:
+      "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+    warning:
+      "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+    danger:
+      "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
+    gray:
+      "border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-900 dark:text-gray-200",
+  };
+
+  return (
+    <span
+      className={
+        "inline-flex items-center text-[11px] px-2 py-0.5 rounded-md " +
+        toneCls[tone]
+      }
+    >
+      {l && <span className="mr-1">{l}</span>}
+      {v && <span className="opacity-80">{v}</span>}
+    </span>
+  );
+}
+
 type RunnerCardItem = {
   id: string;
   title: string;
@@ -108,8 +161,13 @@ type RunnerCardItem = {
   unit?: string | null;
   tolerance?: string | null;
   required?: boolean | string | null;
+  requirement?: string | null;
+  critical?: boolean | null;
   status?: string | null;
   tags?: string[];
+  base?: number | null;
+  plus?: number | null;
+  minus?: number | null;
 };
 
 type DenyCell = "inherit" | "deny";
@@ -344,6 +402,86 @@ async function ensurePMCGuardForSubmit(
 }
 
 /* ========================= Format helpers ========================= */
+/* ===== Requirement / Tolerance formatter (base ± tol with units) ===== */
+function numOrNull(x: any): number | null {
+  if (x === null || x === undefined || x === "") return null;
+  const v = Number(String(x).replace(/[^\d.+-eE]/g, ""));
+  return Number.isFinite(v) ? v : null;
+}
+function fix(n: number, dp = 3) {
+  return n.toFixed(dp);
+}
+/** Build human string like:
+ *  "= 20.000 mm/m"         (exact)
+ *  "≤ 20.000 mm/m"         (max)
+ *  "≥ 20.000 mm/m"         (min)
+ *  "19.400 to 20.200 mm/m" (range from base±(minus/plus))
+ *  If only base present, defaults to "= base".
+ */
+function buildRequirementLabel(opts: {
+  unit?: string | null;
+  op?: string | null;       // '=', '<=', '≥', '>=', '<', '>' (normalized)
+  base?: any;
+  plus?: any;
+  minus?: any;
+  dp?: number;
+}): string {
+  const dp = opts.dp ?? 3;
+  const u = (opts.unit ? ` ${opts.unit}` : "");
+  const base = numOrNull(opts.base);
+  const plus = numOrNull(opts.plus);
+  const minus = numOrNull(opts.minus);
+  const rawOp = (opts.op || "").trim();
+  const op = rawOp
+    .replace(/^>=?$/, "≥")
+    .replace(/^<=?$/, "≤")
+    .replace(/^=$/, "=")
+    .replace(/^>$/, ">")
+    .replace(/^<$/, "<");
+
+  // If explicit operator + base exist -> show "op base"
+  if (base != null && ["=", "≤", "≥", ">", "<"].includes(op)) {
+    return `${op} ${fix(base, dp)}${u}`;
+  }
+
+  // If we have base ± (plus/minus)
+  if (base != null && plus != null && minus != null) {
+    const lo = base - minus;
+    const hi = base + plus;
+    return `${fix(lo, dp)} to ${fix(hi, dp)}${u}`;
+  }
+
+  // Only one side present => convert to bound against base
+  if (base != null && plus != null) {
+    return `≤ ${fix(base + plus, dp)}${u}`;
+  }
+  if (base != null && minus != null) {
+    return `≥ ${fix(base - minus, dp)}${u}`;
+  }
+
+  // Fallback: just base
+  if (base != null) return `= ${fix(base, dp)}${u}`;
+
+  // Nothing usable
+  return u ? `—${u}` : "—";
+}
+
+/** Try to normalize an operator from a freeform tolerance string like
+ *  "≤ 20 mm/m", "<= 25", "= 10", "max 20" (returns '≤', '≥', '=', '<', '>' or '').
+ */
+function inferOpFromToleranceString(tol?: string | null): string {
+  const s = (tol || "").trim();
+  if (!s) return "";
+  if (/^=/.test(s)) return "=";
+  if (/^(<=|≤)/.test(s)) return "≤";
+  if (/^(>=|≥)/.test(s)) return "≥";
+  if (/^</.test(s)) return "<";
+  if (/^>/.test(s)) return ">";
+  if (/^max\b/i.test(s)) return "≤";
+  if (/^min\b/i.test(s)) return "≥";
+  return "";
+}
+
 const isIsoLike = (v: any) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
 const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleDateString() : v ?? "");
 const fmtDateTime = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : v ?? "");
@@ -617,16 +755,6 @@ function DotSep({ left, right }: { left?: string | null; right?: string | null }
     <div className="text-xs text-gray-600 dark:text-gray-300">
       {[a || "—", b || "—"].filter(Boolean).join(" • ")}
     </div>
-  );
-}
-
-function SoftPill({ label }: { label?: string | null }) {
-  const v = (label || "").toString().trim();
-  if (!v) return null;
-  return (
-    <span className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-full border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
-      {v}
-    </span>
   );
 }
 
@@ -1882,20 +2010,20 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     return () => window.removeEventListener("keydown", onKey);
   }, [roViewOpen]);
 
-  const checklistStats = useMemo(() => {
-    const items = selected?.items || [];
-    const total = items.length;
-    const mandatory = items.filter((it: any) => {
-      const v = String(it?.required ?? "").toLowerCase();
-      return v === "mandatory" || v === "yes" || it?.required === true;
-    }).length;
-    const critical = items.filter((it: any) => {
-      const s = String(it?.status ?? "").toLowerCase();
-      const sev = String((it as any)?.severity ?? "").toLowerCase();
-      return s === "ncr" || (it as any)?.critical === true || sev === "critical";
-    }).length;
-    return { total, mandatory, critical };
-  }, [selected]);
+  // const checklistStats = useMemo(() => {
+  //   const items = selected?.items || [];
+  //   const total = items.length;
+  //   const mandatory = items.filter((it: any) => {
+  //     const v = String(it?.required ?? "").toLowerCase();
+  //     return v === "mandatory" || v === "yes" || it?.required === true;
+  //   }).length;
+  //   const critical = items.filter((it: any) => {
+  //     const s = String(it?.status ?? "").toLowerCase();
+  //     const sev = String((it as any)?.severity ?? "").toLowerCase();
+  //     return s === "ncr" || (it as any)?.critical === true || sev === "critical";
+  //   }).length;
+  //   return { total, mandatory, critical };
+  // }, [selected]);
 
   const pickedCandidate = useMemo(
     () => dispatchCandidates.find((u) => String(u.userId) === String(dispatchPick || "")) || null,
@@ -1965,14 +2093,27 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   }, [newForm.discipline, clLibOpen]);
 
   useEffect(() => {
-    if (!selected || !roViewOpen || roTab !== 'document' || docTab !== 'runner') return;
+    if (!selected || !roViewOpen || roTab !== "document" || docTab !== "runner") {
+      log("Runner effect: skip", {
+        hasSelected: !!selected,
+        roViewOpen,
+        roTab,
+        docTab,
+      });
+      return;
+    }
+
     const ids = extractChecklistIds(selected);
+    log("Runner effect: checklistIds for WIR", selected.wirId, ids);
+
     if (!ids.length) {
+      log("Runner effect: no checklist ids, clearing items");
       setRunnerItems([]);
       setRunnerError(null);
       setRunnerLoading(false);
       return;
     }
+
     let cancelled = false;
     (async () => {
       setRunnerLoading(true);
@@ -1980,29 +2121,90 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       try {
         const all: RunnerCardItem[] = [];
         for (const id of ids) {
+          log("Runner effect: fetching items for checklist", id);
           const rows: RefChecklistItem[] = await listRefChecklistItems(id); // service-normalized
+          log("Runner effect: got rows", { checklistId: id, count: rows.length, rows });
+
           for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             const tags = Array.isArray(r.tags) ? r.tags.slice(0, 10) : [];
-            all.push({
+
+            const mapped: RunnerCardItem = {
               id: String(r.id ?? `${id}.${i}`),
               title: String(r.title ?? r.name ?? `Item ${i + 1}`),
               code: r.code ?? null,
               unit: r.unit ?? r.uom ?? null,
               tolerance: r.tolerance ?? r.specification ?? r.spec ?? null,
               required: (r.required ?? r.mandatory) as any,
+              critical: r.critical === true ? true : false,
               status: r.status ?? null,
               tags,
+              base: numOrNull((r as any).base),
+              plus: numOrNull((r as any).plus),
+              minus: numOrNull((r as any).minus),
+            };
+
+            log("Runner effect: mapped checklist item", {
+              checklistId: id,
+              index: i,
+              raw: r,
+              mapped,
             });
+
+            all.push(mapped);
           }
         }
+        log("Runner effect: final RunnerCardItem list", all);
         if (!cancelled) setRunnerItems(all);
       } catch (e: any) {
+        log("Runner effect: error while loading checklist items", e);
         if (!cancelled) setRunnerError(e?.message || "Failed to load checklist items");
       } finally {
         if (!cancelled) setRunnerLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.wirId, roViewOpen, roTab, docTab]);
+
+  useEffect(() => {
+    if (!selected || !roViewOpen || roTab !== 'document' || docTab !== 'overview') return;
+
+    const ids = extractChecklistIds(selected);
+    if (!ids.length) {
+      setOvStats({ total: 0, mandatory: 0, critical: 0 });
+      setOvError(null);
+      setOvLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setOvLoading(true);
+      setOvError(null);
+      try {
+        let total = 0, mandatory = 0, critical = 0;
+        for (const id of ids) {
+          const rows: RefChecklistItem[] = await listRefChecklistItems(id);
+          for (const r of rows) {
+            total++;
+            const req = String(r.required ?? "").trim().toLowerCase();
+            if (req === "mandatory") mandatory++;
+            if (r.critical === true) critical++;
+          }
+        }
+        if (!cancelled) setOvStats({ total, mandatory, critical });
+      } catch (e: any) {
+        if (!cancelled) {
+          setOvStats(null);
+          setOvError(e?.message || "Failed to load checklist overview stats");
+        }
+      } finally {
+        if (!cancelled) setOvLoading(false);
+      }
+    })();
+
     return () => { cancelled = true; };
   }, [selected?.wirId, roViewOpen, roTab, docTab]);
 
@@ -2011,6 +2213,9 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   const [tpHour, setTpHour] = useState(12);
   const [tpMinute, setTpMinute] = useState(0);
   const [tpAP, setTpAP] = useState<"AM" | "PM">("AM");
+  const [ovStats, setOvStats] = useState<{ total: number; mandatory: number; critical: number } | null>(null);
+  const [ovLoading, setOvLoading] = useState(false);
+  const [ovError, setOvError] = useState<string | null>(null);
 
   const openTimePicker = () => {
     if (isRO) return;
@@ -2143,7 +2348,7 @@ ${styleEls}
             onClick={onBack}
             className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
           >
-            Back
+            Bac!
           </button>
         </div>
       )}
@@ -3204,10 +3409,7 @@ ${styleEls}
                             }
                           />
                           <FieldRow label="Discipline" value={selected?.discipline || "—"} />
-                          <FieldRow
-                            label="Checklist"
-                            value={`${checklistStats.total} items · ${checklistStats.mandatory} mandatory · ${checklistStats.critical} critical`}
-                          />
+                          <FieldRow label="Checklist" value={ovLoading ? "Calculating…" : ovError ? `— (error: ${ovError})` : ovStats ? `${ovStats.total} items · ${ovStats.mandatory} mandatory · ${ovStats.critical} critical` : "—"} />
                           <FieldRow label="Inspector of Record" value={selected?.inspectorName || "—"} />
                           <FieldRow label="Contractor" value={selected?.contractorName || "—"} />
                           <FieldRow label="HOD" value={selected?.hodName || "—"} />
@@ -3248,16 +3450,39 @@ ${styleEls}
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                           {runnerItems.map((it, i) => {
-                            const tol = (it.tolerance || "").toString().trim();
+                            const tolStr =
+                              formatTolerance(
+                                (it.tolerance as any) ?? null,
+                                it.base ?? null,
+                                it.plus ?? null,
+                                it.minus ?? null,
+                                it.unit || null
+                              ) || (it.tolerance ? String(it.tolerance) : "");
+
+                            log("Runner render: tol computation", {
+                              id: it.id,
+                              title: it.title,
+                              rawTolerance: it.tolerance,
+                              base: it.base,
+                              plus: it.plus,
+                              minus: it.minus,
+                              unit: it.unit,
+                              tolStr,
+                            });
+
                             const activityTitle = (newForm.activityLabel || selected?.title || "Activity").toString();
                             const activityCode = (selected?.code || "").toString();
                             const reqLabel = requiredToLabel(it.required);
 
                             return (
-                              <div key={it.id || `runner-${i}`} className="rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                              <div
+                                key={it.id || `runner-${i}`}
+                                className="rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm"
+                              >
                                 {/* Heading: Title — Tol */}
                                 <div className="text-sm font-semibold dark:text-white break-words">
-                                  {it.title}{tol ? <span className="opacity-70"> — {tol}</span> : null}
+                                  {it.title}
+                                  {tolStr ? <span className="opacity-70"> — {tolStr}</span> : null}
                                 </div>
 
                                 {/* Meta: Activity Title • Activity Code */}
@@ -3268,10 +3493,9 @@ ${styleEls}
                                 {/* Pills */}
                                 <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                                   <SoftPill label={reqLabel} />
-                                  <SoftPill label={it.unit ? `Unit: ${it.unit}` : ""} />
-                                  <SoftPill label={tol ? `Tol: ${tol}` : ""} />
-                                  {it.status ? <SoftPill label={`Status: ${String(it.status)}`} /> : null}
-                                  {it.code ? <SoftPill label={`Code: ${it.code}`} /> : null}
+                                  <SoftPill label="Unit" value={it.unit || ""} />
+                                  <SoftPill label="Tol" value={tolStr} tone="info" />
+                                  {it.status ? <SoftPill label="Status" value={String(it.status)} /> : null}
                                 </div>
 
                                 {/* Tags */}
@@ -3279,7 +3503,10 @@ ${styleEls}
                                   {it.tags && it.tags.length ? (
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       {it.tags.map((t, k) => (
-                                        <span key={`${it.id}-tag-${k}`} className="text-[11px] px-2 py-0.5 rounded-md border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+                                        <span
+                                          key={`${it.id}-tag-${k}`}
+                                          className="text-[11px] px-2 py-0.5 rounded-md border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200"
+                                        >
                                           #{t}
                                         </span>
                                       ))}
@@ -3291,6 +3518,7 @@ ${styleEls}
                               </div>
                             );
                           })}
+
                         </div>
                       )}
                     </SectionCard>

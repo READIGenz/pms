@@ -1,4 +1,4 @@
-//pms-backend/src/modules/project-modules/wir/wir.service.ts
+// pms-backend/src/modules/project-modules/wir/wir.service.ts
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { Prisma, WirStatus, WirItemStatus, ProjectHealth, WirAction } from '@prisma/client';
@@ -39,10 +39,16 @@ type CreateWirInput = {
   items?: Array<{
     name: string;
     spec?: string | null;
-    required?: string | null;
+    required?: string | null;    // 'Mandatory' | 'Optional' | null
     tolerance?: string | null;
     photoCount?: number | null;
     status?: string | null;
+    // NEW (accept if caller sends):
+    critical?: boolean | null;
+    value?: string | number | null;
+    code?: string | null;
+    unit?: string | null;
+    tags?: string[] | null;
   }>;
 };
 
@@ -126,6 +132,11 @@ export class WirService {
       });
 
       if (materialize && ref.items.length) {
+        // ✅ Correct mapping:
+        // required  <- requirement ('Mandatory' | 'Optional' | null)
+        // critical  <- critical (boolean | null)
+        // value     <- value (string | number | null)   // no guesses
+        // spec      remains free-text (not requirement)
         await tx.wirItem.createMany({
           data: ref.items.map((ri, i) => ({
             wirId,
@@ -134,21 +145,29 @@ export class WirService {
             sourceChecklistId: ref.id,
             sourceChecklistItemId: ri.id,
             seq: ri.seq ?? i + 1,
+
             name: ri.text,
-            spec: ri.requirement ?? null,
-            required: ri.critical ? 'Yes' : null,
+            spec: null, // do NOT stuff requirement here; keep spec as free text
+            required: ri.requirement ?? null,
             tolerance: ri.tolerance ?? null,
             photoCount: 0,
-            status: 'Unknown',
+            status: WirItemStatus.Unknown,
+
+            // denorms & extras
             code: ri.itemCode ?? null,
             unit: ri.units ?? null,
             tags: ri.tags ?? [],
+
+            // NEW
+            critical: typeof ri.critical === 'boolean' ? ri.critical : null,
+            value: null,
           })),
         });
       }
 
-      return tx.wir.findUnique({ where: { wirId }, include: this.baseInclude });
-    }).then(this.toFE.bind(this));
+      const out = await tx.wir.findUnique({ where: { wirId }, include: this.baseInclude });
+      return this.toFE(out);
+    });
   }
 
   async removeChecklist(projectId: string, wirChecklistId: string, deleteItemsToo = true) {
@@ -164,12 +183,25 @@ export class WirService {
       }
       await tx.wirChecklist.delete({ where: { id: wirChecklistId } });
 
-      return tx.wir.findUnique({ where: { wirId: wc.wirId }, include: this.baseInclude });
-    }).then(this.toFE.bind(this));
+      const out = await tx.wir.findUnique({ where: { wirId: wc.wirId }, include: this.baseInclude });
+      return this.toFE(out);
+    });
   }
 
   /* ---------- Mapping to FE shape ---------- */
   private toFE(w: any) {
+    const items = (w.items || []) as Array<any>;
+
+    // Build a fast per-checklist aggregation for counts
+    const perChecklistAgg = new Map<string, { mandatory: number; critical: number }>();
+    for (const it of items) {
+      const key = it.checklistId ?? '__none__';
+      if (!perChecklistAgg.has(key)) perChecklistAgg.set(key, { mandatory: 0, critical: 0 });
+      const agg = perChecklistAgg.get(key)!;
+      if ((it.required || '').toString().trim() === 'Mandatory') agg.mandatory += 1;
+      if (typeof it.critical === 'boolean' && it.critical) agg.critical += 1;
+    }
+
     return {
       wirId: w.wirId,
       code: w.code,
@@ -206,7 +238,7 @@ export class WirService {
 
       createdById: w.createdById ?? w.createdBy?.userId ?? null,
 
-      items: (w.items || []).map((it: any) => ({
+      items: items.map((it: any) => ({
         id: it.id,
         checklistId: it.checklistId ?? null,
         itemId: it.itemId ?? null,
@@ -214,7 +246,7 @@ export class WirService {
 
         name: it.name,
         spec: it.spec,
-        required: it.required,
+        required: it.required,         // 'Mandatory' | 'Optional' | null
         tolerance: it.tolerance,
         photoCount: it.photoCount,
         status: it.status,
@@ -223,19 +255,30 @@ export class WirService {
         unit: it.unit ?? null,
         tags: it.tags ?? [],
 
+        // NEW
+        critical: typeof it.critical === 'boolean' ? it.critical : null,
+        value: (typeof it.value === 'number' || typeof it.value === 'string') ? it.value : null,
+
         updatedAt: it.updatedAt ?? w.updatedAt,
       })),
 
-      checklists: (w.checklists || []).map((c: any) => ({
-        id: c.id,
-        checklistId: c.checklistId,
-        code: c.checklistCode ?? null,
-        title: c.checklistTitle ?? null,
-        discipline: c.discipline ?? null,
-        versionLabel: c.versionLabel ?? null,
-        itemsCount: c.itemsCount ?? 0,
-        order: c.order ?? 0,
-      })),
+      checklists: (w.checklists || []).map((c: any) => {
+        const agg = perChecklistAgg.get(c.checklistId) || { mandatory: 0, critical: 0 };
+        return {
+          id: c.id,
+          checklistId: c.checklistId,
+          code: c.checklistCode ?? null,
+          title: c.checklistTitle ?? null,
+          discipline: c.discipline ?? null,
+          versionLabel: c.versionLabel ?? null,
+          itemsCount: c.itemsCount ?? 0,
+          order: c.order ?? 0,
+          // NEW — for Document > Overview > Checklist section
+          mandatoryCount: agg.mandatory,
+          criticalCount: agg.critical,
+        };
+      }),
+
       description: w.description,
       updatedAt: w.updatedAt,
     };
@@ -249,7 +292,13 @@ export class WirService {
     createdBy: { select: { userId: true, firstName: true, lastName: true } },
     bic: { select: { userId: true, firstName: true, lastName: true } },
     rescheduledBy: { select: { userId: true, firstName: true, lastName: true } },
-    checklists: { orderBy: { order: 'asc' }, select: { id: true, checklistId: true, checklistCode: true, checklistTitle: true, discipline: true, versionLabel: true, itemsCount: true, order: true, }, },
+    checklists: {
+      orderBy: { order: 'asc' },
+      select: {
+        id: true, checklistId: true, checklistCode: true, checklistTitle: true,
+        discipline: true, versionLabel: true, itemsCount: true, order: true,
+      },
+    },
     items: { orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }] },
   };
 
@@ -257,9 +306,8 @@ export class WirService {
   private async getProjectRole(userId: string, projectId: string): Promise<string | null> {
     const m = await this.prisma.userRoleMembership.findFirst({
       where: { projectId, userId },
-      select: { role: true }, // or { role: true } if enum
+      select: { role: true },
     });
-    // Normalize to canonical UI keys: 'Contractor', 'Client', 'PMC', 'IH-PMT', 'Consultant', 'Admin', etc.
     const raw = (m?.role || '').toString().trim().toLowerCase().replace(/[_\s-]+/g, '');
     switch (raw) {
       case 'contractor': return 'Contractor';
@@ -282,19 +330,18 @@ export class WirService {
   async list(projectId: string, userId: string) {
     const isCtr = await this.isContractorForProject(userId, projectId);
 
-    // Everyone sees non-drafts. Drafts are visible only to the author AND only if the viewer is a Contractor.
     const where: Prisma.WirWhereInput = isCtr
       ? {
-        projectId,
-        OR: [
-          { status: { not: WirStatus.Draft } },
-          { AND: [{ status: WirStatus.Draft }, { createdById: userId }] },
-        ],
-      }
+          projectId,
+          OR: [
+            { status: { not: WirStatus.Draft } },
+            { AND: [{ status: WirStatus.Draft }, { createdById: userId }] },
+          ],
+        }
       : {
-        projectId,
-        status: { not: WirStatus.Draft },
-      };
+          projectId,
+          status: { not: WirStatus.Draft },
+        };
 
     const rows = await this.prisma.wir.findMany({
       where,
@@ -317,7 +364,6 @@ export class WirService {
       const isCtr = await this.isContractorForProject(userId, projectId);
       const isAuthor = !!row.createdById && row.createdById === userId;
       if (!(isCtr && isAuthor)) {
-        // You can choose 404 to avoid leaking existence; spec asked 403/404.
         throw new ForbiddenException('Draft is visible only to its author (Contractor).');
       }
     }
@@ -327,7 +373,6 @@ export class WirService {
 
   // --- Generate next WIR code inside a transaction
   private async nextWirCode(tx: Prisma.TransactionClient): Promise<string> {
-    // Codes are fixed-width "WIR-0001", so lexical DESC is safe.
     const last = await tx.wir.findFirst({
       where: { code: { startsWith: 'WIR-' } },
       orderBy: { code: 'desc' },
@@ -348,7 +393,6 @@ export class WirService {
     const attempt = async (tx: Prisma.TransactionClient) => {
       const code = await this.nextWirCode(tx);
 
-      // 1) create WIR (unchanged)
       const created = await tx.wir.create({
         data: {
           projectId,
@@ -364,35 +408,39 @@ export class WirService {
           code,
           ...(Array.isArray(dto?.items) && dto.items.length
             ? {
-              items: {
-                create: dto.items.map((it: any, idx: number) => ({
-                  seq: idx + 1,                          // NEW: ensure stable display ordering
-                  name: it?.name ?? 'Item',
-                  spec: it?.spec ?? null,
-                  required: it?.required ?? null,
-                  tolerance: it?.tolerance ?? null,
-                  photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : 0,
-                  status: toWirItemStatus(it?.status) ?? WirItemStatus.Unknown,
-                })),
-              },
-            }
+                items: {
+                  create: dto.items.map((it: any, idx: number) => ({
+                    seq: idx + 1,
+                    name: it?.name ?? 'Item',
+                    spec: it?.spec ?? null,
+                    required: it?.required ?? null, // 'Mandatory' | 'Optional' | null
+                    tolerance: it?.tolerance ?? null,
+                    photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : 0,
+                    status: toWirItemStatus(it?.status) ?? WirItemStatus.Unknown,
+
+                  //   // NEW passthroughs if caller provides
+                  //   code: it?.code ?? null,
+                  //   unit: it?.unit ?? null,
+                  //   tags: Array.isArray(it?.tags) ? it.tags : [],
+                  //   critical: typeof it?.critical === 'boolean' ? it.critical : null,
+                  //   value: (typeof it?.value === 'number' || typeof it?.value === 'string') ? it.value : null,
+                   })),
+                },
+              }
             : {}),
         },
         include: this.baseInclude,
       });
 
-      // 2) NEW: attach ref checklists (snapshot) + optional item materialization
       const refIds: string[] = Array.isArray(dto?.refChecklistIds) ? dto.refChecklistIds : [];
       const shouldMaterialize = dto?.materializeItemsFromRef !== false; // default true
 
       if (refIds.length) {
-        // fetch ref checklists + items once
         const refs = await tx.refChecklist.findMany({
           where: { id: { in: refIds } },
           include: { items: { orderBy: { seq: 'asc' } } },
         });
 
-        // snapshot each ref into WirChecklist with counts
         await Promise.all(
           refs.map((ref, idx) =>
             tx.wirChecklist.create({
@@ -405,41 +453,38 @@ export class WirService {
                 versionLabel: ref.versionLabel ?? null,
                 itemsCount: ref.items.length,
                 itemIds: ref.items.map((i) => i.id),
-                order: idx, // preserve selection order
+                order: idx,
               },
             })
           )
         );
 
-        // materialize working items (runner copy) with provenance + denorms
         if (shouldMaterialize) {
           const materialItems = refs.flatMap((ref) =>
             ref.items.map((ri, i) => ({
               wirId: created.wirId,
 
-              // attach actual pair (so later joins to live ref also work)
               checklistId: ref.id,
               itemId: ri.id,
+              sourceChecklistId: ref.id,
+              sourceChecklistItemId: ri.id,
 
-              // UI order (stable)
               seq: ri.seq ?? i + 1,
 
-              // working copy fields used by FE
               name: ri.text,
-              spec: ri.requirement ?? null,
-              required: ri.critical ? 'Yes' : null,
+              spec: null, // free text only
+              required: ri.requirement ?? null,
               tolerance: ri.tolerance ?? null,
               photoCount: 0,
               status: WirItemStatus.Unknown,
 
-              // provenance snapshot
-              sourceChecklistId: ref.id,
-              sourceChecklistItemId: ri.id,
-
-              // quick denorms
               code: ri.itemCode ?? null,
               unit: ri.units ?? null,
               tags: ri.tags ?? [],
+
+              // NEW
+              critical: typeof ri.critical === 'boolean' ? ri.critical : null,
+              value: null,
             }))
           );
 
@@ -449,7 +494,6 @@ export class WirService {
         }
       }
 
-      // 3) history (unchanged)
       const actorName = await this.resolveActorName(createdById);
       await this.recordHistory(tx, {
         projectId,
@@ -463,7 +507,6 @@ export class WirService {
         meta: { code: created.code, refChecklistIds: refIds, materialized: !!shouldMaterialize },
       });
 
-      // 4) return hydrated WIR (now includes checklists)
       return tx.wir.findUnique({
         where: { wirId: created.wirId },
         include: this.baseInclude,
@@ -551,7 +594,6 @@ export class WirService {
         toStatus: updated.status ?? null,
         fromBicUserId: before?.bicUserId ?? null,
         toBicUserId: updated.bicUserId ?? null,
-        // keep small patch meta for traceability (exclude noisy fields if you wish)
         meta: { patch: { ...rest } }
       });
 
@@ -576,7 +618,7 @@ export class WirService {
   }
 
   private canReject(role: string, current: WirStatus) {
-    return this.canApprove(role, current); // same authorities can reject
+    return this.canApprove(role, current);
   }
 
   async submit(projectId: string, wirId: string, roleFromBody: string, userId: string) {
@@ -644,11 +686,11 @@ export class WirService {
 
   async approve(projectId: string, wirId: string, role: string) {
     return await this.prisma.$transaction(async (tx) => {
-      const row = await tx.wir.findUnique({ where: { wirId } });
+      const row = await this.prisma.wir.findUnique({ where: { wirId } });
       if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
       this.ensure(this.canApprove(role, row.status), 'Not allowed to approve in current status');
 
-      const updated = await tx.wir.update({
+      const updated = await this.prisma.wir.update({
         where: { wirId },
         data: {
           status: WirStatus.Approved,
@@ -658,7 +700,7 @@ export class WirService {
         include: this.baseInclude,
       });
 
-      await this.recordHistory(tx, {
+      await this.recordHistory(this.prisma, {
         projectId,
         wirId,
         action: WirAction.Approved,
@@ -719,7 +761,6 @@ export class WirService {
       meta?: any;
     }
   ) {
-    // Use UNCHECKED so we can set FK scalars directly
     const payload: Prisma.WirHistoryUncheckedCreateInput = {
       projectId: args.projectId,
       wirId: args.wirId,
@@ -736,6 +777,7 @@ export class WirService {
 
     await tx.wirHistory.create({ data: payload });
   }
+
   private async resolveActorName(userId?: string | null): Promise<string | null> {
     if (!userId) return null;
     const u = await this.prisma.user.findUnique({
@@ -754,7 +796,6 @@ export class WirService {
       orderBy: { createdAt: 'asc' }
     });
 
-    // FE-friendly mapping + serial number
     return rows.map((r, idx) => ({
       sNo: idx + 1,
       id: r.id,
@@ -797,15 +838,11 @@ export class WirService {
       });
       if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
-      // ----- Permission guard (simple & predictable)
-      // Rule: Reschedule is allowed when status is not Draft.
-      // Contractor can reschedule only if they are the author OR the current BIC.
-      // PMC / IH-PMT / Consultant / Admin / Client can reschedule any non-Draft in this project.
       if (row.status === WirStatus.Draft) {
         throw new ForbiddenException('Cannot reschedule a Draft WIR');
       }
 
-      const actorRole = await this.getProjectRole(userId, projectId); // uses your existing helper
+      const actorRole = await this.getProjectRole(userId, projectId);
       const isContractor = actorRole === 'Contractor';
       const isPrivileged =
         actorRole === 'PMC' ||
@@ -824,8 +861,7 @@ export class WirService {
         throw new ForbiddenException('Not allowed to reschedule');
       }
 
-      // ----- Compute new schedule
-      const newForDate = new Date(`${newDateISO}T00:00:00.000Z`); // store as date-only at UTC midnight (DB is timestamptz)
+      const newForDate = new Date(`${newDateISO}T00:00:00.000Z`);
       const newForTime = newTime12h.toUpperCase();
 
       const before = { forDate: row.forDate, forTime: row.forTime };
@@ -835,11 +871,9 @@ export class WirService {
       const updated = await tx.wir.update({
         where: { wirId },
         data: {
-          // official schedule
           forDate: newForDate,
           forTime: newForTime,
 
-          // audit/reschedule fields (also surfaced in toFE)
           rescheduleForDate: newForDate,
           rescheduleForTime: newForTime,
           rescheduleReason: body?.notes ?? null,
