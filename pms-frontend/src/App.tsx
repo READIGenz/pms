@@ -109,9 +109,9 @@ export default function App() {
           <Route path="tiles" element={<Tiles />} />
           <Route path="my-projects" element={<MyProjects />} />
           <Route path="contractor/projects/:projectId/wir" element={<WIR_Contractor />} />
-          <Route path="pmc/projects/:projectId/wir" element={<WIR_PMC />} />
-          <Route path="ihpmt/projects/:projectId/wir" element={<WIR_IHPMT />} />
-          <Route path="client/projects/:projectId/wir" element={<WIR_Client />} />
+          <Route path="pmc/projects/:projectId/wir" element={<WIR_Contractor />} />
+          <Route path="ihpmt/projects/:projectId/wir" element={<WIR_Contractor />} />
+          <Route path="client/projects/:projectId/wir" element={<WIR_Contractor />} />
         </Route>
 
         {/* Fallback */}

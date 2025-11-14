@@ -2169,61 +2169,61 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   }, [selected?.wirId, roViewOpen, roTab, docTab]);
 
   useEffect(() => {
-      if (!selected || !roViewOpen || roTab !== "document" || docTab !== "overview") return;
-  
-      const ids = Array.from(new Set(extractChecklistIds(selected))); // dedupe for safety
-      if (!ids.length) {
-        setOvStats({ total: 0, mandatory: 0, critical: 0 });
-        setOvError(null);
-        setOvLoading(false);
-        return;
-      }
-  
-      let cancelled = false;
-      (async () => {
-        setOvLoading(true);
-        setOvError(null);
-        try {
-          // Fetch all checklists in parallel
-          const allLists = await Promise.all(ids.map((id) => listRefChecklistItems(id)));
-          const allItems = allLists.flat();
-  
-          // Helpers
-          const toBool = (v: unknown): boolean =>
-            v === true ||
-            (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
-  
-          const isCritical = (r: any): boolean =>
-            r?.critical === true || toBool(r?.critical);
-  
-          const isMandatory = (r: any): boolean => {
-            // Prefer the canonical label from existing helper
-            const label = requiredToLabel(
-              (r?.required ?? r?.mandatory ?? r?.requirement) as any
-            );
-            return label === "Mandatory";
-          };
-  
-          const total = allItems.length;
-          const mandatory = allItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
-          const critical = allItems.reduce((n, r) => n + (isCritical(r) ? 1 : 0), 0);
-  
-          if (!cancelled) setOvStats({ total, mandatory, critical });
-        } catch (e: any) {
-          if (!cancelled) {
-            setOvStats(null);
-            setOvError(e?.message || "Failed to load checklist overview stats");
-          }
-        } finally {
-          if (!cancelled) setOvLoading(false);
+    if (!selected || !roViewOpen || roTab !== "document" || docTab !== "overview") return;
+
+    const ids = Array.from(new Set(extractChecklistIds(selected))); // dedupe for safety
+    if (!ids.length) {
+      setOvStats({ total: 0, mandatory: 0, critical: 0 });
+      setOvError(null);
+      setOvLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setOvLoading(true);
+      setOvError(null);
+      try {
+        // Fetch all checklists in parallel
+        const allLists = await Promise.all(ids.map((id) => listRefChecklistItems(id)));
+        const allItems = allLists.flat();
+
+        // Helpers
+        const toBool = (v: unknown): boolean =>
+          v === true ||
+          (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
+
+        const isCritical = (r: any): boolean =>
+          r?.critical === true || toBool(r?.critical);
+
+        const isMandatory = (r: any): boolean => {
+          // Prefer the canonical label from existing helper
+          const label = requiredToLabel(
+            (r?.required ?? r?.mandatory ?? r?.requirement) as any
+          );
+          return label === "Mandatory";
+        };
+
+        const total = allItems.length;
+        const mandatory = allItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
+        const critical = allItems.reduce((n, r) => n + (isCritical(r) ? 1 : 0), 0);
+
+        if (!cancelled) setOvStats({ total, mandatory, critical });
+      } catch (e: any) {
+        if (!cancelled) {
+          setOvStats(null);
+          setOvError(e?.message || "Failed to load checklist overview stats");
         }
-      })();
-  
-      return () => {
-        cancelled = true;
-      };
-    }, [selected?.wirId, roViewOpen, roTab, docTab]);
-  
+      } finally {
+        if (!cancelled) setOvLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.wirId, roViewOpen, roTab, docTab]);
+
   /* ======== Custom Time Picker UI state ======== */
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [tpHour, setTpHour] = useState(12);
@@ -2364,7 +2364,7 @@ ${styleEls}
             onClick={onBack}
             className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
           >
-            Bac!
+            Back
           </button>
         </div>
       )}
@@ -3457,6 +3457,9 @@ ${styleEls}
 
                   {docTab === 'runner' && (
                     <SectionCard title={`Runner · Checklist Items (${runnerItems.length})`}>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Complete all mandatory items, attach required evidence, and record measurements where applicable.
+                      </p>
                       {runnerLoading ? (
                         <div className="text-sm text-gray-700 dark:text-gray-300">Loading…</div>
                       ) : runnerError ? (
@@ -3509,7 +3512,7 @@ ${styleEls}
                                 {/* Pills */}
                                 <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                                   <SoftPill label={reqLabel} />
-                                                                    {it.critical ? <SoftPill label="Critical" tone="danger" /> : null}
+                                  {it.critical ? <SoftPill label="Critical" tone="danger" /> : null}
                                   <SoftPill label="Unit" value={it.unit || ""} />
                                   <SoftPill label="Tol" value={tolStr} tone="info" />
                                   {it.status ? <SoftPill label="Status" value={String(it.status)} /> : null}
