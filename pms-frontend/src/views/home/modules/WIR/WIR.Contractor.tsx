@@ -1071,6 +1071,63 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     Record<string, InspectorRunnerState>
   >({});
 
+  // HOD tile local state (per checklist item in Runner)
+  type HodRunnerState = {
+    remark: string;
+    lastSavedAt?: string;
+  };
+
+  const [hodState, setHodState] = useState<Record<string, HodRunnerState>>({});
+
+  const getHodState = (itemId: string): HodRunnerState => {
+    return (
+      hodState[itemId] || {
+        remark: "",
+        lastSavedAt: undefined,
+      }
+    );
+  };
+
+  const updateHodState = (itemId: string, patch: Partial<HodRunnerState>) => {
+    setHodState((prev) => {
+      const current: HodRunnerState =
+        prev[itemId] || {
+          remark: "",
+          lastSavedAt: undefined,
+        };
+      return {
+        ...prev,
+        [itemId]: { ...current, ...patch },
+      };
+    });
+  };
+
+  const handleHodRemarkChange =
+    (itemId: string) =>
+      (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        updateHodState(itemId, { remark: e.target.value });
+      };
+
+  const handleHodSave = (itemId: string) => () => {
+    const st = getHodState(itemId);
+    const trimmed = (st.remark || "").trim();
+    if (!trimmed) {
+      alert("Please add a HOD remark before saving.");
+      return;
+    }
+
+    const ts = new Date().toISOString();
+    updateHodState(itemId, { lastSavedAt: ts });
+
+    // 🔜 TODO: Wire this to backend when HOD API is ready
+    log("HOD remark saved (frontend-only stub)", {
+      wirId: selected?.wirId,
+      itemId,
+      remark: trimmed,
+      at: ts,
+    });
+  };
+
   type InspectorRecommendationChoice =
     | "APPROVE"
     | "APPROVE_WITH_COMMENTS"
@@ -1081,6 +1138,24 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   const [inspectorRecommendation, setInspectorRecommendation] = useState<
     Record<string, InspectorRecommendationChoice | null>
   >({});
+
+  // Label helper for inspector recommendation (overall)
+  const inspectorRecLabel = (
+    choice: InspectorRecommendationChoice | null
+  ): string => {
+    if (!choice) return "Not yet given";
+    if (choice === "APPROVE") return "Approve";
+    if (choice === "APPROVE_WITH_COMMENTS") return "Approve with Comments";
+    if (choice === "REJECT") return "Reject";
+    return "Not yet given";
+  };
+
+  // Overall HOD finalize modal state
+  type HodOutcome = "ACCEPT" | "RETURN" | "REJECT";
+
+  const [hodFinalizeOpen, setHodFinalizeOpen] = useState(false);
+  const [hodOutcome, setHodOutcome] = useState<HodOutcome | null>(null);
+  const [hodNotesText, setHodNotesText] = useState("");
 
   const getInspectorRecommendation = (
     itemId: string
@@ -2404,6 +2479,16 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   }, [clLibOpen]);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && hodFinalizeOpen) {
+        setHodFinalizeOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hodFinalizeOpen]);
+
+  useEffect(() => {
     if (clLibOpen) {
       loadChecklists();
     }
@@ -2633,7 +2718,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
 
   // Lock page scroll whenever any layered modal is open
   const anyModalOpen =
-    roViewOpen || dispatchOpen || clLibOpen || resOpen || filledOpen || histOpen;
+    roViewOpen || dispatchOpen || clLibOpen || resOpen || filledOpen || histOpen || hodFinalizeOpen;
 
   useScrollLock(anyModalOpen);
 
@@ -2721,6 +2806,55 @@ ${styleEls}
       setResSaving(false);
     }
   };
+
+  // Overall Inspector recommendation text for HOD tile
+  const overallInspectorRec = inspectorRecLabel(
+    inspectorRecommendation[OVERALL_REC_KEY] ?? null
+  );
+  // HOD finalize modal labels
+  const hodModalWirTitle = useMemo(() => {
+    if (!selected) return "";
+    const code = selected.code ? `${selected.code} — ` : "";
+    return code + (selected.title || "Inspection Request");
+  }, [selected]);
+
+  const hodModalInspectorName = selected?.inspectorName || "—";
+  const hodModalRecommendation = overallInspectorRec || "Not yet given";
+
+  const openHodFinalizeModal = () => {
+    if (!selected) return;
+    setHodOutcome(null);
+    setHodNotesText("");
+    setHodFinalizeOpen(true);
+  };
+
+  const handleHodOutcomeClick =
+    (v: HodOutcome) => () => {
+      setHodOutcome(v);
+    };
+
+  const handleHodFinalizeConfirm = () => {
+    if (!selected) return;
+    if (!hodOutcome) {
+      alert("Please select an outcome (Accept / Return / Reject).");
+      return;
+    }
+
+    // ⬇️ Keep behaviour non-breaking for now: just log + close.
+    // Wire actual API here later when backend is ready.
+    log("HOD Finalize submitted", {
+      wirId: selected.wirId,
+      wirCode: selected.code,
+      wirTitle: selected.title,
+      inspectorName: hodModalInspectorName,
+      inspectorRecommendation: inspectorRecommendation[OVERALL_REC_KEY] ?? null,
+      outcome: hodOutcome,
+      notes: hodNotesText,
+    });
+
+    setHodFinalizeOpen(false);
+  };
+
   /* ========================= Render ========================= */
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -3673,6 +3807,146 @@ ${styleEls}
         </div>
       )}
 
+      {hodFinalizeOpen && selected && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setHodFinalizeOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-2xl border dark:border-neutral-800 shadow-2xl p-4 sm:p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold dark:text-white">
+                  Finalize HOD Recommendation
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  Review Inspector recommendation and select final outcome.
+                </div>
+              </div>
+              <button
+                onClick={() => setHodFinalizeOpen(false)}
+                aria-label="Close"
+                className="rounded-full border dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 p-1.5 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Info rows */}
+            <div className="space-y-2 text-sm">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  WIR
+                </div>
+                <div className="mt-0.5 font-medium dark:text-white">
+                  {hodModalWirTitle}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Inspector
+                  </div>
+                  <div className="mt-0.5 dark:text-white">
+                    {hodModalInspectorName}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Recommendation
+                  </div>
+                  <div className="mt-0.5 dark:text-white">
+                    {hodModalRecommendation}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Select Outcome */}
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
+                Select Outcome
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleHodOutcomeClick("ACCEPT")}
+                  className={
+                    "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 " +
+                    (hodOutcome === "ACCEPT"
+                      ? "bg-emerald-600 text-white border-emerald-600"
+                      : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:text-white")
+                  }
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={handleHodOutcomeClick("RETURN")}
+                  className={
+                    "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 " +
+                    (hodOutcome === "RETURN"
+                      ? "bg-amber-600 text-white border-amber-600"
+                      : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:text-white")
+                  }
+                >
+                  Return
+                </button>
+                <button
+                  type="button"
+                  onClick={handleHodOutcomeClick("REJECT")}
+                  className={
+                    "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 " +
+                    (hodOutcome === "REJECT"
+                      ? "bg-rose-600 text-white border-rose-600"
+                      : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:text-white")
+                  }
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+
+            {/* Notes input */}
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                Notes
+              </div>
+              <input
+                type="text"
+                value={hodNotesText}
+                onChange={(e) => setHodNotesText(e.target.value)}
+                placeholder="Add notes for your final decision (optional)…"
+                className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              />
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setHodFinalizeOpen(false)}
+                className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleHodFinalizeConfirm}
+                className="text-sm px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Finalize Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== Read-only View Modal for Submitted/Locked WIR ===== */}
       {roViewOpen && selected && (
         <div
@@ -3858,6 +4132,7 @@ ${styleEls}
                               const passOn = inspector.status === "PASS";
                               const failOn = inspector.status === "FAIL";
                               const photoCount = inspector.photos.length;
+                              const hod = getHodState(it.id);
 
                               return (
                                 <div
@@ -3996,12 +4271,60 @@ ${styleEls}
                                       />
                                     </div>
                                   </div>
+                                  {/* ===== Tile - HOD (per checklist item) ===== */}
+                                  <div className="mt-3 pt-3 border-t dark:border-neutral-800">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                                        HOD
+                                      </div>
+                                      {hod.lastSavedAt && (
+                                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                          Saved at {fmtDateTime(hod.lastSavedAt)}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Inspector remark (read-only) */}
+                                    <div className="mb-2">
+                                      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                        Inspector Remark (read-only)
+                                      </div>
+                                      <div className="text-xs px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100 min-h-[2.25rem] whitespace-pre-wrap">
+                                        {(inspector.remark || "").trim() || "—"}
+                                      </div>
+                                    </div>
+
+                                    {/* HOD remark input */}
+                                    <div className="mb-2">
+                                      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                        HOD Remark
+                                      </div>
+                                      <textarea
+                                        rows={2}
+                                        className="w-full text-xs border rounded-lg px-2 py-1 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                                        placeholder="HOD comments / final decision…"
+                                        value={hod.remark}
+                                        onChange={handleHodRemarkChange(it.id)}
+                                      />
+                                    </div>
+
+                                    {/* Save button */}
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={handleHodSave(it.id)}
+                                        className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               );
                             })}
                           </div>
 
-                          {/* ===== Single Tile - Inspector Recommendation (for all items) ===== */}
+                          {/* ===== Tile - Inspector Recommendation (for all items) ===== */}
                           <div className="mt-4 pt-4 border-t dark:border-neutral-800">
                             <div className="flex items-center justify-between gap-2 mb-2">
                               <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
@@ -4097,6 +4420,32 @@ ${styleEls}
                               );
                             })()}
                           </div>
+                          {/* Tile - HOD Recommendation (overall) */}
+                          <div className="mt-4 rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 sm:p-4">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                                  HOD Recommendation
+                                </div>
+                                <div className="mt-1 text-sm text-gray-800 dark:text-gray-100">
+                                  <span className="font-medium">Inspector recommendation:&nbsp;</span>
+                                  <span className="text-gray-700 dark:text-gray-200">
+                                    {overallInspectorRec || "Not yet provided"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={openHodFinalizeModal}
+                                className="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+                              >
+                                Finalize Now
+                              </button>
+
+                            </div>
+                          </div>
+
                         </>
                       )}
                     </SectionCard>
