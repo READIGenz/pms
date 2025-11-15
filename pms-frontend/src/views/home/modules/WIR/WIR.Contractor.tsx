@@ -606,6 +606,148 @@ async function apiGetSafe<T = any>(
   }
 }
 
+async function fetchDiscussion(
+  pid: string,
+  wid: string
+): Promise<DiscussionMsg[]> {
+  const { data } = await api.get(`/projects/${pid}/wir/${wid}/discussions`);
+
+  // Support plain array or wrapped { items / rows }
+  const arr: any[] = Array.isArray(data)
+    ? data
+    : data?.items || data?.rows || [];
+
+  const msgs: DiscussionMsg[] = arr.map((r: any) => {
+    const createdAt =
+      r.createdAt || r.created_at || r.created_on || new Date().toISOString();
+
+    // Try to resolve authorName from denormalized field or related `author`
+    const authorName =
+      r.authorName ??
+      (r.author
+        ? `${r.author.firstName ?? ""} ${r.author.lastName ?? ""}`.trim() ||
+        undefined
+        : undefined);
+
+    // ---- ATTACHMENTS MAPPING (robust to different backend shapes) ----
+    let fileUrl: string | null =
+      r.fileUrl ??
+      r.fileURL ??
+      r.attachmentUrl ??
+      r.attachmentURL ??
+      null;
+
+    let fileName: string | null =
+      r.fileName ??
+      r.filename ??
+      r.attachmentName ??
+      r.attachmentFilename ??
+      null;
+
+    // If not flat fields, try array/object forms like { attachments: [...] } or { files: [...] }
+    if (!fileUrl) {
+      const filesArr: any[] = Array.isArray(r.attachments)
+        ? r.attachments
+        : Array.isArray(r.files)
+          ? r.files
+          : [];
+
+      if (filesArr.length > 0) {
+        const f = filesArr[0] || {};
+        fileUrl =
+          f.url ??
+          f.downloadUrl ??
+          f.href ??
+          f.fileUrl ??
+          null;
+        fileName =
+          fileName ??
+          f.name ??
+          f.fileName ??
+          f.filename ??
+          null;
+      }
+    }
+
+    return {
+      id: String(r.id ?? ""),
+      wirId: String(r.wirId ?? wid),
+      authorId: String(r.authorId ?? ""),
+      authorName,
+      // use `body` as the actual message text, with fallbacks
+      notes: String(
+        r.body ?? // Prisma column
+        r.notes ?? // in case controller renamed it
+        r.message ??
+        ""
+      ),
+      createdAt: String(createdAt),
+      fileUrl: fileUrl || undefined,
+      fileName: fileName || undefined,
+    };
+  });
+
+  // Oldest first (if you want latest first, reverse this sort)
+  msgs.sort(
+    (a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  return msgs;
+}
+
+/** POST comment + optional file.
+ *  NOTE: backend currently accepts JSON body only; payload.file is ignored for now.
+ */
+async function postDiscussion(
+  pid: string,
+  wid: string,
+  payload: DiscussionPayload
+): Promise<DiscussionMsg> {
+  const { data } = await api.post(`/projects/${pid}/wir/${wid}/discussions`, {
+    // send both, so whatever your DTO expects will be populated
+    body: payload.notes,   // matches Prisma column
+    notes: payload.notes,  // in case controller uses `notes`
+    authorId: payload.authorId,
+  });
+
+  const createdAt =
+    data?.createdAt || data?.created_at || data?.created_on || new Date().toISOString();
+
+  const authorName =
+    data?.authorName ??
+    (data?.author
+      ? `${data.author.firstName ?? ""} ${data.author.lastName ?? ""}`.trim() ||
+      undefined
+      : undefined);
+
+  const fileUrl =
+    data?.fileUrl ??
+    data?.attachmentUrl ??
+    null;
+
+  const fileName =
+    data?.fileName ??
+    data?.attachmentName ??
+    null;
+
+  return {
+    id: String(data?.id ?? data?.commentId ?? crypto.randomUUID()),
+    wirId: String(wid),
+    authorId: String(data?.authorId ?? payload.authorId),
+    authorName,
+    notes: String(
+      data?.body ??       // Prisma column
+      data?.notes ??    // if controller remaps to notes
+      data?.message ??  // older shapes
+      payload.notes
+    ),
+    createdAt: String(createdAt),
+    fileUrl,
+    fileName,
+  };
+}
+
 // --- Checklist items-count cache ---
 type ChecklistCountMap = Record<string, number>;
 
@@ -813,6 +955,24 @@ export type WirHistoryRow = {
   notes?: string | null;
 };
 
+// --- Discussion types (aligned with Prisma WirDiscussion) ---
+type DiscussionMsg = {
+  id: string;
+  wirId: string;
+  authorId: string;
+  authorName?: string | null;
+  notes: string;         // UI-friendly name, maps from backend `body`
+  createdAt: string;
+  fileUrl?: string | null;   // optional attachment URL
+  fileName?: string | null;  // optional attachment display name
+};
+
+type DiscussionPayload = {
+  authorId: string;
+  notes: string;
+  file?: File | null;        // optional file; currently ignored by backend
+};
+
 async function fetchWirHistory(pid: string, wid: string): Promise<WirHistoryRow[]> {
   const { data } = await api.get(`/projects/${pid}/wir/${wid}/history`);
   const rows: WirHistoryRow[] = (Array.isArray(data) ? data : []).map((r: any) => ({
@@ -898,6 +1058,105 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   const [runnerItems, setRunnerItems] = useState<RunnerCardItem[]>([]);
   const [runnerLoading, setRunnerLoading] = useState(false);
   const [runnerError, setRunnerError] = useState<string | null>(null);
+
+  // Inspector tile local state (per checklist item in Runner)
+  type InspectorRunnerState = {
+    status: "PASS" | "FAIL" | null;
+    measurement: string;
+    remark: string;
+    photos: File[];
+  };
+
+  const [inspectorState, setInspectorState] = useState<
+    Record<string, InspectorRunnerState>
+  >({});
+
+  type InspectorRecommendationChoice =
+    | "APPROVE"
+    | "APPROVE_WITH_COMMENTS"
+    | "REJECT";
+
+  const OVERALL_REC_KEY = "__overall__"; // Overall Inspector recommendation
+
+  const [inspectorRecommendation, setInspectorRecommendation] = useState<
+    Record<string, InspectorRecommendationChoice | null>
+  >({});
+
+  const getInspectorRecommendation = (
+    itemId: string
+  ): InspectorRecommendationChoice | null => {
+    return inspectorRecommendation[itemId] ?? null;
+  };
+
+  const updateInspectorRecommendation = (
+    itemId: string,
+    value: InspectorRecommendationChoice | null
+  ) => {
+    setInspectorRecommendation((prev) => ({
+      ...prev,
+      [itemId]: value,
+    }));
+  };
+
+  const getInspectorState = (itemId: string): InspectorRunnerState => {
+    return (
+      inspectorState[itemId] || {
+        status: null,
+        measurement: "",
+        remark: "",
+        photos: [],
+      }
+    );
+  };
+
+  const updateInspectorState = (
+    itemId: string,
+    patch: Partial<InspectorRunnerState>
+  ) => {
+    setInspectorState((prev) => {
+      const current = prev[itemId] || {
+        status: null as "PASS" | "FAIL" | null,
+        measurement: "",
+        remark: "",
+        photos: [] as File[],
+      };
+      return {
+        ...prev,
+        [itemId]: { ...current, ...patch },
+      };
+    });
+  };
+
+  const handleInspectorPhotoChange =
+    (itemId: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const current = getInspectorState(itemId);
+      updateInspectorState(itemId, {
+        photos: [...current.photos, ...files],
+      });
+    };
+
+  const handleInspectorMark =
+    (itemId: string, status: "PASS" | "FAIL") =>
+      () => {
+        const current = getInspectorState(itemId);
+        // Clicking again will toggle off
+        const nextStatus = current.status === status ? null : status;
+        updateInspectorState(itemId, { status: nextStatus });
+      };
+
+  const handleInspectorRemarkChange =
+    (itemId: string) =>
+      (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        updateInspectorState(itemId, { remark: e.target.value });
+      };
+
+  const handleInspectorMeasurementChange =
+    (itemId: string) =>
+      (e: React.ChangeEvent<HTMLInputElement>) => {
+        updateInspectorState(itemId, { measurement: e.target.value });
+      };
 
   // fetch "transmission type" from Module Settings (project row or module default)
   async function fetchTransmissionType(pid: string): Promise<string | null> {
@@ -1060,6 +1319,15 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   const [roTab, setRoTab] = useState<'document' | 'discussion'>('document');
   const [docTab, setDocTab] = useState<'overview' | 'runner'>('overview');
 
+  const [discMsgs, setDiscMsgs] = useState<DiscussionMsg[]>([]);
+  const [discLoading, setDiscLoading] = useState(false);
+  const [discError, setDiscError] = useState<string | null>(null);
+  const [userNameById, setUserNameById] = useState<Record<string, string>>({});
+
+  // composer
+  const [discText, setDiscText] = useState("");
+  const [discFile, setDiscFile] = useState<File | null>(null); // either file OR camera photo
+
   type ViewMode = "create" | "edit" | "readonly";
   const [mode, setMode] = useState<ViewMode>("create");
   const isRO = mode === "readonly";
@@ -1184,6 +1452,55 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       } else {
         alert(`Error ${s ?? ""} ${msg}`);
       }
+    }
+  }
+
+  async function onDiscussionSend() {
+    if (!selected) return;
+    const authorId = currentUserId || getUserIdFromToken();
+    const notes = (discText || "").trim();
+
+    if (!authorId) {
+      alert("No userId found in token. Please re-login.");
+      return;
+    }
+    if (!notes && !discFile) {
+      alert("Write a note or attach a file.");
+      return;
+    }
+
+    // optimistic placeholder
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: DiscussionMsg = {
+      id: tempId,
+      wirId: selected.wirId,
+      authorId: String(authorId),
+      authorName: null,
+      notes,
+      fileUrl: null,
+      createdAt: new Date().toISOString(),
+    };
+    setDiscMsgs((prev) => [optimistic, ...prev]);
+
+    try {
+      const saved = await postDiscussion(projectId, selected.wirId, {
+        notes,
+        authorId: String(authorId),
+        file: discFile,
+      });
+
+      // swap optimistic with saved
+      setDiscMsgs((prev) =>
+        prev.map((m) => (m.id === tempId ? saved : m))
+      );
+      setDiscText("");
+      setDiscFile(null);
+    } catch (e: any) {
+      // rollback optimistic
+      setDiscMsgs((prev) => prev.filter((m) => m.id !== tempId));
+      const s = e?.response?.status;
+      const msg = e?.response?.data?.error || e?.message || "Failed to send comment";
+      alert(`Error ${s ?? ""} ${msg}`);
     }
   }
 
@@ -2169,61 +2486,114 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   }, [selected?.wirId, roViewOpen, roTab, docTab]);
 
   useEffect(() => {
-      if (!selected || !roViewOpen || roTab !== "document" || docTab !== "overview") return;
-  
-      const ids = Array.from(new Set(extractChecklistIds(selected))); // dedupe for safety
-      if (!ids.length) {
-        setOvStats({ total: 0, mandatory: 0, critical: 0 });
-        setOvError(null);
-        setOvLoading(false);
-        return;
-      }
-  
-      let cancelled = false;
-      (async () => {
-        setOvLoading(true);
-        setOvError(null);
-        try {
-          // Fetch all checklists in parallel
-          const allLists = await Promise.all(ids.map((id) => listRefChecklistItems(id)));
-          const allItems = allLists.flat();
-  
-          // Helpers
-          const toBool = (v: unknown): boolean =>
-            v === true ||
-            (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
-  
-          const isCritical = (r: any): boolean =>
-            r?.critical === true || toBool(r?.critical);
-  
-          const isMandatory = (r: any): boolean => {
-            // Prefer the canonical label from existing helper
-            const label = requiredToLabel(
-              (r?.required ?? r?.mandatory ?? r?.requirement) as any
-            );
-            return label === "Mandatory";
-          };
-  
-          const total = allItems.length;
-          const mandatory = allItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
-          const critical = allItems.reduce((n, r) => n + (isCritical(r) ? 1 : 0), 0);
-  
-          if (!cancelled) setOvStats({ total, mandatory, critical });
-        } catch (e: any) {
-          if (!cancelled) {
-            setOvStats(null);
-            setOvError(e?.message || "Failed to load checklist overview stats");
-          }
-        } finally {
-          if (!cancelled) setOvLoading(false);
+    if (!selected || !roViewOpen || roTab !== "document" || docTab !== "overview") return;
+
+    const ids = Array.from(new Set(extractChecklistIds(selected))); // dedupe for safety
+    if (!ids.length) {
+      setOvStats({ total: 0, mandatory: 0, critical: 0 });
+      setOvError(null);
+      setOvLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setOvLoading(true);
+      setOvError(null);
+      try {
+        // Fetch all checklists in parallel
+        const allLists = await Promise.all(ids.map((id) => listRefChecklistItems(id)));
+        const allItems = allLists.flat();
+
+        // Helpers
+        const toBool = (v: unknown): boolean =>
+          v === true ||
+          (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
+
+        const isCritical = (r: any): boolean =>
+          r?.critical === true || toBool(r?.critical);
+
+        const isMandatory = (r: any): boolean => {
+          // Prefer the canonical label from existing helper
+          const label = requiredToLabel(
+            (r?.required ?? r?.mandatory ?? r?.requirement) as any
+          );
+          return label === "Mandatory";
+        };
+
+        const total = allItems.length;
+        const mandatory = allItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
+        const critical = allItems.reduce((n, r) => n + (isCritical(r) ? 1 : 0), 0);
+
+        if (!cancelled) setOvStats({ total, mandatory, critical });
+      } catch (e: any) {
+        if (!cancelled) {
+          setOvStats(null);
+          setOvError(e?.message || "Failed to load checklist overview stats");
         }
-      })();
-  
-      return () => {
-        cancelled = true;
-      };
-    }, [selected?.wirId, roViewOpen, roTab, docTab]);
-  
+      } finally {
+        if (!cancelled) setOvLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.wirId, roViewOpen, roTab, docTab]);
+
+  useEffect(() => {
+    if (!selected || !roViewOpen || roTab !== "discussion") return;
+
+    let cancelled = false;
+    (async () => {
+      setDiscLoading(true);
+      setDiscError(null);
+      try {
+        const rows = await fetchDiscussion(projectId, selected.wirId);
+        if (!cancelled) setDiscMsgs(rows);
+      } catch (e: any) {
+        if (!cancelled) {
+          setDiscMsgs([]);
+          setDiscError(e?.response?.data?.error || e?.message || "Failed to load discussion");
+        }
+      } finally {
+        if (!cancelled) setDiscLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selected?.wirId, roViewOpen, roTab]);
+
+  // Load all users once when Discussion tab is opened, so we can show full names for old messages
+  useEffect(() => {
+    if (!roViewOpen || roTab !== "discussion") return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/admin/users");
+        const users: UserLite[] = Array.isArray(data) ? data : (data?.users ?? []);
+        if (cancelled) return;
+
+        const map: Record<string, string> = {};
+        for (const u of users) {
+          map[String(u.userId)] = displayNameLite(u);
+        }
+        setUserNameById(map);
+      } catch {
+        if (!cancelled) {
+          setUserNameById({});
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [roViewOpen, roTab]);
+
   /* ======== Custom Time Picker UI state ======== */
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [tpHour, setTpHour] = useState(12);
@@ -3462,81 +3832,272 @@ ${styleEls}
                       ) : runnerError ? (
                         <div className="text-sm text-rose-700 dark:text-rose-400">{runnerError}</div>
                       ) : runnerItems.length === 0 ? (
-                        <div className="text-sm text-gray-700 dark:text-gray-300">No checklist items found for this WIR.</div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {runnerItems.map((it, i) => {
-                            const tolStr =
-                              formatTolerance(
-                                (it.tolerance as any) ?? null,
-                                it.base ?? null,
-                                it.plus ?? null,
-                                it.minus ?? null,
-                                it.unit || null
-                              ) || (it.tolerance ? String(it.tolerance) : "");
-
-                            log("Runner render: tol computation", {
-                              id: it.id,
-                              title: it.title,
-                              rawTolerance: it.tolerance,
-                              base: it.base,
-                              plus: it.plus,
-                              minus: it.minus,
-                              unit: it.unit,
-                              tolStr,
-                            });
-
-                            const activityTitle = (newForm.activityLabel || selected?.title || "Activity").toString();
-                            const activityCode = (selected?.code || "").toString();
-                            const reqLabel = requiredToLabel(it.required);
-
-                            return (
-                              <div
-                                key={it.id || `runner-${i}`}
-                                className="rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm"
-                              >
-                                {/* Heading: Title — Tol */}
-                                <div className="text-sm font-semibold dark:text-white break-words">
-                                  {it.title}
-                                  {tolStr ? <span className="opacity-70"> — {tolStr}</span> : null}
-                                </div>
-
-                                {/* Meta: Activity Title • Activity Code */}
-                                <div className="mt-0.5">
-                                  <DotSep left={activityTitle} right={activityCode || "—"} />
-                                </div>
-
-                                {/* Pills */}
-                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                                  <SoftPill label={reqLabel} />
-                                                                    {it.critical ? <SoftPill label="Critical" tone="danger" /> : null}
-                                  <SoftPill label="Unit" value={it.unit || ""} />
-                                  <SoftPill label="Tol" value={tolStr} tone="info" />
-                                  {it.status ? <SoftPill label="Status" value={String(it.status)} /> : null}
-                                </div>
-
-                                {/* Tags */}
-                                <div className="mt-2">
-                                  {it.tags && it.tags.length ? (
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      {it.tags.map((t, k) => (
-                                        <span
-                                          key={`${it.id}-tag-${k}`}
-                                          className="text-[11px] px-2 py-0.5 rounded-md border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200"
-                                        >
-                                          #{t}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-[11px] text-gray-500 dark:text-gray-400">No tags</div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-
+                        <div className="text-sm text-gray-700 dark:text-gray-300">
+                          No checklist items found for this WIR.
                         </div>
+                      ) : (
+                        <>
+                          {/* All checklist items + Inspector tiles */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {runnerItems.map((it, i) => {
+                              const tolStr =
+                                formatTolerance(
+                                  (it.tolerance as any) ?? null,
+                                  it.base ?? null,
+                                  it.plus ?? null,
+                                  it.minus ?? null,
+                                  it.unit || null
+                                ) || (it.tolerance ? String(it.tolerance) : "");
+
+                              const activityTitle =
+                                (newForm.activityLabel || selected?.title || "Activity").toString();
+                              const activityCode = (selected?.code || "").toString();
+                              const reqLabel = requiredToLabel(it.required);
+
+                              const inspector = getInspectorState(it.id);
+                              const passOn = inspector.status === "PASS";
+                              const failOn = inspector.status === "FAIL";
+                              const photoCount = inspector.photos.length;
+
+                              return (
+                                <div
+                                  key={it.id || `runner-${i}`}
+                                  className="rounded-xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm"
+                                >
+                                  {/* Heading: Title — Tol */}
+                                  <div className="text-sm font-semibold dark:text-white break-words">
+                                    {it.title}
+                                    {tolStr ? <span className="opacity-70"> — {tolStr}</span> : null}
+                                  </div>
+
+                                  {/* Meta: Activity Title • Activity Code */}
+                                  <div className="mt-0.5">
+                                    <DotSep left={activityTitle} right={activityCode || "—"} />
+                                  </div>
+
+                                  {/* Pills */}
+                                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                    <SoftPill label={reqLabel} />
+                                    {it.critical ? <SoftPill label="Critical" tone="danger" /> : null}
+                                    <SoftPill label="Unit" value={it.unit || ""} />
+                                    <SoftPill label="Tol" value={tolStr} tone="info" />
+                                    {it.status ? (
+                                      <SoftPill label="Status" value={String(it.status)} />
+                                    ) : null}
+                                  </div>
+
+                                  {/* Tags */}
+                                  <div className="mt-2">
+                                    {it.tags && it.tags.length ? (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {it.tags.map((t, k) => (
+                                          <span
+                                            key={`${it.id}-tag-${k}`}
+                                            className="text-[11px] px-2 py-0.5 rounded-md border dark:border-neutral-800 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200"
+                                          >
+                                            #{t}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                        No tags
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* ===== Tile - Inspector (per checklist item) ===== */}
+                                  <div className="mt-3 pt-3 border-t dark:border-neutral-800">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                                        Inspector
+                                      </div>
+                                      {inspector.status && (
+                                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300">
+                                          Marked: {inspector.status}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Row: Add Photo + PASS / FAIL buttons */}
+                                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                                      {/* Add Photo */}
+                                      <label className="inline-flex items-center text-xs px-2 py-1 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          capture="environment"      // 👈 ask mobile to open back camera
+                                          // capture="user"          // (optional) front camera instead
+                                          className="hidden"
+                                          multiple={false}           // camera + multiple often not supported together
+                                          onChange={handleInspectorPhotoChange(it.id)}
+                                        />
+                                        <span className="mr-1">📷</span>
+                                        <span>Take Photo</span>
+                                      </label>
+
+                                      {photoCount > 0 && (
+                                        <span className="text-[11px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                                          {photoCount} photo{photoCount === 1 ? "" : "s"} attached
+                                        </span>
+                                      )}
+
+                                      <div className="flex items-center gap-1 ml-auto">
+                                        <button
+                                          type="button"
+                                          onClick={handleInspectorMark(it.id, "PASS")}
+                                          className={
+                                            "text-xs px-2 py-1 rounded border dark:border-neutral-800 transition " +
+                                            (passOn
+                                              ? "bg-emerald-600 text-white border-emerald-600"
+                                              : "hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                          }
+                                        >
+                                          Mark PASS
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={handleInspectorMark(it.id, "FAIL")}
+                                          className={
+                                            "text-xs px-2 py-1 rounded border dark:border-neutral-800 transition " +
+                                            (failOn
+                                              ? "bg-rose-600 text-white border-rose-600"
+                                              : "hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                          }
+                                        >
+                                          Mark FAIL
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {/* Measurement input */}
+                                    <div className="mb-2">
+                                      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                        Measurement
+                                      </div>
+                                      <input
+                                        type="text"
+                                        className="w-full text-xs border rounded-lg px-2 py-1 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                                        placeholder="Enter measurement (e.g., 19.8 mm/m)…"
+                                        value={inspector.measurement}
+                                        onChange={handleInspectorMeasurementChange(it.id)}
+                                      />
+                                    </div>
+                                    {/* Remark input */}
+                                    <div>
+                                      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                        Inspector Remark
+                                      </div>
+                                      <textarea
+                                        rows={2}
+                                        className="w-full text-xs border rounded-lg px-2 py-1 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                                        placeholder="Write brief observation / measurement notes…"
+                                        value={inspector.remark}
+                                        onChange={handleInspectorRemarkChange(it.id)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* ===== Single Tile - Inspector Recommendation (for all items) ===== */}
+                          <div className="mt-4 pt-4 border-t dark:border-neutral-800">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                                Inspector Recommendation
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const rec = getInspectorRecommendation(OVERALL_REC_KEY);
+
+                              const onClickChoice = (choice: InspectorRecommendationChoice) => () => {
+                                const current = getInspectorRecommendation(OVERALL_REC_KEY);
+                                updateInspectorRecommendation(
+                                  OVERALL_REC_KEY,
+                                  current === choice ? null : choice
+                                );
+                              };
+
+                              const approveOn = rec === "APPROVE";
+                              const approveWithCommentsOn = rec === "APPROVE_WITH_COMMENTS";
+                              const rejectOn = rec === "REJECT";
+
+                              return (
+                                <>
+                                  {/* Pills row */}
+                                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                                    <button
+                                      type="button"
+                                      onClick={onClickChoice("APPROVE")}
+                                      className={
+                                        "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 transition " +
+                                        (approveOn
+                                          ? "bg-emerald-600 text-white border-emerald-600"
+                                          : "bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                      }
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={onClickChoice("APPROVE_WITH_COMMENTS")}
+                                      className={
+                                        "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 transition " +
+                                        (approveWithCommentsOn
+                                          ? "bg-indigo-600 text-white border-indigo-600"
+                                          : "bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                      }
+                                    >
+                                      Approve with Comments
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={onClickChoice("REJECT")}
+                                      className={
+                                        "text-xs px-3 py-1.5 rounded-full border dark:border-neutral-800 transition " +
+                                        (rejectOn
+                                          ? "bg-rose-600 text-white border-rose-600"
+                                          : "bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800")
+                                      }
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+
+                                  <div className="text-[11px] text-gray-600 dark:text-gray-400">
+                                    We will add relevant comment according to the approval status.
+                                  </div>
+                                  {/* Action buttons: Save Progress / Preview / Send to HOD */}
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => alert("Save Progress clicked (stub).")}
+                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    >
+                                      Save Progress
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => alert("Preview clicked (stub).")}
+                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    >
+                                      Preview
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => alert("Send to HOD clicked (stub).")}
+                                      className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    >
+                                      Send to HOD
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </>
                       )}
                     </SectionCard>
                   )}
@@ -3544,41 +4105,120 @@ ${styleEls}
               )}
 
               {/* DISCUSSION TAB */}
-              {roTab === 'discussion' && (
+              {roTab === 'discussion' && selected && (
                 <>
-                  <SectionCard title="Thread">
-                    <div className="space-y-3">
-                      {/* Placeholder messages */}
-                      <div className="text-sm">
-                        <div className="font-medium dark:text-white">Inspector</div>
-                        <div className="text-gray-700 dark:text-gray-300">Please upload ITP for footing F2.</div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Today 10:32 AM</div>
-                      </div>
-                      <div className="text-sm">
-                        <div className="font-medium dark:text-white">Contractor</div>
-                        <div className="text-gray-700 dark:text-gray-300">Shared in Documents & Evidence.</div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Today 11:05 AM</div>
-                      </div>
-                    </div>
-                  </SectionCard>
-
+                  {/* COMMENT SECTION FIRST */}
                   <SectionCard title="Add a comment">
-                    <div className="flex items-start gap-2">
+                    <div className="flex flex-col gap-2">
                       <textarea
                         rows={3}
                         placeholder="Write a message to the project team…"
                         className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                        value={discText}
+                        onChange={(e) => setDiscText(e.target.value)}
                       />
-                      <button
-                        className="shrink-0 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
-                      // onClick={postComment} // wire later
-                      >
-                        Send
-                      </button>
+
+                      {/* Attach: file OR camera photo */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* File picker */}
+                        <label className="text-xs px-2 py-1 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => setDiscFile(e.target.files?.[0] ?? null)}
+                          />
+                          📎 Attach file
+                        </label>
+
+                        {/* Camera capture (mobile-friendly) */}
+                        <label className="text-xs px-2 py-1 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) => setDiscFile(e.target.files?.[0] ?? null)}
+                          />
+                          📷 Take photo
+                        </label>
+
+                        {/* Show picked file name */}
+                        {discFile && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                            {discFile.name}
+                          </span>
+                        )}
+
+                        <div className="grow" />
+
+                        <button
+                          onClick={onDiscussionSend}
+                          className="shrink-0 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  </SectionCard>
+
+                  {/* THREAD BELOW COMMENT BOX */}
+                  <SectionCard title="Thread">
+                    {discLoading && (
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Loading…</div>
+                    )}
+                    {discError && !discLoading && (
+                      <div className="text-sm text-rose-700 dark:text-rose-400">
+                        {discError}
+                      </div>
+                    )}
+                    {!discLoading && !discError && discMsgs.length === 0 && (
+                      <div className="text-sm text-gray-700 dark:text-gray-300">
+                        No messages yet.
+                      </div>
+                    )}
+
+                    <div className="mt-2 space-y-3">
+                      {discMsgs.map((m) => {
+                        const who =
+                          (m.authorName && m.authorName.trim()) ||
+                          userNameById[m.authorId] ||
+                          `User #${m.authorId}`;
+                        return (
+                          <div
+                            key={m.id}
+                            className="text-sm rounded-lg border dark:border-neutral-800 p-3 bg-white dark:bg-neutral-900"
+                          >
+                            <div className="font-medium dark:text-white break-words">
+                              {who}
+                            </div>
+                            {m.notes && (
+                              <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words mt-0.5">
+                                {m.notes}
+                              </div>
+                            )}
+                            {m.fileUrl && (
+                              <div className="mt-2">
+                                <a
+                                  href={m.fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs underline text-emerald-700 dark:text-emerald-300"
+                                >
+                                  {m.fileName || "View attachment"}
+                                </a>
+                              </div>
+                            )}
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                              {fmtDateTime(m.createdAt)}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </SectionCard>
                 </>
               )}
+
             </div>
 
             {/* Footer (sticky) */}

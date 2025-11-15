@@ -1,13 +1,13 @@
 // pms-backend/src/modules/project-modules/wir/wir.controller.ts
 import { Body, Controller, Get, Param, Patch, Post, UseGuards, Req, Delete, ForbiddenException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../common/guards/jwt.guard';
-import { WirService } from './wir.service';
+import { CreateDiscussionDto, UpdateDiscussionDto, WirService } from './wir.service';
 import { Request as ExpressRequest } from 'express';
 
 @UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/wir')
 export class WirController {
-  constructor(private svc: WirService) {}
+  constructor(private svc: WirService) { }
 
   private getUserId(req: ExpressRequest): string {
     // supports { sub } or { userId } in JWT payload
@@ -114,23 +114,70 @@ export class WirController {
     return this.svc.deleteDraft(projectId, wirId);
   }
 
-  // pms-backend/src/modules/project-modules/wir/wir.controller.ts
-@Get(':wirId/history')
-async history(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-) {
-  return this.svc.history(projectId, wirId);
-}
+  // ----------------- History and Reschedule --------------
+  @Get(':wirId/history')
+  async history(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+  ) {
+    return this.svc.history(projectId, wirId);
+  }
 
-@Post(':wirId/reschedule')
-async reschedule(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Body() body: any,
-  @Req() req: ExpressRequest,
-) {
-  const userId = this.getUserId(req);
-  return this.svc.reschedule(projectId, wirId, userId, body || {});
-}
+  @Post(':wirId/reschedule')
+  async reschedule(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() body: any,
+    @Req() req: ExpressRequest,
+  ) {
+    const userId = this.getUserId(req);
+    return this.svc.reschedule(projectId, wirId, userId, body || {});
+  }
+  /* ---- Discussion ---- */
+
+  // List all comments (flat; FE can thread using parentId)
+  @Get(':wirId/discussions')
+  async listDiscussions(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+  ) {
+    return this.svc.listDiscussions(projectId, wirId);
+  }
+
+  // Add a new comment (top-level or reply with parentId)
+  @Post(':wirId/discussions')
+  async addDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() body: CreateDiscussionDto,
+    @Req() req: ExpressRequest,
+  ) {
+    const userId = this.getUserId(req);
+    return this.svc.addDiscussion(projectId, wirId, userId, body);
+  }
+
+  // Update your own comment
+  @Patch(':wirId/discussions/:commentId')
+  async updateDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Param('commentId') commentId: string,
+    @Body() body: UpdateDiscussionDto,
+    @Req() req: ExpressRequest,
+  ) {
+    const userId = this.getUserId(req);
+    return this.svc.updateDiscussion(projectId, wirId, commentId, userId, body);
+  }
+
+  // Soft-delete your own comment
+  @Delete(':wirId/discussions/:commentId')
+  async deleteDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Param('commentId') commentId: string,
+    @Req() req: ExpressRequest,
+  ) {
+    const userId = this.getUserId(req);
+    return this.svc.deleteDiscussion(projectId, wirId, commentId, userId);
+  }
 }

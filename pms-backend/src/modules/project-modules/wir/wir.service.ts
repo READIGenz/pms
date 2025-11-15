@@ -54,6 +54,15 @@ type CreateWirInput = {
 
 type UpdateWirInput = Partial<CreateWirInput> & { status?: WirStatus | null; health?: ProjectHealth | null; };
 
+// ---- Discussion DTOs (module-scope) ----
+export type CreateDiscussionDto = {
+  body: string;
+  parentId?: string | null;
+};
+export type UpdateDiscussionDto = {
+  body: string;
+};
+
 @Injectable()
 export class WirService {
   constructor(private prisma: PrismaService) { }
@@ -909,6 +918,88 @@ export class WirService {
 
       return this.toFE(updated);
     });
+    
+}
+// Minimal guard to ensure the WIR exists in the given project
+private async ensureWirInProject(projectId: string, wirId: string) {
+  const w = await this.prisma.wir.findFirst({ where: { wirId, projectId }, select: { wirId: true } });
+  if (!w) throw new NotFoundException('WIR not found for this project');
+}
+
+// Create a new discussion comment (top-level or reply)
+async addDiscussion(projectId: string, wirId: string, authorId: string, dto: CreateDiscussionDto) {
+  await this.ensureWirInProject(projectId, wirId);
+
+  if (dto.parentId) {
+    const p = await this.prisma.wirDiscussion.findFirst({
+      where: { id: dto.parentId, wirId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!p) throw new BadRequestException('Invalid parentId for this WIR');
   }
+
+  return this.prisma.wirDiscussion.create({
+    data: {
+      wirId,
+      authorId,
+      body: (dto.body || '').trim(),
+      parentId: dto.parentId || null,
+    },
+    include: {
+      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+    },
+  });
+}
+
+// List flat discussion for a WIR (client can thread by parentId)
+async listDiscussions(projectId: string, wirId: string) {
+  await this.ensureWirInProject(projectId, wirId);
+
+  return this.prisma.wirDiscussion.findMany({
+    where: { wirId, deletedAt: null },
+    orderBy: [{ createdAt: 'asc' }],
+    include: {
+      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+    },
+  });
+}
+
+// Update a comment (author-only)
+async updateDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string, dto: UpdateDiscussionDto) {
+  await this.ensureWirInProject(projectId, wirId);
+
+  const row = await this.prisma.wirDiscussion.findFirst({
+    where: { id: commentId, wirId, deletedAt: null },
+    select: { id: true, authorId: true },
+  });
+  if (!row) throw new NotFoundException('Comment not found');
+  if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can edit');
+
+  return this.prisma.wirDiscussion.update({
+    where: { id: commentId },
+    data: { body: (dto.body || '').trim() },
+    include: {
+      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+    },
+  });
+}
+
+// Soft-delete a comment (author-only)
+async deleteDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string) {
+  await this.ensureWirInProject(projectId, wirId);
+
+  const row = await this.prisma.wirDiscussion.findFirst({
+    where: { id: commentId, wirId, deletedAt: null },
+    select: { id: true, authorId: true },
+  });
+  if (!row) throw new NotFoundException('Comment not found');
+  if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can delete');
+
+  await this.prisma.wirDiscussion.update({
+    where: { id: commentId },
+    data: { deletedAt: new Date() },
+  });
+  return { ok: true };
+}
 
 }
