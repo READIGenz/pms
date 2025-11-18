@@ -213,6 +213,7 @@ enum WirStatus {
   Recommended
   Approved
   Rejected
+  Returned
 
   @@map("WirStatus")
 }
@@ -224,6 +225,24 @@ enum WirItemStatus {
   Unknown
 
   @@map("WirItemStatus")
+}
+
+enum InspectorRecommendation {
+  APPROVE
+  APPROVE_WITH_COMMENTS
+  REJECT
+}
+
+enum HodOutcome {
+  ACCEPT
+  RETURN
+  REJECT
+}
+
+enum InspectorItemStatus {
+  PASS
+  FAIL
+  NA
 }
 
 // ============================ Models ============================ */
@@ -835,6 +854,15 @@ model Wir {
 
   description String?
 
+  // ================= NEW: header-level review / decision ================
+  inspectorRecommendation InspectorRecommendation? // APPROVE / APPROVE_WITH_COMMENTS / REJECT
+  inspectorRemarks        String?
+  inspectorReviewedAt     DateTime?                @db.Timestamptz(6)
+
+  hodOutcome   HodOutcome? // ACCEPT / RETURN / REJECT
+  hodRemarks   String?
+  hodDecidedAt DateTime?   @db.Timestamptz(6)
+
   checklists WirChecklist[]
 
   items WirItem[]
@@ -847,6 +875,9 @@ model Wir {
 
   histories     WirHistory[]    @relation("WirToHistory")
   WirDiscussion WirDiscussion[]
+
+  itemRuns  WirItemRun[]      @relation("WirToItemRuns")
+  evidences WirItemEvidence[] @relation("WirToEvidence")
 
   @@index([projectId])
   @@index([status])
@@ -910,6 +941,13 @@ model WirItem {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
+  // ================= NEW: per-role item status ==========================
+  inspectorStatus InspectorItemStatus?
+  inspectorNote   String?
+
+  hodStatus InspectorItemStatus?
+  hodNote   String?
+
   // PROVENANCE (source snapshot at time of creation)
   sourceChecklistId String?       @db.Uuid
   sourceChecklist   RefChecklist? @relation("WirItem_sourceChecklist", fields: [sourceChecklistId], references: [id], onDelete: SetNull, onUpdate: Cascade)
@@ -921,6 +959,17 @@ model WirItem {
   code String?
   unit String?
   tags String[] @default([])
+  critical     Boolean?
+  aiEnabled    Boolean?
+  aiConfidence Decimal? @db.Decimal(8, 3)
+
+  base         Decimal? @db.Decimal(18, 3)
+  plus         Decimal? @db.Decimal(18, 3)
+  minus        Decimal? @db.Decimal(18, 3)
+
+  // NEW: runner entries & evidences for this item
+  runs      WirItemRun[]      @relation("WirItemToRuns")
+  evidences WirItemEvidence[] @relation("WirItemToEvidence")
 
   @@index([wirId])
   @@index([checklistId])
@@ -939,6 +988,7 @@ enum WirAction {
   Recommended
   Approved
   Rejected
+  Returned
   Deleted
   BicChanged
   ItemsChanged
@@ -985,9 +1035,9 @@ model WirDiscussion {
   authorId String  @db.Uuid
   parentId String? @db.Uuid
 
-  body      String
-  fileUrl   String?   // NEW
-  fileName  String?   // NEW
+  body     String
+  fileUrl  String? // NEW
+  fileName String? // NEW
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
@@ -998,4 +1048,105 @@ model WirDiscussion {
 
   parent  WirDiscussion?  @relation("WirDiscussionToParent", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   replies WirDiscussion[] @relation("WirDiscussionToParent")
+}
+
+//------------- Runner Items Enums ----------------
+enum WirRunnerActorRole {
+  Contractor
+  Inspector
+  HOD
+  Other
+
+  @@map("WirRunnerActorRole")
+}
+
+enum WirItemEvidenceKind {
+  Photo
+  Video
+  File
+  Other
+
+  @@map("WirItemEvidenceKind")
+}
+
+//------------ models for Runner items & evidence --------------
+model WirItemRun {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  // Header + item
+  wirId  String @db.Uuid
+  itemId String @db.Uuid
+
+  wir  Wir     @relation("WirToItemRuns", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
+  item WirItem @relation("WirItemToRuns", fields: [itemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Who filled this entry in Runner
+  actorUserId String?             @db.Uuid
+  actorRole   WirRunnerActorRole?
+  actorName   String? // denorm full name at time of entry
+
+  // Measured / observed values
+  valueText   String? // free text like "Level OK", "Hairline cracks"
+  valueNumber Decimal?       @db.Decimal(18, 3) // numeric reading if any
+  unit        String? // can override default unit
+  status      WirItemStatus? // OK / NCR / Pending / Unknown at time of entry
+  comment     String? // runner comment
+
+  // Geo + device context (for "submit requires evidence with geo")
+  lat          Decimal? @db.Decimal(9, 6)
+  lng          Decimal? @db.Decimal(9, 6)
+  accuracyM    Decimal? @db.Decimal(6, 2)
+  locationNote String? // e.g. "Tower A – 7th floor lobby"
+
+  // Free-form device / app metadata: { deviceId, appVersion, ... }
+  meta Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  evidences WirItemEvidence[] @relation("RunToEvidence")
+
+  @@index([wirId])
+  @@index([itemId])
+  @@index([actorUserId])
+  @@map("WirItemRun")
+}
+
+model WirItemEvidence {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  // Always tied to a WIR header
+  wirId String @db.Uuid
+  wir   Wir    @relation("WirToEvidence", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
+
+  // Optional links for finer granularity
+  itemId String? @db.Uuid
+  runId  String? @db.Uuid
+
+  item WirItem?    @relation("WirItemToEvidence", fields: [itemId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  run  WirItemRun? @relation("RunToEvidence", fields: [runId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  kind WirItemEvidenceKind @default(Photo)
+
+  // File info (S3, GCS, local, etc.)
+  url      String
+  thumbUrl String?
+  fileName String?
+  fileSize Int?
+  mimeType String?
+
+  // Capture context
+  capturedAt DateTime? @db.Timestamptz(6)
+  lat        Decimal?  @db.Decimal(9, 6)
+  lng        Decimal?  @db.Decimal(9, 6)
+  accuracyM  Decimal?  @db.Decimal(6, 2)
+
+  // Extra: { orientation, exif, source:"mobile/web" ... }
+  meta Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([wirId])
+  @@index([itemId])
+  @@index([runId])
+  @@map("WirItemEvidence")
 }

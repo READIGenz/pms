@@ -2,6 +2,22 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../../../../api/client";
+import {
+  listWir as apiListWir,
+  getWir as apiGetWir,
+  createWir as apiCreateWir,
+  updateWir as apiUpdateWir,
+  deleteWir as apiDeleteWir,
+  submitWir as apiSubmitWir,
+  recommendWir as apiRecommendWir,
+  approveWir as apiApproveWir,
+  rescheduleWir as apiRescheduleWir,
+  getWirHistory as apiGetWirHistory,
+  listWirDiscussions as apiListWirDiscussions,
+  postWirDiscussionMessage as apiPostWirDiscussionMessage,
+  saveWirRunnerInspector,
+  finalizeWirRunnerHod,
+} from "../../../../api/wir";
 import { useAuth } from "../../../../hooks/useAuth";
 import { getRoleBaseMatrix } from "../../../admin/permissions/AdminPermProjectOverrides";
 import { getModuleSettings } from "../../../../api/adminModuleSettings";
@@ -496,10 +512,8 @@ type WIRProps = {
 type WirItem = {
   id: string;
   name: string;
-  checklistId?: string | null;
   spec?: string | null;
   required?: string | null;
-  critical?: boolean | number | string | null;
   tolerance?: string | null;
   photoCount?: number | null;
   status?: string | null;
@@ -535,8 +549,7 @@ type WirRecord = {
   items?: WirItem[];
   description?: string | null;
   updatedAt?: string | null;
-  /** Canonical list of ref-checklist IDs attached to this WIR */
-  selectedChecklistIds?: string[];
+
   wasRescheduled?: boolean;     // derived boolean
   lastRescheduledAt?: string | null; // optional display/tooltip
 };
@@ -613,8 +626,7 @@ async function fetchDiscussion(
   pid: string,
   wid: string
 ): Promise<DiscussionMsg[]> {
-  const { data } = await api.get(`/projects/${pid}/wir/${wid}/discussions`);
-
+  const data = await apiListWirDiscussions(pid, wid);
   // Support plain array or wrapped { items / rows }
   const arr: any[] = Array.isArray(data)
     ? data
@@ -707,8 +719,7 @@ async function postDiscussion(
   wid: string,
   payload: DiscussionPayload
 ): Promise<DiscussionMsg> {
-  const { data } = await api.post(`/projects/${pid}/wir/${wid}/discussions`, {
-    // send both, so whatever your DTO expects will be populated
+  const data = await apiPostWirDiscussionMessage(pid, wid, {
     body: payload.notes,   // matches Prisma column
     notes: payload.notes,  // in case controller uses `notes`
     authorId: payload.authorId,
@@ -754,26 +765,22 @@ async function postDiscussion(
 // --- Checklist items-count cache ---
 type ChecklistCountMap = Record<string, number>;
 
-function extractChecklistIds(w: Partial<WirRecord> & any): string[] {
-  // Prefer explicit arrays from server if present
-  const explicit =
-    (Array.isArray(w.selectedChecklistIds) && w.selectedChecklistIds) ||
-    (Array.isArray(w.refChecklistIds) && w.refChecklistIds) ||
-    (Array.isArray(w.checklistIds) && w.checklistIds) ||
-    [];
+function extractChecklistIds(w: WirRecord): string[] {
+  const raw = w.items || [];
+  // Accept: {name:id}, {code:id}, {checklistId:id}, or raw string in name/title
+  const ids = raw.map((it: any) => {
+    const c1 = it?.checklistId ?? it?.name ?? it?.code ?? it?.id ?? it?.title;
+    return c1 != null ? String(c1).trim() : "";
+  }).filter(Boolean);
 
-  if (explicit.length) {
-    return Array.from(new Set(explicit.map((z: any) => String(z).trim()).filter(Boolean)));
-  }
-
-  // Last resort: only trust items[].checklistId (never name/code/title)
-  const fromItems = Array.isArray(w.items)
-    ? w.items
-      .map((it: any) => (it?.checklistId != null ? String(it.checklistId).trim() : ""))
-      .filter(Boolean)
+  // If server ever sends a 'selectedChecklistIds' array, merge that too (defensive).
+  const extra = Array.isArray((w as any)?.selectedChecklistIds)
+    ? (w as any).selectedChecklistIds.map((z: any) => String(z).trim()).filter(Boolean)
     : [];
-  return Array.from(new Set(fromItems));
+
+  return Array.from(new Set([...ids, ...extra]));
 }
+
 /* ========================= UI Atoms ========================= */
 /** KPI-style pill (value-only, bold) */
 /** KPI-style pill (value-only, bold; optional label prefix for BIC) */
@@ -981,7 +988,7 @@ type DiscussionPayload = {
 };
 
 async function fetchWirHistory(pid: string, wid: string): Promise<WirHistoryRow[]> {
-  const { data } = await api.get(`/projects/${pid}/wir/${wid}/history`);
+  const data = await apiGetWirHistory(pid, wid);
   const rows: WirHistoryRow[] = (Array.isArray(data) ? data : []).map((r: any) => ({
     sNo: Number(r.sNo ?? 0),
     id: String(r.id ?? ""),
@@ -1095,6 +1102,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     );
   };
 
+
   const updateHodState = (itemId: string, patch: Partial<HodRunnerState>) => {
     setHodState((prev) => {
       const current: HodRunnerState =
@@ -1146,6 +1154,9 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     Record<string, InspectorRecommendationChoice | null>
   >({});
 
+  const [inspectorSaving, setInspectorSaving] = useState(false);
+
+
   // Label helper for inspector recommendation (overall)
   const inspectorRecLabel = (
     choice: InspectorRecommendationChoice | null
@@ -1155,6 +1166,85 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     if (choice === "APPROVE_WITH_COMMENTS") return "Approve with Comments";
     if (choice === "REJECT") return "Reject";
     return "Not yet given";
+  };
+
+  type InspectorSavePayload = {
+  items: {
+    itemId: string;
+    status: "PASS" | "FAIL" | null;
+    measurement: string | null;
+    remark: string | null;
+  }[];
+  overallRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
+};
+
+  // Build payload to send Inspector Runner data to backend
+const buildInspectorSavePayload = (): InspectorSavePayload => {
+  // We send one row per checklist item
+  const items = runnerItems.map((it) => {
+    const st = getInspectorState(it.id);
+    const measurement = (st.measurement || "").trim();
+    const remark = (st.remark || "").trim();
+
+    return {
+      itemId: it.id,                                      // ✅ rename to itemId
+      status: st.status,                                 // "PASS" | "FAIL" | null
+      measurement: measurement || null,                  // ✅ string | null
+      remark: remark || null,                            // ✅ string | null
+      // photos are currently handled separately; we keep them frontend-only for now
+    };
+  });
+
+  const overall = inspectorRecommendation[OVERALL_REC_KEY] ?? null;
+
+  return {
+    items,
+    // optional in the type, but allowed to always send
+    overallRecommendation: overall,                      // "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null
+  };
+};
+
+  // Generic saver used by Save / Preview / Send to HOD
+  const persistInspectorData = async (
+    mode: "save" | "preview" | "sendToHod"
+  ) => {
+    if (!projectId || !selected) {
+      alert("Project / WIR context missing; cannot save Inspector data.");
+      return;
+    }
+
+    const payload = buildInspectorSavePayload();
+
+    try {
+      setInspectorSaving(true);
+      // 🔗 Uses the existing WIR API helper
+      await saveWirRunnerInspector(projectId, selected.wirId, payload);
+
+      log("Inspector runner saved", {
+        wirId: selected.wirId,
+        mode,
+        payload,
+      });
+
+      if (mode === "save") {
+        alert("Inspector data saved.");
+      } else if (mode === "preview") {
+        // You can later replace this with a proper preview modal
+        alert("Inspector data saved. Preview can use this saved data.");
+      } else if (mode === "sendToHod") {
+        // For now, just acknowledge; HOD flow will read saved data
+        alert("Inspector data saved and marked ready for HOD.");
+      }
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.error ||
+        e?.message ||
+        "Failed to save Inspector data";
+      alert(msg);
+      log("Inspector runner save failed", e);
+    } finally {
+      setInspectorSaving(false);
+    }
   };
 
   // Overall HOD finalize modal state
@@ -1502,14 +1592,14 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       const contractorId = String(authorIdRaw || currentUserId || getUserIdFromToken() || "");
 
       // C) Persist all participants on the draft BEFORE submit
-      await api.patch(`/projects/${projectId}/wir/${dispatchWirId}`, {
+      await apiUpdateWir(projectId, dispatchWirId, {
         inspectorId: dispatchPick,
         hodId: hodId || null,           // ← assign HOD irrespective of pick
         contractorId: contractorId || null // ← assign contractor = author
       });
 
       // D) Submit (status → Submitted; server sets BIC)
-      await api.post(`/projects/${projectId}/wir/${dispatchWirId}/submit`, { role: "Contractor" });
+      await apiSubmitWir(projectId, dispatchWirId, { role: "Contractor" });
 
       // E) Optimistic UI for BIC chip
       if (candidate) {
@@ -1674,17 +1764,15 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       photos: [],
       materialApprovalFiles: [],
       safetyClearanceFiles: [],
-      pickedChecklistIds:
-        (Array.isArray(x?.selectedChecklistIds) && x.selectedChecklistIds.map((z: any) => String(z))) ||
-        (Array.isArray(x?.refChecklistIds) && x.refChecklistIds.map((z: any) => String(z))) ||
-        (Array.isArray(x?.checklistIds) && x.checklistIds.map((z: any) => String(z))) ||
-        [],
+      pickedChecklistIds: Array.isArray(x?.items)
+        ? x.items.map((it: any) => it?.name || it?.code || it?.id).filter(Boolean)
+        : [],
       pickedComplianceIds: [],
     };
   };
 
   const loadWir = async (pid: string, wid: string) => {
-    const { data } = await api.get(`/projects/${pid}/wir/${wid}`);
+    const data = await apiGetWir(pid, wid);
     return data;
   };
 
@@ -1719,7 +1807,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     const run = async () => {
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
-        const { data } = await api.get(`/projects/${projectId}/wir`);
+        const data = await apiListWir(projectId);
 
         const arr: any[] = Array.isArray(data)
           ? data
@@ -1768,15 +1856,8 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
           items: (x.items || []).map((it: any, i: number) => ({
             id: it.id ?? `it-${i}`,
             name: it.name ?? it.title ?? `Item ${i + 1}`,
-            checklistId: it.checklistId ?? it.refChecklistId ?? it.checklist?.id ?? null,
             spec: it.spec ?? it.specification ?? null,
             required: it.required ?? it.requirement ?? null,
-            critical:
-              it.critical ??
-              it.isCritical ??
-              it.flags?.critical ??
-              it.meta?.critical ??
-              null,
             tolerance: it.tolerance ?? null,
             photoCount:
               it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
@@ -1784,12 +1865,6 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
           })),
           description: x.description ?? x.notes ?? null,
           updatedAt: x.updatedAt ?? x.modifiedAt ?? x.createdAt ?? null,
-          // expose attached checklist IDs so item-count can be computed
-          selectedChecklistIds:
-            (Array.isArray(x?.selectedChecklistIds) && x.selectedChecklistIds.map((z: any) => String(z))) ||
-            (Array.isArray(x?.refChecklistIds) && x.refChecklistIds.map((z: any) => String(z))) ||
-            (Array.isArray(x?.checklistIds) && x.checklistIds.map((z: any) => String(z))) ||
-            [],
 
           // NEW ↓ prefer direct flags/columns if backend sends them
           wasRescheduled:
@@ -2011,7 +2086,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
     if (!window.confirm("Delete this WIR permanently? This cannot be undone.")) return;
 
     try {
-      await api.delete(`/projects/${projectId}/wir/${id}`);
+      await apiDeleteWir(projectId, id);
       // Optimistic UI: remove from list
       setState((s) => ({
         ...s,
@@ -2054,14 +2129,14 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
 
     try {
       if (r === "PMC" || r === "IH-PMT" || r === "Consultant") {
-        await api.post(`/projects/${projectId}/wir/${selected.wirId}/recommend`, { role: r });
+        await apiRecommendWir(projectId, selected.wirId, { role: r });
         await reloadWirList();
         alert("Recommended.");
         goToList(true);
         return;
       }
       if (r === "Admin" || r === "Client") {
-        await api.post(`/projects/${projectId}/wir/${selected.wirId}/approve`, { role: r });
+        await apiApproveWir(projectId, selected.wirId, { role: r });
         await reloadWirList();
         alert("Approved.");
         goToList(true);
@@ -2164,15 +2239,25 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       cityTown: newForm.location || null,
       stateName: null,
       description: newForm.details || null,
-      refChecklistIds: newForm.pickedChecklistIds || [],      // <-- send real checklists
-      materializeItemsFromRef: true                           // <-- optional; default is true};
+      items: (newForm.pickedChecklistIds || []).map((id) => ({
+        name: id,
+        spec: null,
+        required: null,
+        tolerance: null,
+        photoCount: 0,
+        status: "Unknown",
+      })),
     };
   };
 
   const reloadWirList = async () => {
-    const { data } = await api.get(`/projects/${projectId}/wir`);
+    const data = await apiListWir(projectId);
 
-    const arr: any[] = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : [];
+    const arr: any[] = Array.isArray(data)
+      ? data
+      : Array.isArray((data as any)?.records)
+        ? (data as any).records
+        : [];
     const list: WirRecord[] = arr.map((x) => ({
       wirId: x.wirId ?? x.id,
       code: x.code ?? x.irCode ?? null,
@@ -2215,15 +2300,8 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       items: (x.items || []).map((it: any, i: number) => ({
         id: it.id ?? `it-${i}`,
         name: it.name ?? it.title ?? `Item ${i + 1}`,
-        checklistId: it.checklistId ?? it.refChecklistId ?? it.checklist?.id ?? null,
         spec: it.spec ?? it.specification ?? null,
         required: it.required ?? it.requirement ?? null,
-        critical:
-          it.critical ??
-          it.isCritical ??
-          it.flags?.critical ??
-          it.meta?.critical ??
-          null,
         tolerance: it.tolerance ?? null,
         photoCount:
           it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
@@ -2231,13 +2309,6 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       })),
       description: x.description ?? x.notes ?? null,
       updatedAt: x.updatedAt ?? x.modifiedAt ?? x.createdAt ?? null,
-      // expose attached checklist IDs so item-count can be computed
-      selectedChecklistIds:
-        (Array.isArray(x?.selectedChecklistIds) && x.selectedChecklistIds.map((z: any) => String(z))) ||
-        (Array.isArray(x?.refChecklistIds) && x.refChecklistIds.map((z: any) => String(z))) ||
-        (Array.isArray(x?.checklistIds) && x.checklistIds.map((z: any) => String(z))) ||
-        [],
-
 
       // NEW ↓ prefer direct flags/columns if backend sends them
       wasRescheduled:
@@ -2272,14 +2343,14 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       const body = buildWirPayload();
 
       if (!selectedId) {
-        await api.post(`/projects/${projectId}/wir`, body);
+        await apiCreateWir(projectId, body);
         alert("Draft created.");
         resetNewForm();
         goToList(true);
         return;
       }
 
-      await api.patch(`/projects/${projectId}/wir/${selectedId}`, body);
+      await apiUpdateWir(projectId, selectedId, body);
       alert("Draft updated.");
       resetNewForm();
       goToList(true);
@@ -2316,8 +2387,8 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       // Ensure a WIR exists (create draft if needed)
       let id = selectedId;
       if (!id) {
-        const { data } = await api.post(`/projects/${projectId}/wir`, buildWirPayload());
-        id = String(data?.wirId || data?.id);
+        const created = await apiCreateWir(projectId, buildWirPayload());
+        id = String(created?.wirId || created?.id);
         setSelectedId(id || null);
       }
       if (!id) throw new Error("Could not determine WIR ID to submit.");
@@ -2588,6 +2659,51 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
         }
         log("Runner effect: final RunnerCardItem list", all);
         if (!cancelled) setRunnerItems(all);
+        // Hydrate Inspector Runner state from WIR details (if backend provides it)
+        if (!cancelled && projectId && selected?.wirId) {
+          try {
+            const full = await loadWir(projectId, selected.wirId);
+            const ri: any = (full as any)?.runnerInspector; // adjust field name if different
+
+            if (!cancelled && ri) {
+              const nextInspector: Record<string, InspectorRunnerState> = {};
+
+              if (Array.isArray(ri.items)) {
+                for (const row of ri.items) {
+                  const key = String(row.checklistItemId ?? row.itemId ?? "");
+                  if (!key) continue;
+
+                  nextInspector[key] = {
+                    status: (row.status as "PASS" | "FAIL" | null) ?? null,
+                    measurement: row.measurement ?? "",
+                    remark: row.remark ?? "",
+                    photos: [], // TODO: map backend file URLs → UI, if/when you add that
+                  };
+                }
+              }
+
+              setInspectorState(nextInspector);
+
+              const overall = (ri.overallRecommendation ??
+                null) as InspectorRecommendationChoice | null;
+
+              setInspectorRecommendation((prev) => ({
+                ...prev,
+                [OVERALL_REC_KEY]: overall,
+              }));
+
+              log("Runner effect: hydrated Inspector state from backend", {
+                wirId: selected.wirId,
+                inspector: nextInspector,
+                overall,
+              });
+            }
+          } catch (err) {
+            log("Runner effect: failed to hydrate Inspector Runner state", err);
+            // non-fatal; user can still enter fresh data
+          }
+        }
+
       } catch (e: any) {
         log("Runner effect: error while loading checklist items", e);
         if (!cancelled) setRunnerError(e?.message || "Failed to load checklist items");
@@ -2603,38 +2719,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
   useEffect(() => {
     if (!selected || !roViewOpen || roTab !== "document" || docTab !== "overview") return;
 
-    // Helpers
-    const toBool = (v: unknown): boolean =>
-      v === true || (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
-
-    const isCritical = (r: any): boolean => {
-      const sev = String(r?.severity ?? "").toLowerCase();
-      const stat = String(r?.status ?? "").toLowerCase(); // support NCR from runner/status
-      return r?.critical === true || toBool(r?.critical) || sev === "critical" || stat === "ncr";
-    };
-
-    const isMandatory = (r: any): boolean => {
-      // Reuse your canonical label helper
-      const label = requiredToLabel((r?.required ?? r?.mandatory ?? r?.requirement) as any);
-      return label === "Mandatory";
-    };
-
-    // 1) Prefer items already attached to this WIR (payload truth)
-    const payloadItems = Array.isArray(selected.items) ? selected.items : [];
-
-    if (payloadItems.length > 0) {
-      // Synchronous computation—no network calls
-      const total = payloadItems.length;
-      const mandatory = payloadItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
-      const critical = payloadItems.reduce((n, r) => n + (isCritical(r) ? 1 : 0), 0);
-      setOvStats({ total, mandatory, critical });
-      setOvError(null);
-      setOvLoading(false);
-      return;
-    }
-
-    // 2) Fallback: derive from reference checklists only if payload has no items
-    const ids = Array.from(new Set(extractChecklistIds(selected)));
+    const ids = Array.from(new Set(extractChecklistIds(selected))); // dedupe for safety
     if (!ids.length) {
       setOvStats({ total: 0, mandatory: 0, critical: 0 });
       setOvError(null);
@@ -2647,8 +2732,25 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
       setOvLoading(true);
       setOvError(null);
       try {
+        // Fetch all checklists in parallel
         const allLists = await Promise.all(ids.map((id) => listRefChecklistItems(id)));
         const allItems = allLists.flat();
+
+        // Helpers
+        const toBool = (v: unknown): boolean =>
+          v === true ||
+          (typeof v === "string" && /^(true|yes|y|1)$/i.test(v.trim()));
+
+        const isCritical = (r: any): boolean =>
+          r?.critical === true || toBool(r?.critical);
+
+        const isMandatory = (r: any): boolean => {
+          // Prefer the canonical label from existing helper
+          const label = requiredToLabel(
+            (r?.required ?? r?.mandatory ?? r?.requirement) as any
+          );
+          return label === "Mandatory";
+        };
 
         const total = allItems.length;
         const mandatory = allItems.reduce((n, r) => n + (isMandatory(r) ? 1 : 0), 0);
@@ -2829,7 +2931,7 @@ ${styleEls}
     }
     setResSaving(true);
     try {
-      await api.post(`/projects/${projectId}/wir/${selected.wirId}/reschedule`, {
+      await apiRescheduleWir(projectId, selected.wirId, {
         role,                         // optional, for server audit
         currentDateISO: resCurDate,
         currentTime12h: resCurTime,
@@ -4440,22 +4542,27 @@ ${styleEls}
                                   <div className="mt-3 flex flex-wrap items-center gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => alert("Save Progress clicked (stub).")}
-                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                      onClick={() => persistInspectorData("save")}
+                                      disabled={inspectorSaving}
+                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
-                                      Save Progress
+                                      {inspectorSaving ? "Saving…" : "Save Progress"}
                                     </button>
+
                                     <button
                                       type="button"
-                                      onClick={() => alert("Preview clicked (stub).")}
-                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                      onClick={() => persistInspectorData("preview")}
+                                      disabled={inspectorSaving}
+                                      className="text-xs px-3 py-1.5 rounded-md border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                       Preview
                                     </button>
+
                                     <button
                                       type="button"
-                                      onClick={() => alert("Send to HOD clicked (stub).")}
-                                      className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white"
+                                      onClick={() => persistInspectorData("sendToHod")}
+                                      disabled={inspectorSaving}
+                                      className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                       Send to HOD
                                     </button>

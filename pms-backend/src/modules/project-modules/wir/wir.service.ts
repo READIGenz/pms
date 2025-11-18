@@ -1,7 +1,13 @@
 // pms-backend/src/modules/project-modules/wir/wir.service.ts
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { Prisma, WirStatus, WirItemStatus, ProjectHealth, WirAction } from '@prisma/client';
+import {
+  Prisma, WirStatus, ProjectHealth, WirAction, InspectorRecommendation,
+  HodOutcome, InspectorItemStatus, WirRunnerActorRole, WirItemEvidenceKind, WirItemStatus,
+  $Enums,
+  PrismaClient
+} from '@prisma/client';
+import { DefaultArgs } from '@prisma/client/runtime/library';
 
 const toWirItemStatus = (s?: string | null): WirItemStatus | undefined => {
   if (!s) return undefined;
@@ -13,11 +19,55 @@ const toWirItemStatus = (s?: string | null): WirItemStatus | undefined => {
   return undefined; // unknown label -> omit
 };
 
+const toEvidenceKind = (s?: string | null): WirItemEvidenceKind => {
+  if (!s) return WirItemEvidenceKind.Photo;
+  const n = s.trim().toLowerCase();
+  if (n === 'video') return WirItemEvidenceKind.Video;
+  if (n === 'file') return WirItemEvidenceKind.File;
+  if (n === 'other') return WirItemEvidenceKind.Other;
+  return WirItemEvidenceKind.Photo;
+};
+
 const name = (u?: { firstName?: string | null; lastName?: string | null } | null) => {
   if (!u) return null;
   const f = (u.firstName || '').trim();
   const l = (u.lastName || '').trim();
   return (f && l) ? `${f} ${l}` : (f || l || null);
+};
+
+// Runner DTOs – kept simple, FE-friendly
+export type CreateItemRunDto = {
+  valueText?: string | null;
+  valueNumber?: number | string | null;
+  unit?: string | null;
+  status?: string | null;          // 'OK' | 'NCR' | 'Pending' | 'Unknown'
+  comment?: string | null;
+
+  lat?: number | null;
+  lng?: number | null;
+  accuracyM?: number | string | null;
+  locationNote?: string | null;
+
+  meta?: any;                      // { deviceId, appVersion, ... }
+};
+
+export type CreateEvidenceDto = {
+  itemId?: string | null;
+  runId?: string | null;
+  kind?: string | null;            // 'Photo' | 'Video' | 'File' | 'Other'
+  url: string;
+
+  thumbUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+
+  capturedAt?: string | null;      // ISO
+  lat?: number | null;
+  lng?: number | null;
+  accuracyM?: number | string | null;
+
+  meta?: any;
 };
 
 type CreateWirInput = {
@@ -43,7 +93,6 @@ type CreateWirInput = {
     tolerance?: string | null;
     photoCount?: number | null;
     status?: string | null;
-    // NEW (accept if caller sends):
     critical?: boolean | null;
     value?: string | number | null;
     code?: string | null;
@@ -169,6 +218,11 @@ export class WirService {
 
             // NEW
             critical: typeof ri.critical === 'boolean' ? ri.critical : null,
+             aiEnabled: typeof ri.aiEnabled === 'boolean' ? ri.aiEnabled : null,
+            aiConfidence: ri.aiConfidence ?? null,
+            base: ri.base ?? null,
+            plus: ri.plus ?? null,
+            minus: ri.minus ?? null,
             value: null,
           })),
         });
@@ -195,6 +249,66 @@ export class WirService {
       const out = await tx.wir.findUnique({ where: { wirId: wc.wirId }, include: this.baseInclude });
       return this.toFE(out);
     });
+  }
+
+  async initializeRunnerRowsFromChecklist(
+    projectId: string,
+    wirId: string,
+    checklistId: string,
+    userId: string,
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const checklist = await this.prisma.refChecklist.findUnique({
+      where: { id: checklistId },
+      include: { items: { orderBy: { seq: 'asc' } } },
+    });
+    if (!checklist) throw new NotFoundException('Checklist not found');
+
+    const existing = await this.prisma.wirItem.findMany({
+      where: { wirId, checklistId },
+      select: { id: true },
+      take: 1,
+    });
+    if (existing.length > 0) {
+      throw new BadRequestException('Runner rows already exist for this checklist');
+    }
+
+    const items = checklist.items || [];
+    const payload = items.map((it, idx) => ({
+      wirId,
+      checklistId,
+      itemId: it.id,
+      sourceChecklistId: checklist.id,
+      sourceChecklistItemId: it.id,
+
+      seq: it.seq ?? idx + 1,
+      name: it.text,
+      spec: null,
+      required: it.requirement ?? null,
+      tolerance: it.tolerance ?? null,
+      photoCount: 0,
+      status: WirItemStatus.Unknown,
+
+      code: it.itemCode ?? null,
+      unit: it.units ?? null,
+      tags: it.tags ?? [],
+      critical: typeof it.critical === 'boolean' ? it.critical : null,
+      aiEnabled: typeof it.aiEnabled === 'boolean' ? it.aiEnabled : null,
+      aiConfidence: it.aiConfidence ?? null,
+      base: it.base ?? null,
+      plus: it.plus ?? null,
+      minus: it.minus ?? null,
+      value: null,
+    }));
+
+    if (!payload.length) {
+      throw new BadRequestException('Checklist has no items');
+    }
+
+    await this.prisma.wirItem.createMany({ data: payload });
+
+    return { ok: true, count: payload.length };
   }
 
   /* ---------- Mapping to FE shape ---------- */
@@ -247,6 +361,15 @@ export class WirService {
 
       createdById: w.createdById ?? w.createdBy?.userId ?? null,
 
+      // NEW: header-level inspector & HOD decision fields
+      inspectorRecommendation: w.inspectorRecommendation ?? null,
+      inspectorRemarks: w.inspectorRemarks ?? null,
+      inspectorReviewedAt: w.inspectorReviewedAt ?? null,
+
+      hodOutcome: w.hodOutcome ?? null,
+      hodRemarks: w.hodRemarks ?? null,
+      hodDecidedAt: w.hodDecidedAt ?? null,
+
       items: items.map((it: any) => ({
         id: it.id,
         checklistId: it.checklistId ?? null,
@@ -267,6 +390,12 @@ export class WirService {
         // NEW
         critical: typeof it.critical === 'boolean' ? it.critical : null,
         value: (typeof it.value === 'number' || typeof it.value === 'string') ? it.value : null,
+
+        // NEW: per-role item review tiles
+        inspectorStatus: (it.inspectorStatus as InspectorItemStatus | null) ?? null,
+        inspectorNote: it.inspectorNote ?? null,
+        hodStatus: (it.hodStatus as InspectorItemStatus | null) ?? null,
+        hodNote: it.hodNote ?? null,
 
         updatedAt: it.updatedAt ?? w.updatedAt,
       })),
@@ -291,6 +420,7 @@ export class WirService {
       description: w.description,
       updatedAt: w.updatedAt,
     };
+
   }
 
   private baseInclude: Prisma.WirInclude = {
@@ -341,16 +471,16 @@ export class WirService {
 
     const where: Prisma.WirWhereInput = isCtr
       ? {
-          projectId,
-          OR: [
-            { status: { not: WirStatus.Draft } },
-            { AND: [{ status: WirStatus.Draft }, { createdById: userId }] },
-          ],
-        }
+        projectId,
+        OR: [
+          { status: { not: WirStatus.Draft } },
+          { AND: [{ status: WirStatus.Draft }, { createdById: userId }] },
+        ],
+      }
       : {
-          projectId,
-          status: { not: WirStatus.Draft },
-        };
+        projectId,
+        status: { not: WirStatus.Draft },
+      };
 
     const rows = await this.prisma.wir.findMany({
       where,
@@ -367,7 +497,7 @@ export class WirService {
       where: { wirId, projectId },
       include: this.baseInclude,
     });
-    if (!row) throw new NotFoundException('WIR not found');
+    if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
 
     if (row.status === WirStatus.Draft) {
       const isCtr = await this.isContractorForProject(userId, projectId);
@@ -377,7 +507,84 @@ export class WirService {
       }
     }
 
-    return this.toFE(row);
+    // ---------- Build snapshots for Runner panels ----------
+    /**
+     * Inspector snapshot:
+     * For each item, show the latest Inspector run (measurement/status/remark) and
+     * the mirrored quick fields on WirItem (inspectorStatus/inspectorNote).
+     */
+    const inspRuns = await this.prisma.wirItemRun.findMany({
+      where: { wirId, actorRole: WirRunnerActorRole.Inspector },
+      orderBy: [{ itemId: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        itemId: true,
+        valueText: true,
+        valueNumber: true,
+        status: true,
+        comment: true,
+        createdAt: true,
+      },
+    });
+    const inspLatestByItem: Record<string, (typeof inspRuns)[number]> = {};
+    for (const r of inspRuns) {
+      // first per item (due to DESC) = latest
+      if (!inspLatestByItem[r.itemId]) inspLatestByItem[r.itemId] = r;
+    }
+
+    const payload = this.toFE(row);
+    (payload as any).runnerInspector = {
+      overallRecommendation: row.inspectorRecommendation ?? null,
+      items: (row.items || []).map((it) => {
+        const r = inspLatestByItem[it.id];
+        return {
+          itemId: it.id,
+          checklistItemId: it.itemId, // link to RefChecklistItem
+          status:
+            it.inspectorStatus === InspectorItemStatus.PASS ? 'PASS'
+              : it.inspectorStatus === InspectorItemStatus.FAIL ? 'FAIL'
+                : null,
+          measurement:
+            r?.valueNumber != null ? String(r.valueNumber)
+              : (r?.valueText ?? ''),
+          remark: it.inspectorNote ?? r?.comment ?? '',
+          lastSavedAt: r?.createdAt ?? null,
+        };
+      }),
+    };
+
+    /**
+     * HOD snapshot:
+     * For each item, show the latest HOD quick-save comment (hodRemark) and
+     * its lastSavedAt; header-level draft note lives in hodRemarks.
+     */
+    const hodRuns = await this.prisma.wirItemRun.findMany({
+      where: { wirId, actorRole: WirRunnerActorRole.HOD },
+      orderBy: [{ itemId: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        itemId: true,
+        comment: true,
+        createdAt: true,
+      },
+    });
+    const hodLatestByItem: Record<string, (typeof hodRuns)[number]> = {};
+    for (const r of hodRuns) {
+      if (!hodLatestByItem[r.itemId]) hodLatestByItem[r.itemId] = r;
+    }
+
+    (payload as any).runnerHod = {
+      notes: row.hodRemarks ?? null, // header draft note (from HOD Save)
+      items: (row.items || []).map((it) => {
+        const r = hodLatestByItem[it.id];
+        return {
+          itemId: it.id,
+          hodRemark: it.hodNote ?? r?.comment ?? '',
+          lastSavedAt: r?.createdAt ?? null,
+        };
+      }),
+    };
+    return payload;
   }
 
   // --- Generate next WIR code inside a transaction
@@ -396,6 +603,35 @@ export class WirService {
 
     const next = (lastNum + 1).toString().padStart(4, '0');
     return `WIR-${next}`;
+  }
+
+  // Map project role + header context → runner actor role
+  private mapRunnerActorRoleForWir(
+    projectRole: string | null,
+    wir: { contractorId: string | null; inspectorId: string | null; hodId: string | null },
+    actorUserId: string,
+  ): WirRunnerActorRole {
+    if (wir.contractorId && wir.contractorId === actorUserId) {
+      return WirRunnerActorRole.Contractor;
+    }
+    if (wir.inspectorId && wir.inspectorId === actorUserId) {
+      return WirRunnerActorRole.Inspector;
+    }
+    if (wir.hodId && wir.hodId === actorUserId) {
+      return WirRunnerActorRole.HOD;
+    }
+
+    const raw = (projectRole || '').toString().trim().toLowerCase().replace(/[_\s-]+/g, '');
+    switch (raw) {
+      case 'contractor':
+        return WirRunnerActorRole.Contractor;
+      case 'pmc':
+      case 'ihpmt':
+      case 'consultant':
+        return WirRunnerActorRole.Inspector;
+      default:
+        return WirRunnerActorRole.Other;
+    }
   }
 
   async create(projectId: string, dto: any, createdById?: string) {
@@ -417,15 +653,15 @@ export class WirService {
           code,
           ...(Array.isArray(dto?.items) && dto.items.length
             ? {
-                items: {
-                  create: dto.items.map((it: any, idx: number) => ({
-                    seq: idx + 1,
-                    name: it?.name ?? 'Item',
-                    spec: it?.spec ?? null,
-                    required: it?.required ?? null, // 'Mandatory' | 'Optional' | null
-                    tolerance: it?.tolerance ?? null,
-                    photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : 0,
-                    status: toWirItemStatus(it?.status) ?? WirItemStatus.Unknown,
+              items: {
+                create: dto.items.map((it: any, idx: number) => ({
+                  seq: idx + 1,
+                  name: it?.name ?? 'Item',
+                  spec: it?.spec ?? null,
+                  required: it?.required ?? null, // 'Mandatory' | 'Optional' | null
+                  tolerance: it?.tolerance ?? null,
+                  photoCount: Number.isFinite(it?.photoCount) ? it.photoCount : 0,
+                  status: toWirItemStatus(it?.status) ?? WirItemStatus.Unknown,
 
                   //   // NEW passthroughs if caller provides
                   //   code: it?.code ?? null,
@@ -433,9 +669,9 @@ export class WirService {
                   //   tags: Array.isArray(it?.tags) ? it.tags : [],
                   //   critical: typeof it?.critical === 'boolean' ? it.critical : null,
                   //   value: (typeof it?.value === 'number' || typeof it?.value === 'string') ? it.value : null,
-                   })),
-                },
-              }
+                })),
+              },
+            }
             : {}),
         },
         include: this.baseInclude,
@@ -490,10 +726,12 @@ export class WirService {
               code: ri.itemCode ?? null,
               unit: ri.units ?? null,
               tags: ri.tags ?? [],
-
-              // NEW
               critical: typeof ri.critical === 'boolean' ? ri.critical : null,
-              value: null,
+              aiEnabled: typeof ri.aiEnabled === 'boolean' ? ri.aiEnabled : null,
+              aiConfidence: ri.aiConfidence ?? null,
+              base: ri.base ?? null,
+              plus: ri.plus ?? null,
+              minus: ri.minus ?? null,
             }))
           );
 
@@ -618,16 +856,15 @@ export class WirService {
   private canSubmit(role: string, current: WirStatus) {
     return role === 'Contractor' && current === WirStatus.Draft;
   }
+  /** Inspector → "Send to HOD" */
   private canRecommend(role: string, current: WirStatus) {
-    return (role === 'PMC' || role === 'IH-PMT' || role === 'Consultant') && current === WirStatus.Submitted;
-  }
-  private canApprove(role: string, current: WirStatus) {
-    return (role === 'Admin' || role === 'Client' || role === 'IH-PMT' || role === 'PMC')
-      && (current === WirStatus.Recommended || current === WirStatus.Submitted);
-  }
+    // Only from Submitted
+    if (current !== WirStatus.Submitted) return false;
+    if (!role) return false;
 
-  private canReject(role: string, current: WirStatus) {
-    return this.canApprove(role, current);
+    // Inspector is derived from PMC family
+    const allowed = ['PMC', 'IH-PMT', 'Consultant'];
+    return allowed.includes(role);
   }
 
   async submit(projectId: string, wirId: string, roleFromBody: string, userId: string) {
@@ -667,15 +904,24 @@ export class WirService {
     });
   }
 
-  async recommend(projectId: string, wirId: string, role: string) {
+  async recommend(projectId: string, wirId: string, role: string, actorUserId: string,) {
     return await this.prisma.$transaction(async (tx) => {
       const row = await tx.wir.findUnique({ where: { wirId } });
       if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
       this.ensure(this.canRecommend(role, row.status), 'Not allowed to recommend in current status');
 
+      const now = new Date();
+
       const updated = await tx.wir.update({
         where: { wirId },
-        data: { status: WirStatus.Recommended, bicUserId: row.hodId ?? null },
+        data: {
+          status: WirStatus.Recommended,
+          bicUserId: row.hodId ?? null,
+          // NEW: mark inspector header decision when recommending
+          inspectorRecommendation: InspectorRecommendation.APPROVE,
+          inspectorReviewedAt: now,
+          // do not touch inspectorRemarks here (no comment param yet)
+        },
         include: this.baseInclude,
       });
 
@@ -687,29 +933,36 @@ export class WirService {
         toStatus: updated.status,
         fromBicUserId: row.bicUserId ?? null,
         toBicUserId: updated.bicUserId ?? null,
+        actorUserId,
+        // actorName we’ll wire later once we decide source (ProjectMember vs User)
       });
 
       return this.toFE(updated);
     });
   }
 
-  async approve(projectId: string, wirId: string, role: string) {
+  async approve(projectId: string, wirId: string, role: string, actorUserId: string,) {
     return await this.prisma.$transaction(async (tx) => {
-      const row = await this.prisma.wir.findUnique({ where: { wirId } });
+      const row = await tx.wir.findUnique({ where: { wirId } });
       if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
       this.ensure(this.canApprove(role, row.status), 'Not allowed to approve in current status');
 
-      const updated = await this.prisma.wir.update({
+      const now = new Date();
+
+      const updated = await tx.wir.update({
         where: { wirId },
         data: {
           status: WirStatus.Approved,
           health: row.health ?? ProjectHealth.Green,
-          bicUserId: row.contractorId ?? null,
+          bicUserId: null,
+          // NEW: mark HOD header decision as ACCEPT
+          hodOutcome: HodOutcome.ACCEPT,
+          hodDecidedAt: now,
         },
         include: this.baseInclude,
       });
 
-      await this.recordHistory(this.prisma, {
+      await this.recordHistory(tx, {
         projectId,
         wirId,
         action: WirAction.Approved,
@@ -717,25 +970,40 @@ export class WirService {
         toStatus: updated.status,
         fromBicUserId: row.bicUserId ?? null,
         toBicUserId: updated.bicUserId ?? null,
+        actorUserId,
       });
 
       return this.toFE(updated);
     });
   }
 
-  async reject(projectId: string, wirId: string, role: string) {
+  async reject(
+    projectId: string,
+    wirId: string,
+    role: string,
+    comment: string,
+    actorUserId: string,
+  ) {
     return await this.prisma.$transaction(async (tx) => {
       const row = await tx.wir.findUnique({ where: { wirId } });
-      if (!row || row.projectId !== projectId) throw new NotFoundException('WIR not found');
+      if (!row || row.projectId !== projectId) {
+        throw new NotFoundException('WIR not found');
+      }
 
       this.ensure(this.canReject(role, row.status), 'Not allowed to reject in current status');
+      const now = new Date();
 
       const updated = await tx.wir.update({
         where: { wirId },
         data: {
           status: WirStatus.Rejected,
           health: ProjectHealth.Red,
-          bicUserId: row.contractorId ?? null,
+          // HOD REJECT → WIR also closes; no further ball-in-court
+          bicUserId: null,
+          // NEW: header decision
+          hodOutcome: HodOutcome.REJECT,
+          hodDecidedAt: now,
+          hodRemarks: comment || null,
         },
         include: this.baseInclude,
       });
@@ -748,6 +1016,67 @@ export class WirService {
         toStatus: updated.status,
         fromBicUserId: row.bicUserId ?? null,
         toBicUserId: updated.bicUserId ?? null,
+        actorUserId,
+        // keep the rejection note here
+        notes: comment || null,
+      });
+
+      return this.toFE(updated);
+    });
+  }
+
+  async returnWir(
+    projectId: string,
+    wirId: string,
+    role: string,
+    comment: string | null,
+    actorUserId: string,
+  ) {
+    return await this.prisma.$transaction(async (tx) => {
+      const row = await tx.wir.findUnique({ where: { wirId } });
+      if (!row || row.projectId !== projectId) {
+        throw new NotFoundException('WIR not found');
+      }
+
+      // Same gate as APPROVE/REJECT: HOD from PMC-family on Recommended WIR
+      this.ensure(
+        this.canApprove(role, row.status),
+        'Not allowed to return in current status',
+      );
+
+      const now = new Date();
+
+      // HOD RETURN -> send back to Contractor (author) and reopen as Draft
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: {
+          status: WirStatus.Draft,
+          bicUserId: row.createdById ?? row.contractorId ?? null,
+          // NEW: header decision for RETURN
+          hodOutcome: HodOutcome.RETURN,
+          hodDecidedAt: now,
+          hodRemarks: comment || null,
+        },
+        include: this.baseInclude,
+      });
+
+      const actorName = await this.resolveActorName(actorUserId);
+
+      await this.recordHistory(tx, {
+        projectId,
+        wirId,
+        action: WirAction.Updated, // we tag this in meta as a "Returned" event
+        actorUserId,
+        actorName,
+        fromStatus: row.status,
+        toStatus: updated.status,
+        fromBicUserId: row.bicUserId ?? null,
+        toBicUserId: updated.bicUserId ?? null,
+        notes: comment,
+        meta: {
+          kind: 'Returned',
+          comment,
+        },
       });
 
       return this.toFE(updated);
@@ -797,6 +1126,130 @@ export class WirService {
     const f = (u.firstName || '').trim();
     const l = (u.lastName || '').trim();
     return (f && l) ? `${f} ${l}` : (f || l || null);
+  }
+
+  // Create one runner entry for a given item
+  async addItemRun(
+    projectId: string,
+    wirId: string,
+    itemId: string,
+    actorUserId: string,
+    dto: CreateItemRunDto,
+  ) {
+    // Ensure WIR belongs to this project and fetch role context
+    const wir = await this.prisma.wir.findFirst({
+      where: { wirId, projectId },
+      select: {
+        wirId: true,
+        contractorId: true,
+        inspectorId: true,
+        hodId: true,
+      },
+    });
+    if (!wir) throw new NotFoundException('WIR not found for this project');
+
+    const item = await this.prisma.wirItem.findFirst({
+      where: { id: itemId, wirId },
+      select: { id: true },
+    });
+    if (!item) throw new NotFoundException('WIR item not found for this WIR');
+
+    const projectRole = await this.getProjectRole(actorUserId, projectId);
+    const actorRole = this.mapRunnerActorRoleForWir(projectRole, wir, actorUserId);
+    const actorName = await this.resolveActorName(actorUserId);
+
+    const statusEnum = dto.status ? toWirItemStatus(dto.status) : undefined;
+
+    const valueNumber =
+      typeof dto.valueNumber === 'number' || typeof dto.valueNumber === 'string'
+        ? dto.valueNumber
+        : null;
+
+    const accuracyM =
+      typeof dto.accuracyM === 'number' || typeof dto.accuracyM === 'string'
+        ? Number(dto.accuracyM)
+        : null;
+
+    const created = await this.prisma.wirItemRun.create({
+      data: {
+        wirId,
+        itemId,
+
+        actorUserId,
+        actorRole,
+        actorName: actorName ?? null,
+
+        valueText: dto.valueText ?? null,
+        valueNumber,
+        unit: dto.unit ?? null,
+        status: statusEnum ?? null,
+        comment: dto.comment ?? null,
+
+        lat: typeof dto.lat === 'number' ? dto.lat : null,
+        lng: typeof dto.lng === 'number' ? dto.lng : null,
+        accuracyM,
+        locationNote: dto.locationNote ?? null,
+
+        meta: dto.meta ?? undefined,
+      },
+    });
+
+    return {
+      id: created.id,
+      wirId: created.wirId,
+      itemId: created.itemId,
+      actorUserId: created.actorUserId,
+      actorRole: created.actorRole,
+      actorName: created.actorName,
+      valueText: created.valueText,
+      valueNumber: created.valueNumber,
+      unit: created.unit,
+      status: created.status,
+      comment: created.comment,
+      lat: created.lat,
+      lng: created.lng,
+      accuracyM: created.accuracyM,
+      locationNote: created.locationNote,
+      createdAt: created.createdAt,
+    };
+  }
+
+  // Fetch all runs for an item (or for the whole WIR if itemId omitted)
+  async listItemRuns(
+    projectId: string,
+    wirId: string,
+    itemId?: string,
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const where: Prisma.WirItemRunWhereInput = {
+      wirId,
+      ...(itemId ? { itemId } : {}),
+    };
+
+    const rows = await this.prisma.wirItemRun.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      wirId: r.wirId,
+      itemId: r.itemId,
+      actorUserId: r.actorUserId,
+      actorRole: r.actorRole,
+      actorName: r.actorName,
+      valueText: r.valueText,
+      valueNumber: r.valueNumber,
+      unit: r.unit,
+      status: r.status,
+      comment: r.comment,
+      lat: r.lat,
+      lng: r.lng,
+      accuracyM: r.accuracyM,
+      locationNote: r.locationNote,
+      createdAt: r.createdAt,
+    }));
   }
 
   async history(projectId: string, wirId: string) {
@@ -918,88 +1371,426 @@ export class WirService {
 
       return this.toFE(updated);
     });
-    
-}
-// Minimal guard to ensure the WIR exists in the given project
-private async ensureWirInProject(projectId: string, wirId: string) {
-  const w = await this.prisma.wir.findFirst({ where: { wirId, projectId }, select: { wirId: true } });
-  if (!w) throw new NotFoundException('WIR not found for this project');
-}
 
-// Create a new discussion comment (top-level or reply)
-async addDiscussion(projectId: string, wirId: string, authorId: string, dto: CreateDiscussionDto) {
-  await this.ensureWirInProject(projectId, wirId);
-
-  if (dto.parentId) {
-    const p = await this.prisma.wirDiscussion.findFirst({
-      where: { id: dto.parentId, wirId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!p) throw new BadRequestException('Invalid parentId for this WIR');
   }
 
-  return this.prisma.wirDiscussion.create({
-    data: {
+  // Create one evidence row for a WIR (optionally linked to item/run)
+  async addEvidence(
+    projectId: string,
+    wirId: string,
+    actorUserId: string,       // for auth / later audit if needed
+    dto: CreateEvidenceDto,
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    if (!dto.url || !dto.url.trim()) {
+      throw new BadRequestException('url is required');
+    }
+
+    // Optional consistency checks
+    if (dto.itemId) {
+      const item = await this.prisma.wirItem.findFirst({
+        where: { id: dto.itemId, wirId },
+        select: { id: true },
+      });
+      if (!item) throw new BadRequestException('Invalid itemId for this WIR');
+    }
+
+    if (dto.runId) {
+      const run = await this.prisma.wirItemRun.findFirst({
+        where: { id: dto.runId, wirId },
+        select: { id: true },
+      });
+      if (!run) throw new BadRequestException('Invalid runId for this WIR');
+    }
+
+    const accuracyM =
+      typeof dto.accuracyM === 'number' || typeof dto.accuracyM === 'string'
+        ? Number(dto.accuracyM)
+        : null;
+
+    const capturedAt =
+      dto.capturedAt && dto.capturedAt.trim()
+        ? new Date(dto.capturedAt)
+        : null;
+
+    const created = await this.prisma.wirItemEvidence.create({
+      data: {
+        wirId,
+        itemId: dto.itemId || null,
+        runId: dto.runId || null,
+        kind: toEvidenceKind(dto.kind),
+
+        url: dto.url.trim(),
+        thumbUrl: dto.thumbUrl ?? null,
+        fileName: dto.fileName ?? null,
+        fileSize: dto.fileSize ?? null,
+        mimeType: dto.mimeType ?? null,
+
+        capturedAt,
+        lat: typeof dto.lat === 'number' ? dto.lat : null,
+        lng: typeof dto.lng === 'number' ? dto.lng : null,
+        accuracyM,
+        meta: dto.meta ?? undefined,
+      },
+    });
+
+    return {
+      id: created.id,
+      wirId: created.wirId,
+      itemId: created.itemId,
+      runId: created.runId,
+      kind: created.kind,
+      url: created.url,
+      thumbUrl: created.thumbUrl,
+      fileName: created.fileName,
+      fileSize: created.fileSize,
+      mimeType: created.mimeType,
+      capturedAt: created.capturedAt,
+      lat: created.lat,
+      lng: created.lng,
+      accuracyM: created.accuracyM,
+      createdAt: created.createdAt,
+    };
+  }
+
+  // ---------------- NEW: Runner – Inspector quick-save ----------------
+  async saveRunnerInspector(
+    projectId: string,
+    wirId: string,
+    userId: string,
+    body: {
+      items: { itemId: string; status: 'PASS' | 'FAIL' | null; measurement: string | null; remark: string | null; }[];
+      overallRecommendation?: 'APPROVE' | 'APPROVE_WITH_COMMENTS' | 'REJECT' | null;
+    },
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const items = Array.isArray(body?.items) ? body.items : [];
+    const now = new Date();
+    const actorName = await this.resolveActorName(userId);
+
+    for (const it of items) {
+      const targetItemId = await this.resolveWirItemId(wirId, it.itemId);
+
+      const rawMeasurement = (it?.measurement ?? '');
+      const measurementTrim = typeof rawMeasurement === 'string' ? rawMeasurement.trim() : '';
+      const valueNumber = measurementTrim !== '' && !isNaN(Number(measurementTrim)) ? Number(measurementTrim) : null;
+      const valueText = valueNumber === null ? (measurementTrim || null) : null;
+
+      const statusProvided = it?.status === 'PASS' || it?.status === 'FAIL';
+      const remarkTrim = (it?.remark ?? '').toString().trim();
+      const remarkProvided = remarkTrim.length > 0;
+      const measurementProvided = valueNumber !== null || (valueText !== null && valueText !== '');
+
+      // If nothing meaningful was provided, skip this row entirely
+      if (!statusProvided && !remarkProvided && !measurementProvided) {
+        continue;
+      }
+
+      // Create a run row capturing only what was provided
+      await this.prisma.wirItemRun.create({
+        data: {
+          wirId,
+          itemId: targetItemId,
+          actorUserId: userId,
+          actorRole: WirRunnerActorRole.Inspector,
+          actorName: actorName ?? null,
+          valueText: measurementProvided ? valueText : null,
+          valueNumber: measurementProvided ? valueNumber : null,
+          unit: null,
+          status: statusProvided
+            ? (it.status === 'PASS' ? WirItemStatus.OK : WirItemStatus.NCR)
+            : null,
+          comment: remarkProvided ? remarkTrim : null,
+          createdAt: now,
+        },
+      });
+
+      // Mirror only the fields actually provided (avoid wiping with nulls)
+      const mirror: Prisma.WirItemUpdateInput = {};
+      if (statusProvided) {
+        mirror.inspectorStatus = it.status === 'PASS'
+          ? InspectorItemStatus.PASS
+          : InspectorItemStatus.FAIL;
+      }
+      if (remarkProvided) {
+        mirror.inspectorNote = remarkTrim;
+      }
+      if (Object.keys(mirror).length > 0) {
+        (mirror as any).updatedAt = now;
+        await this.prisma.wirItem.update({
+          where: { id: targetItemId },
+          data: mirror,
+        });
+      }
+    }
+
+    if (body?.overallRecommendation) {
+      await this.prisma.wir.update({
+        where: { wirId },
+        data: {
+          inspectorRecommendation: body.overallRecommendation as InspectorRecommendation,
+          inspectorReviewedAt: now,
+        },
+      });
+    }
+
+    // Return fresh payload with runner snapshots hydrated
+    return this.get(projectId, wirId, userId);
+  }
+
+  /** HOD → Finalize (ACCEPT / REJECT) */
+  private canApprove(role: string, current: WirStatus) {
+    // Only after Inspector has recommended
+    if (current !== WirStatus.Recommended) return false;
+    if (!role) return false;
+
+    // HOD is also derived from PMC family (NOT Admin/Client)
+    const allowed = ['PMC', 'IH-PMT', 'Consultant'];
+    return allowed.includes(role);
+  }
+
+  /** HOD → Finalize with REJECT (closed) */
+  private canReject(role: string, current: WirStatus) {
+    // Same gate as approve: final decision by PMC-family HOD
+    return this.canApprove(role, current);
+  }
+
+  // ----------------Runner – HOD finalize (store notes/outcome only) ----------------
+  async finalizeRunnerHod(
+    projectId: string,
+    wirId: string,
+    userId: string,
+    body: {
+      outcome: 'ACCEPT' | 'RETURN' | 'REJECT';
+      notes?: string | null;
+      inspectorRecommendation?: 'APPROVE' | 'APPROVE_WITH_COMMENTS' | 'REJECT' | null;
+    },
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    // Only persist HOD notes / header outcome here; do NOT change main WIR status
+    const now = new Date();
+
+    await this.prisma.wir.update({
+      where: { wirId },
+      data: {
+        hodOutcome: (body?.outcome ?? null) as any,
+        hodRemarks: body?.notes ?? null,
+        hodDecidedAt: now,
+        // optionally persist inspectorRecommendation snapshot from this finalize
+        ...(body?.inspectorRecommendation ? { inspectorRecommendation: body.inspectorRecommendation as InspectorRecommendation, inspectorReviewedAt: now } : {}),
+      },
+    });
+
+    return this.get(projectId, wirId, userId);
+  }
+
+  async saveRunnerHod(
+    projectId: string,
+    wirId: string,
+    userId: string,
+    body: {
+      items: { itemId: string; hodRemark: string | null }[];
+      notes?: string | null; // optional header draft note (stored to hodRemarks but w/o outcome/decidedAt)
+    },
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const now = new Date();
+    const items = Array.isArray(body?.items) ? body.items : [];
+
+    // For history/audit, write a WirItemRun row with actorRole=HOD (comment only)
+    // and mirror to WirItem.hodNote for fast readback.
+    for (const it of items) {
+      const targetItemId = await this.resolveWirItemId(wirId, it.itemId);
+
+      await this.prisma.wirItemRun.create({
+        data: {
+          wirId,
+          itemId: targetItemId,
+          actorUserId: userId,
+          actorRole: WirRunnerActorRole.HOD,
+          actorName: await this.resolveActorName(userId),
+          valueText: null,
+          valueNumber: null,
+          unit: null,
+          status: null,                 // HOD quick-save does not alter pass/fail
+          comment: it?.hodRemark ?? null,
+          createdAt: now,
+        },
+      });
+
+      await this.prisma.wirItem.update({
+        where: { id: targetItemId },
+        data: {
+          hodNote: it?.hodRemark ?? null,
+          // (updatedAt auto-bumps; FE can use this for “just saved” highlight)
+        },
+      });
+    }
+
+    // Optional: persist a header-level *draft* note without setting outcome/decidedAt
+    if (typeof body?.notes !== 'undefined') {
+      await this.prisma.wir.update({
+        where: { wirId },
+        data: {
+          // store as hodRemarks (draft text) but do NOT set hodOutcome/hodDecidedAt here
+          hodRemarks: body.notes,
+        },
+      });
+    }
+
+    // Return fresh payload
+    return this.get(projectId, wirId, userId);
+  }
+
+  // List evidences for a WIR (optionally filtered by item/run)
+  async listEvidences(
+    projectId: string,
+    wirId: string,
+    filters?: { itemId?: string; runId?: string },
+  ) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const where: Prisma.WirItemEvidenceWhereInput = {
       wirId,
-      authorId,
-      body: (dto.body || '').trim(),
-      parentId: dto.parentId || null,
-    },
-    include: {
-      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
-    },
-  });
-}
+      ...(filters?.itemId ? { itemId: filters.itemId } : {}),
+      ...(filters?.runId ? { runId: filters.runId } : {}),
+    };
 
-// List flat discussion for a WIR (client can thread by parentId)
-async listDiscussions(projectId: string, wirId: string) {
-  await this.ensureWirInProject(projectId, wirId);
+    const rows = await this.prisma.wirItemEvidence.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+    });
 
-  return this.prisma.wirDiscussion.findMany({
-    where: { wirId, deletedAt: null },
-    orderBy: [{ createdAt: 'asc' }],
-    include: {
-      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
-    },
-  });
-}
+    return rows.map((r) => ({
+      id: r.id,
+      wirId: r.wirId,
+      itemId: r.itemId,
+      runId: r.runId,
+      kind: r.kind,
+      url: r.url,
+      thumbUrl: r.thumbUrl,
+      fileName: r.fileName,
+      fileSize: r.fileSize,
+      mimeType: r.mimeType,
+      capturedAt: r.capturedAt,
+      lat: r.lat,
+      lng: r.lng,
+      accuracyM: r.accuracyM,
+      createdAt: r.createdAt,
+    }));
+  }
 
-// Update a comment (author-only)
-async updateDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string, dto: UpdateDiscussionDto) {
-  await this.ensureWirInProject(projectId, wirId);
+  // Minimal guard to ensure the WIR exists in the given project
+  private async ensureWirInProject(projectId: string, wirId: string) {
+    const w = await this.prisma.wir.findFirst({ where: { wirId, projectId }, select: { wirId: true } });
+    if (!w) throw new NotFoundException('WIR not found for this project');
+  }
 
-  const row = await this.prisma.wirDiscussion.findFirst({
-    where: { id: commentId, wirId, deletedAt: null },
-    select: { id: true, authorId: true },
-  });
-  if (!row) throw new NotFoundException('Comment not found');
-  if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can edit');
+  // Resolve a candidate id (which may be WirItem.id OR RefChecklistItem id)
+  // to the actual WirItem.id for this WIR.
+  private async resolveWirItemId(wirId: string, candidateId: string): Promise<string> {
+    // 1) Exact WirItem.id
+    const direct = await this.prisma.wirItem.findFirst({
+      where: { id: candidateId, wirId },
+      select: { id: true },
+    });
+    if (direct) return direct.id;
 
-  return this.prisma.wirDiscussion.update({
-    where: { id: commentId },
-    data: { body: (dto.body || '').trim() },
-    include: {
-      author: { select: { userId: true, firstName: true, lastName: true, code: true } },
-    },
-  });
-}
+    // 2) Attached RefChecklistItem id -> WirItem.itemId
+    const byAttached = await this.prisma.wirItem.findFirst({
+      where: { wirId, itemId: candidateId },
+      select: { id: true },
+    });
+    if (byAttached) return byAttached.id;
 
-// Soft-delete a comment (author-only)
-async deleteDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string) {
-  await this.ensureWirInProject(projectId, wirId);
+    // 3) Provenance RefChecklistItem id -> WirItem.sourceChecklistItemId
+    const bySource = await this.prisma.wirItem.findFirst({
+      where: { wirId, sourceChecklistItemId: candidateId },
+      select: { id: true },
+    });
+    if (bySource) return bySource.id;
 
-  const row = await this.prisma.wirDiscussion.findFirst({
-    where: { id: commentId, wirId, deletedAt: null },
-    select: { id: true, authorId: true },
-  });
-  if (!row) throw new NotFoundException('Comment not found');
-  if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can delete');
+    throw new BadRequestException('Invalid itemId for this WIR');
+  }
 
-  await this.prisma.wirDiscussion.update({
-    where: { id: commentId },
-    data: { deletedAt: new Date() },
-  });
-  return { ok: true };
-}
+  // Create a new discussion comment (top-level or reply)
+  async addDiscussion(projectId: string, wirId: string, authorId: string, dto: CreateDiscussionDto) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    if (dto.parentId) {
+      const p = await this.prisma.wirDiscussion.findFirst({
+        where: { id: dto.parentId, wirId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!p) throw new BadRequestException('Invalid parentId for this WIR');
+    }
+
+    return this.prisma.wirDiscussion.create({
+      data: {
+        wirId,
+        authorId,
+        body: (dto.body || '').trim(),
+        parentId: dto.parentId || null,
+      },
+      include: {
+        author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+      },
+    });
+  }
+
+  // List flat discussion for a WIR (client can thread by parentId)
+  async listDiscussions(projectId: string, wirId: string) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    return this.prisma.wirDiscussion.findMany({
+      where: { wirId, deletedAt: null },
+      orderBy: [{ createdAt: 'asc' }],
+      include: {
+        author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+      },
+    });
+  }
+
+  // Update a comment (author-only)
+  async updateDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string, dto: UpdateDiscussionDto) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const row = await this.prisma.wirDiscussion.findFirst({
+      where: { id: commentId, wirId, deletedAt: null },
+      select: { id: true, authorId: true },
+    });
+    if (!row) throw new NotFoundException('Comment not found');
+    if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can edit');
+
+    return this.prisma.wirDiscussion.update({
+      where: { id: commentId },
+      data: { body: (dto.body || '').trim() },
+      include: {
+        author: { select: { userId: true, firstName: true, lastName: true, code: true } },
+      },
+    });
+  }
+
+  // Soft-delete a comment (author-only)
+  async deleteDiscussion(projectId: string, wirId: string, commentId: string, actorUserId: string) {
+    await this.ensureWirInProject(projectId, wirId);
+
+    const row = await this.prisma.wirDiscussion.findFirst({
+      where: { id: commentId, wirId, deletedAt: null },
+      select: { id: true, authorId: true },
+    });
+    if (!row) throw new NotFoundException('Comment not found');
+    if (String(row.authorId) !== String(actorUserId)) throw new ForbiddenException('Only author can delete');
+
+    await this.prisma.wirDiscussion.update({
+      where: { id: commentId },
+      data: { deletedAt: new Date() },
+    });
+    return { ok: true };
+  }
 
 }

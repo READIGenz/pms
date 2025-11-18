@@ -7,6 +7,7 @@ import {
   Param,
   ParseBoolPipe,
   ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -48,8 +49,10 @@ export class AdminChecklistsController {
     });
   }
 
-  @Get(':id')
-getOne(@Param('id') id: string, @Query('includeItems') includeItems?: '0'|'1') {
+   @Get(':id')
+  getOne(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query('includeItems') includeItems?: '0' | '1', ) {
   return this.svc.getOne(id, includeItems === '1');
 }
 
