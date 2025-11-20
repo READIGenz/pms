@@ -1,25 +1,27 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, StateType } from '@prisma/client';
+import { states } from './../india-state-district-seed'; // adjust path if needed
+
 const prisma = new PrismaClient();
 
 async function main() {
-  // Ensure the singleton settings row exists with id=1
-  await prisma.adminAuditSetting.upsert({
-    where: { id: 1 },
-    update: {}, // keep existing values; we only care that it exists
-    create: {
-      id: 1,
-      assignmentsEnabled: true,
-      // updatedBy* are optional; leave null on first create
-    },
-  });
+  for (const state of states) {
+    await prisma.state.upsert({
+      where: { code: state.code },
+      update: {},
+      create: {
+        code: state.code,
+        name: state.name,
+        type: state.type as StateType,
+        districts: {
+          create: state.districts,
+        },
+      },
+    });
+  }
 
-  console.log('✓ AdminAuditSetting seeded (id=1)');
+  console.log('✅ Seeded states and districts.');
 }
 
 main()
-  .then(() => prisma.$disconnect())
-  .catch(async (e) => {
-    console.error(e);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());

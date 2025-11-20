@@ -497,6 +497,7 @@ type WirItem = {
   id: string;
   name: string;
   checklistId?: string | null;
+  unit?: string | null;
   spec?: string | null;
   required?: string | null;
   critical?: boolean | number | string | null;
@@ -1777,6 +1778,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
               it.flags?.critical ??
               it.meta?.critical ??
               null,
+              unit: it.unit ?? it.uom ?? null,
             tolerance: it.tolerance ?? null,
             photoCount:
               it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
@@ -2224,6 +2226,7 @@ export default function WIR_Contractor({ hideTopHeader, onBackOverride }: WIRPro
           it.flags?.critical ??
           it.meta?.critical ??
           null,
+          unit: it.unit ?? it.uom ?? null,
         tolerance: it.tolerance ?? null,
         photoCount:
           it.photoCount ?? (Array.isArray(it.photos) ? it.photos.length : null),
