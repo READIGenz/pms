@@ -1,0 +1,389 @@
+//src/views/home/modules/WIR/DispatchWIRModal.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  listActiveMembersForProjectRole,
+  resolveActingRoleFor,
+  todayISO,
+  type ActingRole,
+} from "./memberships.helpers";
+import { api } from "../../../../api/client";
+import { useParams } from "react-router-dom";
+
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  creatorName: string;
+  role: string; // already normalized upstream
+  projectCaption?: string; // "PRJ-001 — Tower A"
+  projectId: string;
+  /** NEW: target WIR id to dispatch */
+  wirId: string;
+  /** NEW: optional optimistic patch to parent list */
+  onDispatched?: (patch: {
+    wirId: string;
+    status: "Submitted";
+    code?: string;
+    bicUserId: string;
+    updatedAt?: string;
+  }) => void;
+};
+
+/** Simple shape for recipients (UI) */
+type Recipient = {
+  id: string;
+  fullName: string;
+  phone?: string | null;
+  email?: string | null;
+  /** Derived acting role: "Inspector" | "HOD" | "Inspector+HOD" */
+  acting: "Inspector" | "HOD" | "Inspector+HOD";
+};
+
+/** Display name normalizer (kept tiny; no old heuristics) */
+function displayName(u: any): string {
+  const s =
+    u?.fullName ||
+    u?.name ||
+    [u?.firstName, u?.lastName].filter(Boolean).join(" ") ||
+    u?.displayName ||
+    u?.email ||
+    u?.code ||
+    u?.id ||
+    "User";
+  return String(s);
+}
+
+export default function DispatchWIRModal({
+  open,
+  onClose,
+  creatorName,
+  role,
+  projectCaption,
+  projectId,
+  wirId,
+  onDispatched,
+}: Props) {
+  if (!open) return null;
+
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<Recipient[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+const params = useParams<{ wirId?: string }>();
+const targetWirId = wirId || params.wirId || undefined;
+  // Fetch on open+projectId
+  useEffect(() => {
+    let abort = false;
+    async function run() {
+      if (!open || !projectId) return;
+      setLoading(true);
+      setErr(null);
+      setCandidates([]);
+      setSelectedIds(new Set());
+
+      try {
+        // list all active PMC members for this project (today)
+        const onDate = todayISO();
+        const members = await listActiveMembersForProjectRole(projectId, "PMC", onDate);
+
+        // Resolve acting role PER USER using base+overrides (deny-only)
+        const mapped: Recipient[] = [];
+        for (const { user } of members) {
+          const uid = String(user.userId || "");
+          if (!uid) continue;
+
+          const acting: ActingRole = await resolveActingRoleFor(projectId, "PMC", uid);
+          if (acting === "ViewerOnly") continue; // hide PMC without WIR acting perms
+
+          mapped.push({
+            id: uid,
+            fullName: displayName(user),
+            email: user.email ?? null,
+            phone:
+              (user as any)?.displayPhone ??
+              (user as any)?.phone ??
+              (user as any)?.mobile ??
+              null,
+            acting: (acting === "Inspector+HOD" ? "Inspector+HOD" : acting) as Recipient["acting"],
+          });
+        }
+
+        if (!abort) setCandidates(mapped);
+      } catch (e: any) {
+        const msg = e?.response?.data?.error || e?.message || "Failed to load recipients.";
+        if (!abort) {
+          setErr(msg);
+          setCandidates([]);
+        }
+      } finally {
+        if (!abort) setLoading(false);
+      }
+    }
+    run();
+    return () => {
+      abort = true;
+    };
+  }, [open, projectId]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return candidates;
+    return candidates.filter((c) =>
+      [c.fullName, c.email, c.phone, c.acting]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q))
+    );
+  }, [candidates, search]);
+
+  const toggle = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const allVisibleSelected =
+    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const toggleAllVisible = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        filtered.forEach((r) => next.delete(r.id));
+      } else {
+        filtered.forEach((r) => next.add(r.id));
+      }
+      return next;
+    });
+
+const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
+
+  async function onSend() {
+  const inspectorId = Array.from(selectedIds)[0];
+  if (!inspectorId) {
+    setErr("Please pick an Inspector.");
+    return;
+  }
+  if (!targetWirId) {
+    setErr("Missing WIR ID. Open this from a WIR detail/edit screen and try again.");
+    return;
+  }
+
+  setSubmitting(true);
+  setErr(null);
+  try {
+    const { data } = await api.post(
+      `/projects/${projectId}/wir/${targetWirId}/dispatch`,
+      {
+        inspectorId,
+        assignCode: true,
+        materializeIfNeeded: true,
+      }
+    );
+
+    onDispatched?.({
+      wirId: data?.wirId ?? targetWirId,
+      status: "Submitted",
+      code: data?.code ?? undefined,
+      bicUserId: inspectorId,
+      updatedAt: data?.updatedAt,
+    });
+
+    onClose();
+  } catch (e: any) {
+    setErr(e?.response?.data?.message || e?.message || "Failed to dispatch.");
+  } finally {
+    setSubmitting(false);
+  }
+}
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40">
+      {/* Modal panel: full-height sheet on mobile; centered card on sm+ with scrollable content */}
+      <div
+        className="
+          absolute inset-x-0 bottom-0
+          sm:static sm:mx-auto
+          w-full sm:w-auto sm:max-w-xl
+          sm:rounded-2xl
+          bg-white dark:bg-neutral-900
+          border-t sm:border dark:border-neutral-800
+          p-4 sm:p-5
+          h-[92vh] sm:h-auto
+          max-h-[92vh] sm:max-h-[85vh]
+          rounded-t-2xl sm:rounded-2xl
+          overflow-y-auto
+        "
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="text-base font-semibold dark:text-white">
+            Dispatch Work Inspection
+          </div>
+          <button
+            onClick={onClose}
+            className="text-sm px-3 py-2 rounded border dark:border-neutral-800"
+          >
+            Close
+          </button>
+        </div>
+        {projectCaption ? (
+          <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
+            {projectCaption}
+          </div>
+        ) : null}
+
+        {/* Meta (creator + role) */}
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="rounded-xl border dark:border-neutral-800 p-3">
+            <div className="text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+              Created By
+            </div>
+            <div className="text-[15px] sm:text-sm dark:text-white">
+              {creatorName || "—"}
+            </div>
+          </div>
+
+          <div className="rounded-xl border dark:border-neutral-800 p-3">
+            <div className="text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+              Your Role
+            </div>
+            <div className="text-[15px] sm:text-sm dark:text-white">{role || "—"}</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="mt-4 space-y-4">
+          {/* Tile 1: Recipients */}
+          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm sm:text-base font-semibold dark:text-white">
+                Recipients
+              </div>
+              <div className="text-[12px] text-gray-500 dark:text-gray-400">
+                PMC members assigned to this project
+              </div>
+            </div>
+
+            {/* Search + Select all */}
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, phone, or role…"
+                className="flex-1 text-[15px] sm:text-sm border rounded-lg px-3 py-3 sm:py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+              />
+              <button
+                type="button"
+                onClick={toggleAllVisible}
+                className="text-xs sm:text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap disabled:opacity-60"
+                disabled={!filtered.length}
+                title={allVisibleSelected ? "Clear all (visible)" : "Select all (visible)"}
+              >
+                {allVisibleSelected ? "Clear" : "Select all"}
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="mt-3 h-[38vh] sm:max-h-[40vh] overflow-auto space-y-2 pr-1">
+              {loading ? (
+                <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 p-2">
+                  Loading recipients…
+                </div>
+              ) : err ? (
+                <div className="text-[13px] sm:text-sm text-rose-700 dark:text-rose-400 p-2">
+                  {err}
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 p-2 rounded-lg border border-dashed dark:border-neutral-800">
+                  No recipients to show. (PMC users without WIR permissions are hidden.)
+                </div>
+              ) : (
+                filtered.map((r) => (
+                  <label
+                    key={r.id}
+                    className="flex items-start gap-3 p-3 rounded-xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggle(r.id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] sm:text-sm dark:text-white truncate">
+                        {r.fullName}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
+                          {r.acting}
+                        </span>
+                        {r.email ? (
+                          <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300 truncate">
+                            {r.email}
+                          </span>
+                        ) : null}
+                        {r.phone ? (
+                          <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
+                            {r.phone}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </label>
+                ))
+              )}
+            </div>
+
+            {/* Mini summary */}
+            <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
+              Selected: <b>{selectedIds.size}</b>
+            </div>
+          </section>
+
+          {/* Tile 2: AI Routing & Summary (placeholder) */}
+          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
+            <div className="text-sm sm:text-base font-semibold dark:text-white">
+              AI Routing &amp; Summary
+            </div>
+            <div className="mt-2 text-[13px] sm:text-sm text-gray-600 dark:text-gray-300">
+              We’ll add routing rules and a compact summary here (auto-generated
+              for recipients) in the next step.
+            </div>
+          </section>
+
+          {/* Tile 3: Actions */}
+          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
+            {/* error line */}
+            {err && !loading ? (
+              <div className="text-[12px] sm:text-sm text-rose-700 dark:text-rose-400 mb-2">
+                {err}
+              </div>
+            ) : null}
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-end">
+              <button
+                onClick={onClose}
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onSend}
+                disabled={!canSend}
+                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${
+                  canSend
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                    : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                }`}
+                title={canSend ? "Send" : "Select at least one recipient"}
+              >
+                {submitting ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

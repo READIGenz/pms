@@ -289,44 +289,82 @@ export async function getRefChecklistCount(id: string): Promise<number> {
   }
 }
 
-// /** (Optional) Replace items via PATCH :id/items — handy for editors */
-// export async function replaceRefChecklistItems(
-//   refChecklistId: string,
-//   items: RefChecklistItem[]
-// ) {
-//   const payload = {
-//     items: (items || []).map((it, i) => ({
-//       id: it.id,
-//       seq: i + 1,
-//       // controller expects 'text'
-//       text: it.title || it.name || it.code || `Item ${i + 1}`,
-//       requirement:
-//         (it.required as RequirementFlag) ??
-//         (it.mandatory as RequirementFlag) ??
-//         null,
-//       itemCode: it.code ?? null,
-//       units: it.unit ?? it.uom ?? null,
-//       tolerance: (it.tolerance as ToleranceOp) ?? null,
+/** Normalize any server list payload into an array */
+function unwrapList<T = any>(data: any): T[] {
+  const one = data?.data ?? data;
+  const body = one?.data ?? one;
+  if (Array.isArray(body)) return body as T[];
+  if (Array.isArray(body?.items)) return body.items as T[];
+  if (Array.isArray(body?.list)) return body.list as T[];
+  if (Array.isArray(body?.records)) return body.records as T[];
+  return [];
+}
 
-//       // pass through without inventing values
-//       critical: typeof it.critical === "boolean" ? it.critical : null,
-//       value:
-//         typeof it.value === "number" || typeof it.value === "string"
-//           ? it.value
-//           : null,
+/**
+ * List reference checklists (library) for selection UI.
+ * Tries project-scoped first, then falls back to admin.
+ */
+export async function listRefChecklistLibrary(
+  projectId?: string,
+  params?: { status?: string; page?: number; pageSize?: number; discipline?: string }
+): Promise<RefChecklistMeta[]> {
+  // Try PROJECT-SCOPED first (preferred)
+  if (projectId) {
+    try {
+      const resProj = await api.get(`/projects/${projectId}/ref/checklists`, { params });
+      const arrProj = unwrapList<RefChecklistRaw>(resProj.data);
+      if (arrProj.length) {
+        return arrProj.map((raw) => ({
+          id: String(raw.id),
+          code: raw.code ?? null,
+          title: raw.title || "(Checklist)",
+          discipline: (raw as any).discipline,
+          stageLabel: (raw as any).stageLabel ?? null,
+          tags: (raw as any).tags ?? undefined,
+          status: (raw as any).status,
+          version: (raw as any).version,
+          versionLabel: (raw as any).versionLabel ?? null,
+          versionMajor: (raw as any).versionMajor,
+          versionMinor: (raw as any).versionMinor,
+          versionPatch: (raw as any).versionPatch,
+          itemsCount: resolveChecklistCount(raw, 0),
+        }));
+      }
+    } catch {
+      /* fall through to admin */
+    }
+  }
 
-//       // keep other optional server fields explicit and null unless set by UI
-//       aiEnabled: null,
-//       aiConfidence: null,
-//       base: null,
-//       plus: null,
-//       minus: null,
-//       tags: it.tags ?? null,
-//     })),
-//   };
-//   const { data } = await api.patch(
-//     `/admin/ref/checklists/${refChecklistId}/items`,
-//     payload
-//   );
-//   return unwrap(data);
-// }
+  // Fallback to ADMIN library
+  const resAdm = await api.get(`/admin/ref/checklists`, { params });
+  const arrAdm = unwrapList<RefChecklistRaw>(resAdm.data);
+
+  return arrAdm.map((raw) => ({
+    id: String(raw.id),
+    code: raw.code ?? null,
+    title: raw.title || "(Checklist)",
+    discipline: (raw as any).discipline,
+    stageLabel: (raw as any).stageLabel ?? null,
+    tags: (raw as any).tags ?? undefined,
+    status: (raw as any).status,
+    version: (raw as any).version,
+    versionLabel: (raw as any).versionLabel ?? null,
+    versionMajor: (raw as any).versionMajor,
+    versionMinor: (raw as any).versionMinor,
+    versionPatch: (raw as any).versionPatch,
+    itemsCount: resolveChecklistCount(raw, 0),
+  }));
+}
+
+// project-scoped items fetcher
+export async function listProjectRefChecklistItems(projectId: string, checklistId: string) {
+  // Controller requires the REAL checklist id, not code
+  const { data } = await api.get(
+    `/projects/${projectId}/ref/checklists/${checklistId}`,
+    { params: { includeItems: 1 } }
+  );
+
+  const payload = data?.data;
+  // returns [] if not found/malformed (caller shows empty)
+  return Array.isArray(payload?.items) ? payload.items : [];
+}

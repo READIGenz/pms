@@ -863,6 +863,11 @@ model Wir {
   hodRemarks   String?
   hodDecidedAt DateTime?   @db.Timestamptz(6)
 
+ // ================= NEW: versioning ================================
+  seriesId String   @db.Uuid                      // NEW: lineage id (v1 = self.wirId)
+  version  Int      @default(1)                   // NEW: 1,2,3,...
+  prevWirId String? @db.Uuid                      // NEW: immediate parent (v2+)
+
   checklists WirChecklist[]
 
   items WirItem[]
@@ -879,10 +884,25 @@ model Wir {
   itemRuns  WirItemRun[]      @relation("WirToItemRuns")
   evidences WirItemEvidence[] @relation("WirToEvidence")
 
+/// ——— Activity library provenance + frozen copy ———
+  activityRefId           String?   @db.Uuid     // points to RefActivity.id (library)
+  activitySnapshot        Json?                    // frozen activity JSON used by Inspector
+  activitySnapshotVersion Int?                     // version from the library when snapped
+
+  /// ——— Checklist materialization lifecycle ———
+  materialized  Boolean   @default(false)         // have runner rows been created?
+  snapshotAt    DateTime? @db.Timestamptz(6)      // when the copy-on-dispatch happened
+
+  // ...relations/indexes below...
+  @@index([activityRefId])
+
   @@index([projectId])
   @@index([status])
   @@index([discipline, stage])
   @@index([bicUserId])
+// NEW: allow quick fetch of a WIR series and specific version
+  @@index([seriesId, version])
+
   @@map("Wir")
 }
 

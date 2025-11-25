@@ -1,12 +1,12 @@
-//pms-backend/src/modules/project-modules/wir/wir.module.ts
 import { Module } from '@nestjs/common';
-import { WirController } from './wir.controller';
-import { WirService } from './wir.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { WirService } from './wir.service';
+import { WirController } from './wir.controller';
+import { ProjectRefChecklistsController } from './project-ref-checklists.controller';
 
 @Module({
-  controllers: [WirController],
-  providers: [WirService, PrismaService],
+  controllers: [WirController,ProjectRefChecklistsController],
+  providers: [PrismaService, WirService],
   exports: [WirService],
 })
 export class WirModule {}

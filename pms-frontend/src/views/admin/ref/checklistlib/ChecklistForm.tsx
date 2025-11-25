@@ -4,20 +4,91 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
 
 /* ========================= Error helper (same as MaterialForm) ========================= */
-function extractServerError(e: any): string {
-    const data = e?.response?.data;
+/* ========================= Error helper (same as MaterialForm) ========================= */
+type ServerLike = {
+    status?: number;
+    statusText?: string;
+    data?: any;
+    headers?: Record<string, string>;
+    config?: any;
+};
+
+function pick(x: any, keys: string[]) {
+    const o: Record<string, any> = {};
+    for (const k of keys) if (x && x[k] !== undefined) o[k] = x[k];
+    return o;
+}
+
+export function extractServerError(e: any): string {
+    const res: ServerLike | undefined = e?.response;
+    const data = res?.data ?? {};
+    const status = res?.status;
+    const statusText = res?.statusText;
+    const requestId = res?.headers?.["x-request-id"] || res?.headers?.["x-correlation-id"];
     const prismaCode = data?.code || data?.meta?.code || e?.code;
+
+    // Prisma known codes → friendlier text
     if (prismaCode === "P2002") {
         const target = data?.meta?.target || data?.target || "Unique field";
-        return `Duplicate value: ${Array.isArray(target) ? target.join(", ") : target} must be unique.`;
+        return `Duplicate value: ${Array.isArray(target) ? target.join(", ") : target} must be unique.` + (requestId ? ` [ref: ${requestId}]` : "");
     }
-    if (Array.isArray(data?.message) && data?.message.length) return data.message.join(", ");
-    if (typeof data?.message === "string" && data.message) return data.message;
-    if (typeof data?.error === "string" && data.error) return data.error;
-    if (typeof data?.detail === "string" && data.detail) return data.detail;
-    if (typeof data === "string" && data) return data;
-    if (typeof e?.message === "string" && e.message) return e.message;
-    return "Request failed (400). Please check the field values and try again.";
+    if (prismaCode === "P2003") {
+        const field = data?.meta?.field_name || data?.field || "related record";
+        return `Cannot proceed due to a missing/linked ${field} (foreign key).` + (requestId ? ` [ref: ${requestId}]` : "");
+    }
+    if (prismaCode === "P2025") {
+        return `Record not found or already updated by another action.` + (requestId ? ` [ref: ${requestId}]` : "");
+    }
+
+    // Class-validator array of messages
+    if (Array.isArray(data?.message) && data?.message.length) {
+        return `${data.message.join(", ")}` + (requestId ? ` [ref: ${requestId}]` : "");
+    }
+
+    // Typical error fields
+    const text =
+        (typeof data?.message === "string" && data.message) ||
+        (typeof data?.error === "string" && data.error) ||
+        (typeof data?.detail === "string" && data.detail) ||
+        (typeof data === "string" && data) ||
+        (typeof e?.message === "string" && e.message) ||
+        (statusText ? `${status} ${statusText}` : "");
+
+    if (text) return requestId ? `${text} [ref: ${requestId}]` : text;
+
+    // Fallback
+    return `Request failed${status ? ` (${status})` : ""}. Please try again.` + (requestId ? ` [ref: ${requestId}]` : "");
+}
+
+/** Developer-only diagnostics to console (kept tiny & safe for prod) */
+export function logHttpError(e: any, ctx?: Record<string, any>) {
+    const res: ServerLike | undefined = e?.response;
+    const requestId = res?.headers?.["x-request-id"] || res?.headers?.["x-correlation-id"];
+    const method = res?.config?.method?.toUpperCase?.();
+    const url = res?.config?.url;
+    const status = res?.status;
+    const statusText = res?.statusText;
+    const data = res?.data;
+
+    // Collapsed, so it won’t spam
+    // eslint-disable-next-line no-console
+    console.groupCollapsed(
+        `%cHTTP ${method || ""} ${url || ""} → ${status || ""} ${statusText || ""} ${requestId ? `(ref ${requestId})` : ""}`,
+        "color:#b91c1c;font-weight:600"
+    );
+    // eslint-disable-next-line no-console
+    console.log("Context:", ctx || {});
+    if (res) {
+        // eslint-disable-next-line no-console
+        console.log("Response:", pick(res, ["status", "statusText", "headers"]));
+        // eslint-disable-next-line no-console
+        console.log("Data:", data);
+    } else {
+        // eslint-disable-next-line no-console
+        console.log("Error object:", e);
+    }
+    // eslint-disable-next-line no-console
+    console.groupEnd();
 }
 
 /* ========================= Types / Constants ========================= */
@@ -195,7 +266,7 @@ type UiItem = {
     aiEnabled?: boolean | null;                               // AI (Yes/No)
     aiConfidence?: number | null;                             // 0..1
     units?: string | null;                                    // mm, N/mm2, etc
-    tolerance?: "<=" | "+-" | "=" | null;                     // tolerance selector
+    tolerance?: "<=" | ">=" | "+-" | "=" | null;
     base?: number | null;                                     // base value
     plus?: number | null;                                     // + tolerance
     minus?: number | null;                                    // - tolerance
@@ -207,13 +278,14 @@ function previewString(tol?: string | null, base?: number | null, plus?: number 
     if (base == null || isNaN(base)) return "—";
     const b = Number(base);
     if (tol === "<=") return `≤ ${b.toFixed(3)}`;
+    if (tol === ">=") return `≥ ${b.toFixed(3)}`;
     if (tol === "=") return `= ${b.toFixed(3)}`;
     const lo = (b - Number(minus || 0)).toFixed(3);
     const hi = (b + Number(plus || 0)).toFixed(3);
     return `${lo} to ${hi}`;
 }
 const tolSymbol = (t?: string | null) =>
-    t === "<=" ? "≤" : t === "+-" ? "±" : t === "=" ? "=" : "—";
+    t === "<=" ? "≤" : t === ">=" ? "≥" : t === "+-" ? "±" : t === "=" ? "=" : "—";
 const TAG_OPTIONS = ["visual", "measurement", "evidence", "document"] as const;
 
 function ItemsEditor({
@@ -394,60 +466,81 @@ function ItemsEditor({
                         </label>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        {/* Units */}
-                        <label className="grid gap-1">
-                            <span className="text-xs">Units</span>
-                            <Input
-                                placeholder="e.g., mm, N/mm2, mm/m"
-                                value={draft.units || ""}
-                                onChange={(e) => patchDraft({ units: e.target.value })}
-                            />
-                        </label>
+                    {/* Units / Tolerance / Base (+ optional Plus/Minus) */}
+                    {(() => {
+                        const isRange = (draft.tolerance || "+-") === "+-";
+                        return (
+                            <div className={`grid grid-cols-1 ${isRange ? "md:grid-cols-4" : "md:grid-cols-3"} gap-3`}>
+                                {/* Units */}
+                                <label className="grid gap-1">
+                                    <span className="text-xs">Units</span>
+                                    <Input
+                                        placeholder="e.g., mm, N/mm2, mm/m"
+                                        value={draft.units || ""}
+                                        onChange={(e) => patchDraft({ units: e.target.value })}
+                                    />
+                                </label>
 
-                        {/* Tolerance */}
-                        <label className="grid gap-1">
-                            <span className="text-xs">Tolerance</span>
-                            <Select value={draft.tolerance || "+-"} onChange={(e) => patchDraft({ tolerance: e.target.value as any })}>
-                                <option value="<=">Less than Equal (≤)</option>
-                                <option value="+-">Range (±)</option>
-                                <option value="=">Equal (=)</option>
-                            </Select>
-                        </label>
+                                {/* Tolerance */}
+                                <label className="grid gap-1">
+                                    <span className="text-xs">Tolerance</span>
+                                    <Select
+                                        value={draft.tolerance || "+-"}
+                                        onChange={(e) => {
+                                            const tol = e.target.value as UiItem["tolerance"];
+                                            // if switching away from range, clear plus/minus for cleanliness
+                                            if (tol !== "+-") {
+                                                patchDraft({ tolerance: tol, plus: null, minus: null });
+                                            } else {
+                                                patchDraft({ tolerance: tol });
+                                            }
+                                        }}
+                                    >
+                                        <option value="<=">Less than Equal (≤)</option>
+                                        <option value=">=">Greater than Equal (≥)</option>
+                                        <option value="+-">Range (±)</option>
+                                        <option value="=">Equal (=)</option>
+                                    </Select>
+                                </label>
 
-                        {/* Base */}
-                        <label className="grid gap-1">
-                            <span className="text-xs">Base</span>
-                            <Input
-                                type="number"
-                                step="0.001"
-                                value={draft.base == null ? "" : String(draft.base)}
-                                onChange={(e) => patchDraft({ base: e.target.value === "" ? null : Number(e.target.value) })}
-                            />
-                        </label>
+                                {/* Base */}
+                                <label className="grid gap-1">
+                                    <span className="text-xs">Base</span>
+                                    <Input
+                                        type="number"
+                                        step="0.001"
+                                        value={draft.base == null ? "" : String(draft.base)}
+                                        onChange={(e) => patchDraft({ base: e.target.value === "" ? null : Number(e.target.value) })}
+                                    />
+                                </label>
 
-                        {/* Plus */}
-                        <label className="grid gap-1">
-                            <span className="text-xs">+ Plus</span>
-                            <Input
-                                type="number"
-                                step="0.001"
-                                value={draft.plus == null ? "" : String(draft.plus)}
-                                onChange={(e) => patchDraft({ plus: e.target.value === "" ? null : Number(e.target.value) })}
-                            />
-                        </label>
+                                {/* Plus / Minus only for Range */}
+                                {isRange && (
+                                    <>
+                                        <label className="grid gap-1">
+                                            <span className="text-xs">+ Plus</span>
+                                            <Input
+                                                type="number"
+                                                step="0.001"
+                                                value={draft.plus == null ? "" : String(draft.plus)}
+                                                onChange={(e) => patchDraft({ plus: e.target.value === "" ? null : Number(e.target.value) })}
+                                            />
+                                        </label>
 
-                        {/* Minus */}
-                        <label className="grid gap-1 md:col-start-4">
-                            <span className="text-xs">- Minus</span>
-                            <Input
-                                type="number"
-                                step="0.001"
-                                value={draft.minus == null ? "" : String(draft.minus)}
-                                onChange={(e) => patchDraft({ minus: e.target.value === "" ? null : Number(e.target.value) })}
-                            />
-                        </label>
-                    </div>
+                                        <label className="grid gap-1 md:col-start-4">
+                                            <span className="text-xs">- Minus</span>
+                                            <Input
+                                                type="number"
+                                                step="0.001"
+                                                value={draft.minus == null ? "" : String(draft.minus)}
+                                                onChange={(e) => patchDraft({ minus: e.target.value === "" ? null : Number(e.target.value) })}
+                                            />
+                                        </label>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Preview */}
                     <div className="text-xs text-neutral-600 dark:text-neutral-300">
@@ -757,6 +850,7 @@ export function ChecklistNewPage() {
 
             nav("/admin/ref/checklistlib", { state: { refresh: true } });
         } catch (e: any) {
+            logHttpError(e, { feature: "ChecklistNew:save" });
             setErr(extractServerError(e));
         } finally {
             setSaving(false);
@@ -879,6 +973,7 @@ export function ChecklistEditPage() {
 
             nav("/admin/ref/checklistlib", { state: { refresh: true } });
         } catch (e: any) {
+            logHttpError(e, { feature: "ChecklistNew:save" });
             setErr(extractServerError(e));
         } finally {
             setSaving(false);
