@@ -899,6 +899,8 @@ export default function CreateWIR() {
             title: activityTitle,                     // Activity title -> title
             refChecklistIds: selectedRefIds.length ? selectedRefIds : undefined,
             materializeItemsFromRef: false,
+            // >>> NEW: ensure BE never assigns a code during draft save
+    assignCode: false,
             clientHints: {
                 dateText,
                 timeText,

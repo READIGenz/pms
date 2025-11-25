@@ -5,6 +5,7 @@ import { api } from "../../../../api/client";
 import { useAuth } from "../../../../hooks/useAuth";
 import { useProjectMembership } from "../../../../hooks/useProjectMembership";
 import { getMembershipMe, type EffectivePermissions } from "../../../../api/memberships";
+import { useBicNameMap, pickBicName } from "./wir.bicNames";
 
 const LEGACY_ALLOW_VIEW = new Set(["Admin", "Contractor", "PMC", "IH-PMT", "Inspector", "HOD"]);
 
@@ -123,6 +124,12 @@ type WirLite = {
   updatedAt?: string | null;
   lastActivity?: string | null;
   submittedAt?: string | null;
+  // NEW: extra fields we want to surface in tiles
+  forDate?: string | null;
+  forTime?: string | null;
+  bicUserId?: string | null;
+  bicFullName?: string | null;
+  bicUser?: { fullName?: string | null } | null;
 };
 
 type ProjectState = {
@@ -205,6 +212,8 @@ export default function WIR() {
   // -------- NEW: project WIR config state for list pills --------
   const [wirCfg, setWirCfg] = useState<WirListCfg>(null);
 
+  const bicNameMap = useBicNameMap(list);
+
   // normalized display name
   const creatorName =
     (user as any)?.fullName ||
@@ -281,6 +290,16 @@ export default function WIR() {
         updatedAt: r.updatedAt ?? r.updated_on ?? r.updatedAtUtc ?? null,
         lastActivity: r.lastActivity ?? r.latestActivityAt ?? null,
         submittedAt: r.submittedAt ?? null,
+        // NEW: pull-throughs (support snake_case fallbacks)
+        forDate: r.forDate ?? r.for_date ?? null,
+        forTime: r.forTime ?? r.for_time ?? null,
+        bicUserId: r.bicUserId ?? r.bic_user_id ?? null,
+        bicFullName:
+          r.bicFullName ??
+          r.bicUserFullName ??
+          r.bic_user_full_name ??
+          (r.bicUser?.fullName ?? null),
+        bicUser: r.bicUser ? { fullName: r.bicUser.fullName ?? null } : null,
       }));
 
       logWir("list:mapped WirLite[]", { count: mapped.length, sample: mapped.slice(0, 3) });
@@ -315,20 +334,20 @@ export default function WIR() {
   }, [projectId]);
 
   // just under the useEffect that calls getMembershipMe(...)
-useEffect(() => {
-  if (!projectId) return;
-  const snap = {
-    projectId,
-    memStatus,
-    srvRole,
-    derivedRole: role,
-    effectiveRole,
-    permReady,
-    wir: permMatrix?.WIR ?? null,
-    wirRaise: permMatrix?.WIR?.raise,
-  };
-  console.info("[WIR] perms:change1", snap);
-}, [projectId, memStatus, srvRole, role, effectiveRole, permReady, permMatrix]);
+  useEffect(() => {
+    if (!projectId) return;
+    const snap = {
+      projectId,
+      memStatus,
+      srvRole,
+      derivedRole: role,
+      effectiveRole,
+      permReady,
+      wir: permMatrix?.WIR ?? null,
+      wirRaise: permMatrix?.WIR?.raise,
+    };
+    console.info("[WIR] perms:change1", snap);
+  }, [projectId, memStatus, srvRole, role, effectiveRole, permReady, permMatrix]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -570,43 +589,55 @@ useEffect(() => {
         </div>
       )}
 
-      {/* List */}
-      <div className="mt-5 divide-y rounded-2xl border dark:border-neutral-800 overflow-hidden">
-        <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-2 text-xs uppercase tracking-wide bg-gray-50 dark:bg-neutral-800 text-gray-600 dark:text-gray-300">
-          <div className="col-span-3">WIR</div>
-          <div className="col-span-2">Status</div>
-          <div className="col-span-2">Items</div>
-          <div className="col-span-2">Last Activity</div>
-          <div className="col-span-3">Updated</div>
-        </div>
-
+      {/* List (TILES) */}
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map((w) => {
           const busy = preflightId === w.wirId;
+
+          // Prefer normalized fields (now preserved in mapping), with light fallbacks:
+          const any = w as any;
+          const bicName = pickBicName(w, bicNameMap);
+
+          const forDateRaw =
+            w.forDate ?? any?.for_date ?? (any?.plannedAt ? String(any.plannedAt) : null);
+          // Show local **date** only (payload is ISO string like "2025-11-30T04:50:00.000Z")
+          const forDateDisp = forDateRaw ? new Date(forDateRaw).toLocaleDateString() : "—";
+
+          const forTime = w.forTime ?? any?.for_time ?? null;
+          const itemsDisp =
+            typeof w.itemsCount === "number" ? w.itemsCount : "—";
+
           return (
             <button
               key={w.wirId}
               onClick={() => !busy && openWirDetail(w)}
               disabled={busy}
-              className={`w-full text-left transition ${busy ? "opacity-60 cursor-wait" : "hover:bg-gray-50 dark:hover:bg-neutral-800"
-                }`}
+              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""}`}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 px-4 py-3">
-                <div className="col-span-3 min-w-0">
-                  <div className="text-sm font-medium dark:text-white truncate">
+              <div
+                className="
+                  h-full rounded-2xl border dark:border-neutral-800
+                  p-4 sm:p-5
+                  bg-white dark:bg-neutral-900
+                  transition
+                  hover:bg-gray-50 dark:hover:bg-neutral-800
+                "
+              >
+                {/* Heading */}
+                <div className="min-w-0">
+                  <div className="text-sm sm:text-base font-semibold dark:text-white truncate">
                     {w.code ? `${w.code}${w.title ? " — " : ""}` : ""}
                     {w.title || w.wirId}
                     {busy ? " • checking…" : ""}
                   </div>
-                  <div className="text-[12px] text-gray-500 dark:text-gray-400">
-                    Created {fmtDate(w.createdAt) || "—"}
-                  </div>
+                  {/* (Removed the "Created ..." line as requested) */}
                 </div>
 
-                <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                {/* Status + pills + BID */}
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
-                  {/* -------- NEW: tiny config pills beside status -------- */}
                   {wirCfg && (
-                    <div className="flex items-center gap-1 flex-wrap">
+                    <>
                       <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
                         {wirCfg.transmissionType}
                       </span>
@@ -620,20 +651,18 @@ useEffect(() => {
                           No-Redirect
                         </span>
                       )}
-                    </div>
+                    </>
                   )}
+                  {/* BIC pill (full name preferred; fallback to id; final fallback dash) */}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+                    BIC: {bicName || "—"}
+                  </span>
                 </div>
 
-                <div className="col-span-2 text-sm dark:text-white">
-                  {typeof w.itemsCount === "number" ? w.itemsCount : "—"}
-                </div>
-
-                <div className="col-span-2 text-sm dark:text-white">
-                  {fmtDate(w.lastActivity) || "—"}
-                </div>
-
-                <div className="col-span-3 text-sm dark:text-white">
-                  {fmtDate(w.updatedAt) || "—"}
+                {/* Details line: forDate • forTime • items */}
+                <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
+                  {forDateDisp} <span className="mx-1.5">•</span> {forTime || "—"}{" "}
+                  <span className="mx-1.5">•</span> {itemsDisp}
                 </div>
               </div>
             </button>

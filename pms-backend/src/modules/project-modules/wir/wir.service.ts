@@ -130,6 +130,9 @@ export class WirService {
       select: {
         wirId: true, code: true, title: true, status: true,
         createdAt: true, updatedAt: true,
+        forDate: true,
+        forTime: true,
+        bicUserId: true,
         _count: { select: { items: true } },
       },
     }).then(rows => rows.map(r => ({
@@ -140,6 +143,10 @@ export class WirService {
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       itemsCount: r._count.items,
+      // NEW: surfaced for tiles
+      forDate: r.forDate ?? null,
+      forTime: r.forTime ?? null,
+      bicUserId: r.bicUserId ?? null,
     })));
   }
 

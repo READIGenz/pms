@@ -7,7 +7,7 @@ import {
   type ActingRole,
 } from "./memberships.helpers";
 import { api } from "../../../../api/client";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 
 type Props = {
@@ -25,6 +25,7 @@ type Props = {
     status: "Submitted";
     code?: string;
     bicUserId: string;
+    bicFullName?: string; // NEW
     updatedAt?: string;
   }) => void;
 };
@@ -65,14 +66,20 @@ export default function DispatchWIRModal({
 }: Props) {
   if (!open) return null;
 
+  const navigate = useNavigate(); // NEW
+
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Recipient[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-const params = useParams<{ wirId?: string }>();
-const targetWirId = wirId || params.wirId || undefined;
+  // NEW: confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(null);
+
+  const params = useParams<{ wirId?: string }>();
+  const targetWirId = wirId || params.wirId || undefined;
   // Fetch on open+projectId
   useEffect(() => {
     let abort = false;
@@ -157,46 +164,88 @@ const targetWirId = wirId || params.wirId || undefined;
       return next;
     });
 
-const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
+  const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
 
-  async function onSend() {
-  const inspectorId = Array.from(selectedIds)[0];
-  if (!inspectorId) {
-    setErr("Please pick an Inspector.");
-    return;
+  function onSend() {
+    const inspectorId = Array.from(selectedIds)[0];
+    if (!inspectorId) {
+      setErr("Please pick an Inspector.");
+      return;
+    }
+    if (!targetWirId) {
+      setErr("Missing WIR ID. Open this from a WIR detail/edit screen and try again.");
+      return;
+    }
+
+    const inspector = candidates.find((c) => c.id === inspectorId);
+    if (!inspector) {
+      setErr("Selected Inspector not found.");
+      return;
+    }
+
+    // Open confirmation dialog with snapshot of the data
+    setConfirmInspector(inspector);
+    setConfirmOpen(true);
   }
-  if (!targetWirId) {
-    setErr("Missing WIR ID. Open this from a WIR detail/edit screen and try again.");
-    return;
+
+  async function performDispatch(inspectorId: string) {
+    if (!targetWirId) return;
+
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const { data } = await api.post(
+        `/projects/${projectId}/wir/${targetWirId}/dispatch`,
+        {
+          inspectorId,
+          assignCode: true,
+          materializeIfNeeded: true,
+        }
+      );
+
+      onDispatched?.({
+        wirId: data?.wirId ?? targetWirId,
+        status: "Submitted",
+        code: data?.code ?? undefined,
+        bicUserId: inspectorId,
+        bicFullName: confirmInspector?.fullName || data?.bicFullName || data?.inspectorName, // NEW
+        updatedAt: data?.updatedAt,
+      });
+
+      // Close confirm + modal
+      setConfirmOpen(false);
+      setConfirmInspector(null);
+      onClose?.();
+
+      // Navigate back to WIR list view for this project
+      const baseList =
+        role === "Contractor"
+          ? `/home/contractor/projects/${projectId}/wir`
+          : role === "PMC"
+            ? `/home/pmc/projects/${projectId}/wir`
+            : role === "IH-PMT"
+              ? `/home/ihpmt/projects/${projectId}/wir`
+              : role === "Client"
+                ? `/home/client/projects/${projectId}/wir`
+                : `/home/projects/${projectId}/wir`;
+
+      navigate(baseList, {
+        state: {
+          role,
+          project: projectCaption ? { projectId, title: projectCaption } : { projectId },
+        },
+      });
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Failed to dispatch.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  setSubmitting(true);
-  setErr(null);
-  try {
-    const { data } = await api.post(
-      `/projects/${projectId}/wir/${targetWirId}/dispatch`,
-      {
-        inspectorId,
-        assignCode: true,
-        materializeIfNeeded: true,
-      }
-    );
-
-    onDispatched?.({
-      wirId: data?.wirId ?? targetWirId,
-      status: "Submitted",
-      code: data?.code ?? undefined,
-      bicUserId: inspectorId,
-      updatedAt: data?.updatedAt,
-    });
-
-    onClose();
-  } catch (e: any) {
-    setErr(e?.response?.data?.message || e?.message || "Failed to dispatch.");
-  } finally {
-    setSubmitting(false);
-  }
-}
+  const onConfirmSend = () => {
+    if (!confirmInspector) return;
+    void performDispatch(confirmInspector.id);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40">
@@ -371,11 +420,10 @@ const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
               <button
                 onClick={onSend}
                 disabled={!canSend}
-                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${
-                  canSend
+                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${canSend
                     ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                     : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                }`}
+                  }`}
                 title={canSend ? "Send" : "Select at least one recipient"}
               >
                 {submitting ? "Sending…" : "Send"}
@@ -384,6 +432,68 @@ const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
           </section>
         </div>
       </div>
+      {confirmOpen && confirmInspector && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4 sm:p-5">
+            <div className="text-base font-semibold dark:text-white">
+              Confirm Dispatch
+            </div>
+
+            <div className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-200">
+              <div>
+                <span className="font-medium">Project:</span>{" "}
+                {projectCaption || projectId}
+              </div>
+              <div>
+                <span className="font-medium">WIR:</span>{" "}
+                {targetWirId || "—"}
+              </div>
+              <div>
+                <span className="font-medium">Recipient:</span>{" "}
+                {confirmInspector.fullName} ({confirmInspector.acting})
+              </div>
+              {confirmInspector.email && (
+                <div>
+                  <span className="font-medium">Email:</span>{" "}
+                  {confirmInspector.email}
+                </div>
+              )}
+              {confirmInspector.phone && (
+                <div>
+                  <span className="font-medium">Phone:</span>{" "}
+                  {confirmInspector.phone}
+                </div>
+              )}
+              <div className="mt-2 text-[12px] text-gray-500 dark:text-gray-400">
+                This will assign a WIR code (if missing) and send this Work Inspection
+                to the selected Inspector.
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmSend}
+                disabled={submitting}
+                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${submitting
+                    ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                  }`}
+              >
+                {submitting ? "Sending…" : "Confirm & Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
