@@ -416,6 +416,10 @@ export default function WIR() {
   const backToMyProjects = () => navigate("/home/my-projects");
 
   const openWirDetail = async (w: WirLite) => {
+
+     // Only Draft can open editor
+  if (canonicalWirStatus(w.status) !== "Draft") return;
+  
     // Prefer server permission when available; fallback to legacy check
     const canView = canViewWir(effectiveRole);
     if (!effectiveRole || !canView) {
