@@ -133,6 +133,7 @@ export class WirService {
         forDate: true,
         forTime: true,
         bicUserId: true,
+        version: true,  
         _count: { select: { items: true } },
       },
     }).then(rows => rows.map(r => ({
@@ -147,6 +148,7 @@ export class WirService {
       forDate: r.forDate ?? null,
       forTime: r.forTime ?? null,
       bicUserId: r.bicUserId ?? null,
+      version: r.version ?? null,  
     })));
   }
 

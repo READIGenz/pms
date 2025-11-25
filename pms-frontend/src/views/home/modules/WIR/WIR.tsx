@@ -124,6 +124,7 @@ type WirLite = {
   updatedAt?: string | null;
   lastActivity?: string | null;
   submittedAt?: string | null;
+  version?: number | null;   // <-- ADD THIS LINE
   // NEW: extra fields we want to surface in tiles
   forDate?: string | null;
   forTime?: string | null;
@@ -290,6 +291,7 @@ export default function WIR() {
         updatedAt: r.updatedAt ?? r.updated_on ?? r.updatedAtUtc ?? null,
         lastActivity: r.lastActivity ?? r.latestActivityAt ?? null,
         submittedAt: r.submittedAt ?? null,
+        version: r.version ?? r.wirVersion ?? null,   // <-- ADD THIS LINE
         // NEW: pull-throughs (support snake_case fallbacks)
         forDate: r.forDate ?? r.for_date ?? null,
         forTime: r.forTime ?? r.for_time ?? null,
@@ -626,14 +628,18 @@ export default function WIR() {
                 {/* Heading */}
                 <div className="min-w-0">
                   <div className="text-sm sm:text-base font-semibold dark:text-white truncate">
-                    {w.code ? `${w.code}${w.title ? " — " : ""}` : ""}
-                    {w.title || w.wirId}
+                    {[
+                      w.code || undefined,
+                      (w.title || w.wirId || undefined),
+                      (typeof w.version === "number" ? `v${w.version}` : undefined),
+                    ]
+                      .filter(Boolean)
+                      .join(" — ")}
                     {busy ? " • checking…" : ""}
                   </div>
-                  {/* (Removed the "Created ..." line as requested) */}
                 </div>
 
-                {/* Status + pills + BID */}
+                {/* Status + pills + BIC */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
                   {wirCfg && (
@@ -662,7 +668,7 @@ export default function WIR() {
                 {/* Details line: forDate • forTime • items */}
                 <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
                   {forDateDisp} <span className="mx-1.5">•</span> {forTime || "—"}{" "}
-                  <span className="mx-1.5">•</span> {itemsDisp}
+                  <span className="mx-1.5">•</span> Items: {itemsDisp}
                 </div>
               </div>
             </button>

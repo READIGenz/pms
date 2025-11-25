@@ -27,6 +27,7 @@ type Props = {
     bicUserId: string;
     bicFullName?: string; // NEW
     updatedAt?: string;
+    version?: number;           // <— NEW
   }) => void;
 };
 
@@ -203,6 +204,22 @@ export default function DispatchWIRModal({
         }
       );
 
+      // --- ensure version = 1 on submit (idempotent/no-op if BE already did it)
+      let ensuredVersion: number | undefined = data?.version;
+      try {
+        // Only patch if BE didn’t return a valid version >= 1
+        if (!ensuredVersion || ensuredVersion < 1) {
+          const v = await api.patch(
+            `/projects/${projectId}/wir/${targetWirId}`,
+            { version: 1 }                        // <— enforce version 1 at submit
+          );
+          ensuredVersion = v?.data?.version ?? 1;
+        }
+      } catch (e) {
+        console.warn("[WIR] version patch failed (non-blocking)", e);
+        // still fall back to 1 so UI stays consistent
+        if (!ensuredVersion || ensuredVersion < 1) ensuredVersion = 1;
+      }
       onDispatched?.({
         wirId: data?.wirId ?? targetWirId,
         status: "Submitted",
@@ -210,6 +227,7 @@ export default function DispatchWIRModal({
         bicUserId: inspectorId,
         bicFullName: confirmInspector?.fullName || data?.bicFullName || data?.inspectorName, // NEW
         updatedAt: data?.updatedAt,
+        version: ensuredVersion ?? 1,            // <— NEW
       });
 
       // Close confirm + modal
@@ -421,8 +439,8 @@ export default function DispatchWIRModal({
                 onClick={onSend}
                 disabled={!canSend}
                 className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${canSend
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                    : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                  : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
                   }`}
                 title={canSend ? "Send" : "Select at least one recipient"}
               >
@@ -483,8 +501,8 @@ export default function DispatchWIRModal({
                 onClick={onConfirmSend}
                 disabled={submitting}
                 className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${submitting
-                    ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                    : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                   }`}
               >
                 {submitting ? "Sending…" : "Confirm & Send"}
