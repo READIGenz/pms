@@ -1,5 +1,5 @@
 // pms-frontend/src/views/home/modules/WIR/WIRDocDis.tsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
 import { useAuth } from "../../../../hooks/useAuth";
@@ -24,12 +24,20 @@ type WirItem = {
 
     // From Prisma WirItem
     tags?: string[];                 // WirItem.tags
-    base?: number | null;            // WirItem.base
-    plus?: number | null;            // WirItem.plus
-    minus?: number | null;           // WirItem.minus
-
+    // Note: Prisma Decimal comes back as string; allow both string/number to be safe.
+    base?: number | string | null;   // WirItem.base
+    plus?: number | string | null;   // WirItem.plus
+    minus?: number | string | null;  // WirItem.minus
     inspectorStatus?: "PASS" | "FAIL" | "NA" | null; // WirItem.inspectorStatus
     inspectorNote?: string | null;                   // WirItem.inspectorNote
+    // Latest runner hydration support (added by BE include)
+    runs?: Array<{
+        valueNumber: number | null;
+        unit: string | null;
+        status: "OK" | "NCR" | "Pending" | null;
+        comment: string | null;
+        createdAt: string;
+    }>;
 };
 
 type WirDoc = {
@@ -47,6 +55,7 @@ type WirDoc = {
     bicUserId?: string | null;
     createdById?: string | null;
     version?: number | null;
+    updatedAt?: string | null;
     checklists?: Array<{
         id: string;
         checklistId: string;
@@ -207,6 +216,7 @@ export default function WIRDocDis() {
 
     // ---------- Runner edit state & helpers ----------
     const [edits, setEdits] = useState<Record<string, EditBuf>>({});
+    const [savingAll, setSavingAll] = useState(false);
 
     const setEdit = (itemId: string, patch: Partial<EditBuf>) =>
         setEdits((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), ...patch } }));
@@ -220,43 +230,87 @@ export default function WIRDocDis() {
         return Number.isFinite(n) ? n : undefined;
     };
 
-    const saveOneItem = useCallback(
-        async (it: WirItem) => {
-            const buf = edits[it.id] || {};
-            const valueNumber = parseNum(buf.value);
+    // Build local edit buffers from saved item fields (and last run)
+    const buildEditsFromRow = (doc: WirDoc) => {
+        const next: Record<string, EditBuf> = {};
+        for (const it of doc.items ?? []) {
+            const lastRun = (it as any).runs?.[0]; // available after BE change
+            const savedValue =
+                lastRun?.valueNumber != null
+                    ? String(lastRun.valueNumber)
+                    : undefined;
 
-            // Inspector save payload aligned with BE runner endpoint
-            const payload = {
-                actorRole: "Inspector",
-                items: [
-                    {
-                        itemId: it.id,
-                        inspectorStatus: buf.status || null,
-                        note: (buf.remark || "").trim() || null,
-                        valueNumber,
-                        unit: it.unit || null,
-                    },
-                ],
+            next[it.id] = {
+                value: savedValue ?? "",                       // measurement
+                remark: it.inspectorNote ?? "",                // saved remarks
+                status: it.inspectorStatus ?? undefined,       // PASS / FAIL / NA
+                photo: null,
             };
+        }
+        return next;
+    };
 
-            await api.post(
-                `/projects/${projectId}/wir/${wirId}/runner/inspector-save`,
-                payload
-            );
+    const saveAllItems = useCallback(async () => {
+        if (!row?.items?.length) return;
+        const payloadItems: Array<{
+            itemId: string;
+            inspectorStatus: "PASS" | "FAIL" | "NA" | null;
+            note: string | null;
+            valueNumber: number | undefined;
+            unit: string | null;
+        }> = [];
 
-            // NOTE: Photo upload can be wired to /evidence later. The UI already captures the file via input[capture].
+        // Validate each edited item first; stop on first non-numeric value
+        for (const it of row.items) {
+            const buf = edits[it.id];
+            if (!buf) continue;
+            const raw = (buf.value ?? "").toString().trim();
+            const hasAny = raw !== "" || (buf.remark ?? "").toString().trim() !== "" || !!buf.status;
+            if (!hasAny) continue;
 
-            // Refresh and clear local inputs (keep current PASS/FAIL selection for speed if you like)
-            await fetchWir();
-            setEdits((m) => ({
-                ...m,
-                [it.id]: { value: "", remark: "", status: buf.status, photo: null },
-            }));
-        },
-        [projectId, wirId, edits, fetchWir]
-    );
+            const valueNumber = parseNum(buf.value);
+            if (raw !== "" && valueNumber === undefined) {
+                // show dialog and focus the offending field
+                setValErrItemId(it.id);
+                // let the dialog render, then focus
+                setTimeout(() => inputRefs.current[it.id]?.focus(), 0);
+                return; // abort save
+            }
 
+            payloadItems.push({
+                itemId: it.id,
+                inspectorStatus: buf.status || null,
+                note: (buf.remark || "").trim() || null,
+                valueNumber,
+                unit: it.unit || null,
+            });
+        }
+        if (payloadItems.length === 0) return; // nothing to save
+
+        const payload = { actorRole: "Inspector", items: payloadItems };
+        try {
+            setSavingAll(true);
+            await api.post(`/projects/${projectId}/wir/${wirId}/runner/inspector-save`, payload);
+            const fresh = await api.get(`/projects/${projectId}/wir/${wirId}`);
+            const doc = (fresh.data?.wir ?? fresh.data) as WirDoc;
+            setRow(doc);
+            setEdits(buildEditsFromRow(doc));  // repopulate from saved data
+        } finally {
+            setSavingAll(false);
+        }
+
+    }, [row?.items, edits, projectId, wirId, fetchWir]);
     /* ---------- render helpers ---------- */
+
+    // Hydrate local edit buffers when we first load this WIR
+    useEffect(() => {
+        if (!row) return;
+        // Only hydrate if nothing is typed yet to avoid clobbering in-progress edits
+        if (Object.keys(edits).length === 0) {
+            setEdits(buildEditsFromRow(row));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [row?.wirId, row?.updatedAt, row?.items?.length]);
 
     const headerLine = useMemo(() => {
         if (!row) return "";
@@ -293,6 +347,11 @@ export default function WIRDocDis() {
 
     const items = row?.items ?? [];
     const itemsCount = items.length;
+
+    // input refs per item to focus when validation fails
+    const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    // validation dialog state
+    const [valErrItemId, setValErrItemId] = useState<string | null>(null);
 
     return (
         <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -417,7 +476,16 @@ export default function WIRDocDis() {
                                         Complete all mandatory items, attach required evidence, and record measurements where applicable.
                                     </div>
                                 </div>
-
+                                {/* Global Save Progress action */}
+                                <div className="mb-3 flex items-center justify-end">
+                                    <button
+                                        onClick={saveAllItems}
+                                        disabled={savingAll}
+                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white disabled:opacity-60 hover:opacity-95"
+                                    >
+                                        {savingAll ? "Saving…" : "Save Progress"}
+                                    </button>
+                                </div>
                                 {/* All items rendered as Tile 2 + Tile 3 */}
                                 {items.length === 0 ? (
                                     <div className="text-sm">No items materialized.</div>
@@ -529,6 +597,7 @@ export default function WIRDocDis() {
                                                                 Measurement {it.unit ? `(${it.unit})` : ""}
                                                             </label>
                                                             <input
+                                                                ref={(el) => (inputRefs.current[it.id] = el)}
                                                                 value={buf.value ?? ""}
                                                                 onChange={(e) => setEdit(it.id, { value: e.target.value })}
                                                                 className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
@@ -572,16 +641,6 @@ export default function WIRDocDis() {
                                                                 placeholder="Write your observation…"
                                                             />
                                                         </div>
-
-                                                        {/* Save button */}
-                                                        <div className="flex items-center justify-end">
-                                                            <button
-                                                                onClick={() => saveOneItem(it)}
-                                                                className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white hover:opacity-95"
-                                                            >
-                                                                Save
-                                                            </button>
-                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -608,6 +667,42 @@ export default function WIRDocDis() {
                     </div>
                 )}
             </div>
+            {valErrItemId && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                        <div className="text-base font-semibold dark:text-white">
+                            Measurement must be a number
+                        </div>
+                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+                            Please enter a numeric value  (e.g., <b>10</b> or <b>10.5</b>) and try again.
+                        </div>
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                onClick={() => {
+                                    const id = valErrItemId;
+                                    setValErrItemId(null);
+                                    // re-focus after closing
+                                    setTimeout(() => id && inputRefs.current[id]?.focus(), 0);
+                                }}
+                            >
+                                Go to field
+                            </button>
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white"
+                                onClick={() => setValErrItemId(null)}
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </section>
     );
 }

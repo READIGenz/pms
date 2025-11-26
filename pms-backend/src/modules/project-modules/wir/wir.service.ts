@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
-import { Prisma, WirStatus } from '@prisma/client';
+import { Prisma, WirItemStatus, WirStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { InspectorSaveDto } from './inspector-runner-save.dto';
 
 type WirActionLiteral =
   | 'Created'
@@ -29,6 +30,7 @@ function splitDateTime(iso?: string | null): { forDate?: Date; forTime?: string 
 
 @Injectable()
 export class WirService {
+
   constructor(private prisma: PrismaService) { }
 
   // ---------- helpers ----------
@@ -159,13 +161,21 @@ export class WirService {
       where: { wirId, projectId },
       include: {
         checklists: true,
-        items: { orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }] },
+        items: {
+          orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            runs: {
+              select: { valueNumber: true, unit: true, status: true, comment: true, createdAt: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
         histories: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!wir) throw new NotFoundException('WIR not found');
 
-    // 'wir' already contains createdById; compute version and return
     const version = await this.computedVersion(wirId);
     return { ...wir, version };
   }
@@ -794,4 +804,48 @@ export class WirService {
     });
   }
 
+  async inspectorSave(projectId: string, wirId: string, dto: InspectorSaveDto, user: any) {
+    // (optional) verify the WIR belongs to projectId and user can act
+    await this.prisma.$transaction(async (tx) => {
+      for (const it of dto.items) {
+        // ensure the item exists under the same WIR
+        const item = await tx.wirItem.findFirst({
+          where: { id: it.itemId, wirId },
+          select: { id: true, unit: true },
+        });
+        if (!item) continue;
+
+        const derivedStatus: WirItemStatus | null =
+          it.inspectorStatus === 'PASS' ? 'OK' :
+            it.inspectorStatus === 'FAIL' ? 'NCR' :
+              it.inspectorStatus === 'NA' ? 'Pending' : null;
+
+        // 1) create a run row (history of runner inputs)
+        await tx.wirItemRun.create({
+          data: {
+            wirId,
+            itemId: it.itemId,
+            actorUserId: user?.userId ?? null,
+            actorRole: 'Inspector',
+            actorName: user?.fullName || user?.name || null,
+            valueText: null,
+            valueNumber: it.valueNumber != null ? new Prisma.Decimal(it.valueNumber) : null,
+            unit: it.unit ?? item.unit ?? null,
+            status: derivedStatus,            // OK / NCR / Pending
+            comment: it.note ?? null,
+          },
+        });
+
+        // 2) mirror latest inspector fields onto WirItem (for fast reads)
+        await tx.wirItem.update({
+          where: { id: it.itemId },
+          data: {
+            inspectorStatus: it.inspectorStatus ?? null, // PASS / FAIL / NA (enum InspectorItemStatus)
+            inspectorNote: it.note ?? null,
+            ...(derivedStatus ? { status: derivedStatus } : {}),
+          },
+        });
+      }
+    });
+  }
 }

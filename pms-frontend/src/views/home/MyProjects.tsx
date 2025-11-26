@@ -45,10 +45,10 @@ const normalizeRole = (raw?: string) => {
 // --- Role → WIR path resolver ---
 const wirPathForRole = (role: string, projectId: string) => {
   switch (normalizeRole(role)) {
-    case 'Contractor': return `/home/contractor/projects/${projectId}/wir`;
-    case 'PMC':        return `/home/pmc/projects/${projectId}/wir`;
-    case 'IH-PMT':     return `/home/ihpmt/projects/${projectId}/wir`;
-    case 'Client':     return `/home/client/projects/${projectId}/wir`;     
+    case 'Contractor': return `/home/projects/${projectId}/wir`;
+    case 'PMC':        return `/home/projects/${projectId}/wir`;
+    case 'IH-PMT':     return `/home/projects/${projectId}/wir`;
+    case 'Client':     return `/home/projects/${projectId}/wir`;     
     default:           return `/home/projects/${projectId}/wir`;            
   }
 };

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuard
 import { WirService } from './wir.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
 import { JwtAuthGuard } from './../../../common/guards/jwt.guard';
+import { InspectorSaveDto } from './inspector-runner-save.dto';
 
 const getAuthUserId = (req: any): string | null =>
   req?.user?.userId ?? req?.user?.id ?? req?.user?.sub ?? null;
@@ -17,14 +18,14 @@ export class WirController {
     return this.service.listByProject(projectId);
   }
 
- @Get(':wirId')
-async get(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-) {
-  // Service currently expects (projectId, wirId). We'll add default includes inside the service in the next step.
-  return this.service.get(projectId, wirId);
-}
+  @Get(':wirId')
+  async get(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+  ) {
+    // Service currently expects (projectId, wirId). We'll add default includes inside the service in the next step.
+    return this.service.get(projectId, wirId);
+  }
 
 
   @Post()
@@ -68,15 +69,15 @@ async get(
 
   //to update the checklists attached in saved drafts
   @Post(':wirId/sync-checklists')
-async syncChecklists(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Body() dto: AttachChecklistsDto & { replace?: boolean },
-  @Req() req: any,
-) {
-  const actor = { userId: getAuthUserId(req), fullName: req?.user?.fullName ?? null };
-  return this.service.syncChecklists(projectId, wirId, dto, actor);
-}
+  async syncChecklists(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() dto: AttachChecklistsDto & { replace?: boolean },
+    @Req() req: any,
+  ) {
+    const actor = { userId: getAuthUserId(req), fullName: req?.user?.fullName ?? null };
+    return this.service.syncChecklists(projectId, wirId, dto, actor);
+  }
 
   @Post(':wirId/roll-forward')
   async rollForward(
@@ -114,5 +115,15 @@ async syncChecklists(
       }
     );
   }
-
+@Post(':wirId/runner/inspector-save')
+  async inspectorSave(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() dto: InspectorSaveDto,
+    @Req() req: any,
+  ) {
+    const user = req.user; // your existing auth guard populates this
+    await this.service.inspectorSave(projectId, wirId, dto, user);
+    return { ok: true };
+  }
 }

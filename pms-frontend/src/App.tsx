@@ -110,13 +110,9 @@ export default function App() {
           <Route index element={<Welcome />} />
           <Route path="tiles" element={<Tiles />} />
           <Route path="my-projects" element={<MyProjects />} />
-          <Route path="contractor/projects/:projectId/wir" element={<WIR />} />
-          <Route path="contractor/projects/:projectId/wir/new" element={<CreateWIR />} />
-          {/* Doc routes — neutral + role-scoped, all point to the same component */}
+          <Route path="projects/:projectId/wir" element={<WIR />} />
+          <Route path="projects/:projectId/wir/new" element={<CreateWIR />} />
           <Route path="projects/:projectId/wir/:wirId/doc" element={<WIRDocDis />} />
-          <Route path="pmc/projects/:projectId/wir" element={<WIR />} />
-          <Route path="ihpmt/projects/:projectId/wir" element={<WIR/>} />
-          <Route path="client/projects/:projectId/wir" element={<WIR/>} />
         </Route>
 
         {/* Fallback */}
