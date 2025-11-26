@@ -133,7 +133,8 @@ export class WirService {
         forDate: true,
         forTime: true,
         bicUserId: true,
-        version: true,  
+        version: true,
+        createdById: true,
         _count: { select: { items: true } },
       },
     }).then(rows => rows.map(r => ({
@@ -148,7 +149,8 @@ export class WirService {
       forDate: r.forDate ?? null,
       forTime: r.forTime ?? null,
       bicUserId: r.bicUserId ?? null,
-      version: r.version ?? null,  
+      version: r.version ?? null,
+      createdById: r.createdById ?? null,
     })));
   }
 
@@ -163,6 +165,7 @@ export class WirService {
     });
     if (!wir) throw new NotFoundException('WIR not found');
 
+    // 'wir' already contains createdById; compute version and return
     const version = await this.computedVersion(wirId);
     return { ...wir, version };
   }
@@ -299,27 +302,41 @@ export class WirService {
     dto: UpdateWirHeaderDto,
     actor?: { userId?: string | null; fullName?: string | null }
   ) {
+    // never let client change creator
+    const { createdById: _ignoreCreatedBy, ...safeDto } = (dto as any) || {};
+
+    const existing = await this.prisma.wir.findFirst({
+      where: { projectId, wirId },
+      select: { createdById: true },
+    });
+
+    const shouldBackfillCreator =
+      !existing?.createdById && !!actor?.userId;
+
     // Scalars (use undefined to leave unchanged; null to clear if field supports null)
     const patch: Prisma.WirUpdateInput = {
-      status: dto.status as any,
-      discipline: dto.discipline as any,
-      title: dto.title,
-      description: dto.description,
+      status: safeDto.status as any,
+      discipline: safeDto.discipline as any,
+      title: safeDto.title,
+      description: safeDto.description,
       forDate:
-        dto.forDate !== undefined
-          ? (dto.forDate ? new Date(dto.forDate) : null)
+        safeDto.forDate !== undefined
+          ? (safeDto.forDate ? new Date(safeDto.forDate) : null)
           : undefined,
-      forTime: dto.forTime !== undefined ? dto.forTime : undefined,
-      cityTown: dto.cityTown,
-      stateName: dto.stateName,
+      forTime: safeDto.forTime !== undefined ? safeDto.forTime : undefined,
+      cityTown: safeDto.cityTown,
+      stateName: safeDto.stateName,
       rescheduleForDate:
-        dto.rescheduleForDate !== undefined
-          ? (dto.rescheduleForDate ? new Date(dto.rescheduleForDate) : null)
+        safeDto.rescheduleForDate !== undefined
+          ? (safeDto.rescheduleForDate ? new Date(safeDto.rescheduleForDate) : null)
           : undefined,
       rescheduleForTime:
-        dto.rescheduleForTime !== undefined ? dto.rescheduleForTime : undefined,
+        safeDto.rescheduleForTime !== undefined ? safeDto.rescheduleForTime : undefined,
       rescheduleReason:
-        dto.rescheduleReason !== undefined ? dto.rescheduleReason : undefined,
+        safeDto.rescheduleReason !== undefined ? safeDto.rescheduleReason : undefined,
+      ...(shouldBackfillCreator
+        ? { createdBy: { connect: { userId: actor!.userId! } } }
+        : {}),
     };
 
     // Relations (connect/disconnect instead of setting *_Id)
@@ -421,6 +438,95 @@ export class WirService {
     // cascade behavior is defined in schema; this will remove child rows
     await this.prisma.wir.delete({ where: { wirId } });
     return { deleted: true };
+  }
+
+  async syncChecklists(
+    projectId: string,
+    wirId: string,
+    dto: AttachChecklistsDto & { replace?: boolean },
+    actor?: { userId?: string | null; fullName?: string | null }
+  ) {
+    const refRows = await this.resolveChecklistIds(dto.refChecklistIds || []);
+    const wantIds = new Set(refRows.map(r => r.id));
+
+    const existing = await this.prisma.wirChecklist.findMany({ where: { wirId } });
+    const haveIds = new Set(existing.map(x => x.checklistId));
+
+    const toAdd = refRows.filter(r => !haveIds.has(r.id));
+    const toRemove = dto.replace ? existing.filter(x => !wantIds.has(x.checklistId)) : [];
+
+    await this.prisma.$transaction(async tx => {
+      if (toRemove.length) {
+        await tx.wirChecklist.deleteMany({
+          where: { wirId, checklistId: { in: toRemove.map(x => x.checklistId) } },
+        });
+
+        // Optional clean-up: if still in Draft, drop snapshot items for removed checklists
+        const header = await tx.wir.findUnique({ where: { wirId }, select: { status: true } });
+        if (header?.status === 'Draft') {
+          await tx.wirItem.deleteMany({
+            where: { wirId, sourceChecklistId: { in: toRemove.map(x => x.checklistId) } },
+          });
+        }
+      }
+
+      if (toAdd.length) {
+        await tx.wirChecklist.createMany({
+          data: toAdd.map((r, idx) => ({
+            wirId,
+            checklistId: r.id,
+            checklistCode: r.code || undefined,
+            checklistTitle: r.title || undefined,
+            discipline: r.discipline as any,
+            versionLabel: r.versionLabel || undefined,
+            order: (existing.length + idx + 1),
+          })),
+        });
+
+        if (dto.materializeItemsFromRef) {
+          const items = await tx.refChecklistItem.findMany({
+            where: { checklistId: { in: toAdd.map(r => r.id) } },
+            include: { checklist: true },
+            orderBy: [{ checklistId: 'asc' }, { seq: 'asc' }],
+          });
+          if (items.length) {
+            await tx.wirItem.createMany({
+              data: items.map((it, idx) => ({
+                wirId,
+                checklistId: it.checklistId,
+                itemId: it.id,
+                seq: it.seq ?? idx + 1,
+                name: it.text,
+                spec: it.requirement ?? undefined,
+                tolerance: it.tolerance ?? undefined,
+                status: 'Unknown',
+                sourceChecklistId: it.checklistId,
+                sourceChecklistItemId: it.id,
+                code: it.itemCode ?? undefined,
+                unit: it.units ?? undefined,
+                tags: it.tags ?? [],
+                critical: it.critical ?? undefined,
+                aiEnabled: it.aiEnabled ?? undefined,
+                aiConfidence: it.aiConfidence ? new Prisma.Decimal(it.aiConfidence as any) : undefined,
+                base: it.base ? new Prisma.Decimal(it.base as any) : undefined,
+                plus: it.plus ? new Prisma.Decimal(it.plus as any) : undefined,
+                minus: it.minus ? new Prisma.Decimal(it.minus as any) : undefined,
+              })),
+            });
+          }
+        }
+      }
+    });
+
+    await this.writeHistory(
+      projectId, wirId, 'ItemsChanged',
+      `${toAdd.length} added, ${toRemove.length} removed.`,
+      { add: toAdd.map(r => r.id), remove: toRemove.map(x => x.checklistId) },
+      actor
+    );
+
+    const version = await this.computedVersion(wirId);
+    return { added: toAdd.length, removed: toRemove.length, version };
   }
 
   // Create a new WIR “version” with only failed/NCR items (true versioning via new row)

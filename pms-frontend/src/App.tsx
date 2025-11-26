@@ -34,6 +34,7 @@ import Tiles from './views/home/Tiles';
 import MyProjects from './views/home/MyProjects';
 import WIR from './views/home/modules/WIR/WIR';
 import CreateWIR from './views/home/modules/WIR/CreateWIR';
+import WIRDocDis from './views/home/modules/WIR/WIRDocDis';
 //import WIR_PMC from './views/home/modules/WIR/WIR.PMC';
 //import WIR_IHPMT from './views/home/modules/WIR/WIR.IHPMT';
 //import WIR_Client from './views/home/modules/WIR/WIR.Client';
@@ -111,6 +112,8 @@ export default function App() {
           <Route path="my-projects" element={<MyProjects />} />
           <Route path="contractor/projects/:projectId/wir" element={<WIR />} />
           <Route path="contractor/projects/:projectId/wir/new" element={<CreateWIR />} />
+          {/* Doc routes — neutral + role-scoped, all point to the same component */}
+          <Route path="projects/:projectId/wir/:wirId/doc" element={<WIRDocDis />} />
           <Route path="pmc/projects/:projectId/wir" element={<WIR />} />
           <Route path="ihpmt/projects/:projectId/wir" element={<WIR/>} />
           <Route path="client/projects/:projectId/wir" element={<WIR/>} />

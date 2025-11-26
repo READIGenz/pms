@@ -1,8 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { WirService } from './wir.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
+import { JwtAuthGuard } from './../../../common/guards/jwt.guard';
+
+const getAuthUserId = (req: any): string | null =>
+  req?.user?.userId ?? req?.user?.id ?? req?.user?.sub ?? null;
 
 // All routes are project-scoped to match FE calls
+@UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/wir')
 export class WirController {
   constructor(private readonly service: WirService) { }
@@ -12,15 +17,24 @@ export class WirController {
     return this.service.listByProject(projectId);
   }
 
-  @Get(':wirId')
-  async get(@Param('projectId') projectId: string, @Param('wirId') wirId: string) {
-    return this.service.get(projectId, wirId);
-  }
+ @Get(':wirId')
+async get(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+) {
+  // Service currently expects (projectId, wirId). We'll add default includes inside the service in the next step.
+  return this.service.get(projectId, wirId);
+}
+
 
   @Post()
-  async create(@Param('projectId') projectId: string, @Body() dto: CreateWirDto, @Req() req: any) {
-    const userId = req?.user?.userId ?? null;
-    return this.service.create(projectId, userId, dto);
+  async create(
+    @Param('projectId') projectId: string,
+    @Body() dto: CreateWirDto,
+    @Req() req: any) {
+    const userId = getAuthUserId(req);               // <-- use helper
+    const { createdById, ...safe } = (dto as any) || {}; // <-- strip if sent from FE
+    return this.service.create(projectId, userId, safe);
   }
 
   @Patch(':wirId')
@@ -30,8 +44,12 @@ export class WirController {
     @Body() dto: UpdateWirHeaderDto,
     @Req() req: any,
   ) {
-    const actor = { userId: req?.user?.userId ?? null, fullName: req?.user?.fullName ?? null };
-    return this.service.updateHeader(projectId, wirId, dto, actor);
+    const actor = {
+      userId: getAuthUserId(req),                   // <-- use helper
+      fullName: req?.user?.fullName ?? null
+    };
+    const { createdById, ...safe } = (dto as any) || {}; // <-- never allow overwrite
+    return this.service.updateHeader(projectId, wirId, safe, actor);
   }
 
   @Post(':wirId/attach-checklists')
@@ -41,9 +59,24 @@ export class WirController {
     @Body() dto: AttachChecklistsDto,
     @Req() req: any,
   ) {
-    const actor = { userId: req?.user?.userId ?? null, fullName: req?.user?.fullName ?? null };
+    const actor = {
+      userId: getAuthUserId(req),                   // <-- use helper
+      fullName: req?.user?.fullName ?? null
+    };
     return this.service.attachChecklists(projectId, wirId, dto, actor);
   }
+
+  //to update the checklists attached in saved drafts
+  @Post(':wirId/sync-checklists')
+async syncChecklists(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Body() dto: AttachChecklistsDto & { replace?: boolean },
+  @Req() req: any,
+) {
+  const actor = { userId: getAuthUserId(req), fullName: req?.user?.fullName ?? null };
+  return this.service.syncChecklists(projectId, wirId, dto, actor);
+}
 
   @Post(':wirId/roll-forward')
   async rollForward(
@@ -52,7 +85,7 @@ export class WirController {
     @Body() dto: RollForwardDto,
     @Req() req: any,
   ) {
-    const userId = req?.user?.userId ?? null;
+    const userId = getAuthUserId(req);
     return this.service.rollForward(projectId, wirId, userId, dto);
   }
 
@@ -69,7 +102,7 @@ export class WirController {
     @Body() body: DispatchWirDto,
     @Req() req: any,
   ) {
-    const actorUserId: string | null = req?.user?.userId ?? req?.user?.sub ?? null;
+    const actorUserId = getAuthUserId(req);         // <-- use helper
     return this.service.dispatchWir(
       projectId,
       wirId,

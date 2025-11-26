@@ -125,7 +125,7 @@ type WirLite = {
   lastActivity?: string | null;
   submittedAt?: string | null;
   version?: number | null;   // <-- ADD THIS LINE
-  // NEW: extra fields we want to surface in tiles
+  createdById?: string | null;  // <-- ADD: used to hide others' drafts
   forDate?: string | null;
   forTime?: string | null;
   bicUserId?: string | null;
@@ -169,7 +169,15 @@ export default function WIR() {
   );
   const projectId = params.projectId || (loc.state as NavState | undefined)?.project?.projectId || "";
   const projectFromState = (loc.state as NavState | undefined)?.project;
-
+  // current user id (stringify for stable comparisons)
+  const currentUserId =
+    String(
+      (user as any)?.id ??
+      (claims as any)?.userId ??
+      (claims as any)?.sub ??
+      (claims as any)?.id ??
+      ""
+    );
   // Member-safe role & matrix (server authoritative when ready)
   const { status: memStatus, role: srvRole, can } = useProjectMembership(projectId);
 
@@ -292,6 +300,12 @@ export default function WIR() {
         lastActivity: r.lastActivity ?? r.latestActivityAt ?? null,
         submittedAt: r.submittedAt ?? null,
         version: r.version ?? r.wirVersion ?? null,   // <-- ADD THIS LINE
+        createdById:
+          (r.createdById ??
+            r.created_by_id ??
+            r.createdBy?.id ??
+            r.created_by?.id ??
+            null)?.toString() ?? null,
         // NEW: pull-throughs (support snake_case fallbacks)
         forDate: r.forDate ?? r.for_date ?? null,
         forTime: r.forTime ?? r.for_time ?? null,
@@ -390,37 +404,46 @@ export default function WIR() {
 
   useEffect(() => { fetchWirCfg(); }, [fetchWirCfg]);
 
+  // Visible list = search-filtered AND hide Drafts not created by me
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((w) => {
-      const hay = [w.code, w.title, w.status].map((v) => (v || "").toString().toLowerCase());
-      return hay.some((s) => s.includes(q));
+    const base = q
+      ? list.filter((w) => {
+        const hay = [w.code, w.title, w.status].map((v) =>
+          (v || "").toString().toLowerCase()
+        );
+        return hay.some((s) => s.includes(q));
+      })
+      : list;
+    return base.filter((w) => {
+      const st = canonicalWirStatus(w.status);
+      if (st !== "Draft") return true; // non-drafts always visible
+      // Drafts are visible only if createdById matches me (if present)
+      if (!w.createdById) return false; // be strict if BE provides no owner
+      return w.createdById.toString() === currentUserId;
     });
-  }, [list, search]);
+  }, [list, search, currentUserId]);
 
   const kpis = useMemo(() => {
-    const total = list.length;
+    const total = filtered.length;
     let submitted = 0,
       approved = 0,
       rejected = 0;
-    for (const w of list) {
+    for (const w of filtered) {
       const st = canonicalWirStatus(w.status);
       if (st === "Submitted" || st === "InspectorRecommended") submitted++;
       if (st === "HODApproved" || st === "Closed") approved++;
       if (st === "HODRejected") rejected++;
     }
     return { total, submitted, approved, rejected };
-  }, [list]);
+  }, [filtered]);
 
   const backToMyProjects = () => navigate("/home/my-projects");
 
   const openWirDetail = async (w: WirLite) => {
+    const st = canonicalWirStatus(w.status);
 
-     // Only Draft can open editor
-  if (canonicalWirStatus(w.status) !== "Draft") return;
-  
-    // Prefer server permission when available; fallback to legacy check
+    // Gate by permission (server matrix preferred)
     const canView = canViewWir(effectiveRole);
     if (!effectiveRole || !canView) {
       setPermForWir(w);
@@ -429,31 +452,44 @@ export default function WIR() {
       return;
     }
 
-    // server-side preflight (authoritative). if 401/403, show dialog instead of navigating.
     setPreflightId(w.wirId);
     try {
-      // keep it light; BE can ignore lite param
+      // light preflight (authz + existence)
       await api.get(`/projects/${projectId}/wir/${w.wirId}`, { params: { lite: 1 } });
 
-      const baseCreate =
-        effectiveRole === "Contractor"
-          ? `/home/contractor/projects/${projectId}/wir/new`
-          : effectiveRole === "PMC"
-            ? `/home/pmc/projects/${projectId}/wir/new`
-            : effectiveRole === "IH-PMT"
-              ? `/home/ihpmt/projects/${projectId}/wir/new`
-              : effectiveRole === "Client"
-                ? `/home/client/projects/${projectId}/wir/new`
-                : `/home/projects/${projectId}/wir/new`;
+      if (st === "Draft") {
+        // open editor (existing behavior)
+        const baseCreate =
+          effectiveRole === "Contractor"
+            ? `/home/contractor/projects/${projectId}/wir/new`
+            : effectiveRole === "PMC"
+              ? `/home/pmc/projects/${projectId}/wir/new`
+              : effectiveRole === "IH-PMT"
+                ? `/home/ihpmt/projects/${projectId}/wir/new`
+                : effectiveRole === "Client"
+                  ? `/home/client/projects/${projectId}/wir/new`
+                  : `/home/projects/${projectId}/wir/new`;
 
-      navigate(`${baseCreate}?editId=${w.wirId}`, {
-        state: {
-          role: effectiveRole,
-          project: projectFromState || { projectId },
-          wir: { wirId: w.wirId, code: w.code, title: w.title },
-          mode: "edit",
-        },
-      });
+        navigate(`${baseCreate}?editId=${w.wirId}`, {
+          state: {
+            role: effectiveRole,
+            project: projectFromState || { projectId },
+            wir: { wirId: w.wirId, code: w.code, title: w.title },
+            mode: "edit",
+          },
+        });
+      } else {
+        // open Document/Discussion screen (neutral route; no role segment)
+        const docPath = `/home/projects/${projectId}/wir/${w.wirId}/doc`;
+        navigate(docPath, {
+          state: {
+            role: effectiveRole,
+            project: projectFromState || { projectId },
+            wir: { wirId: w.wirId, code: w.code, title: w.title },
+            mode: "view",
+          },
+        });
+      }
     } catch (e: any) {
       const status = e?.response?.status;
       const msg =

@@ -8,6 +8,7 @@ import {
 } from "./memberships.helpers";
 import { api } from "../../../../api/client";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../../../../hooks/useAuth";
 
 
 type Props = {
@@ -78,6 +79,16 @@ export default function DispatchWIRModal({
   // NEW: confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(null);
+const { user, claims } = useAuth();
+
+// Same rule we used in CreateWIR.tsx
+const currentUserId =
+  (claims as any)?.sub ||
+  (claims as any)?.userId ||
+  (claims as any)?.id ||
+  (user as any)?.userId ||
+  (user as any)?.id ||
+  null;
 
   const params = useParams<{ wirId?: string }>();
   const targetWirId = wirId || params.wirId || undefined;
@@ -195,20 +206,24 @@ export default function DispatchWIRModal({
     setSubmitting(true);
     setErr(null);
     try {
-      const { data } = await api.post(
-        `/projects/${projectId}/wir/${targetWirId}/dispatch`,
-        {
-          inspectorId,
-          assignCode: true,
-          materializeIfNeeded: true,
-        }
-      );
+      const dispatchBody: any = {
+  inspectorId,
+  assignCode: true,
+  materializeIfNeeded: true,
+};
+// >>> add creator stamp if we have it
+if (currentUserId) dispatchBody.createdById = currentUserId;
+
+const { data } = await api.post(
+  `/projects/${projectId}/wir/${targetWirId}/dispatch`,
+  dispatchBody
+);
 
       // --- ensure version = 1 on submit (idempotent/no-op if BE already did it)
       let ensuredVersion: number | undefined = data?.version;
       try {
         // Only patch if BE didn’t return a valid version >= 1
-        if (!ensuredVersion || ensuredVersion < 1) {
+        if (!ensuredVersion || ensuredVersion !== 1) {
           const v = await api.patch(
             `/projects/${projectId}/wir/${targetWirId}`,
             { version: 1 }                        // <— enforce version 1 at submit

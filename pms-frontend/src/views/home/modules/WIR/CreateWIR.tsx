@@ -665,6 +665,20 @@ export default function CreateWIR() {
         (claims as any)?.displayName ||
         "User";
 
+    // ---- NEW: stable way to read current user id from auth/claims ----
+    const currentUserId =
+        (claims as any)?.sub ||          // common JWT 'subject'
+        (claims as any)?.userId ||
+        (claims as any)?.id ||
+        (user as any)?.userId ||
+        (user as any)?.id ||
+        null;
+
+    // (optional) quick debug
+    if (!currentUserId) {
+        console.warn("[WIR] currentUserId not found in auth claims/user");
+    }
+
     /* ---------------- load reference checklists ---------------- */
 
     const loadRefs = useCallback(async () => {
@@ -900,7 +914,7 @@ export default function CreateWIR() {
             refChecklistIds: selectedRefIds.length ? selectedRefIds : undefined,
             materializeItemsFromRef: false,
             // >>> NEW: ensure BE never assigns a code during draft save
-    assignCode: false,
+            assignCode: false,
             clientHints: {
                 dateText,
                 timeText,
@@ -908,6 +922,14 @@ export default function CreateWIR() {
                 attachmentsMeta: buildAttachmentsMeta(docs as any),
             },
         };
+        // >>> NEW: stamp author (for create) or fill if missing (for patch)
+        if (currentUserId) {
+            if (!isEdit) {
+                payload.createdById = currentUserId;
+            } else if (payload.createdById == null) {
+                payload.createdById = currentUserId;
+            }
+        }
         return payload;
     }
 
@@ -955,7 +977,22 @@ export default function CreateWIR() {
                 : await api.post(path, payload);
 
             logWir("saveDraft <- response", res?.data);
+
+            // >>> NEW: if editing an existing WIR, mirror checklist selection
+            if (isEdit && editId && selectedRefIds.length) {
+                try {
+                    await api.post(
+                        `/projects/${projectId}/wir/${editId}/sync-checklists`,
+                        { refChecklistIds: selectedRefIds, materializeItemsFromRef: false, replace: true }
+                    );
+                } catch (e: any) {
+                    console.warn("[WIR] sync-checklists (draft) warn:", e?.response?.data || e?.message || e);
+                    // non-blocking: continue
+                }
+            }
+
             backToWirList();
+
         } catch (e: any) {
             const err = e?.response?.data || e?.message || e;
             console.error("[WIR] saveDraft error:", err);
@@ -991,6 +1028,14 @@ export default function CreateWIR() {
                 refChecklistIds: selectedRefIds,
                 materializeItemsFromRef: true,
             };
+
+            if (currentUserId) {
+                if (!isEdit) {
+                    payload.createdById = currentUserId;
+                } else if (payload.createdById == null) {
+                    payload.createdById = currentUserId;
+                }
+            }
 
             if (isEdit && editId) {
                 await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
