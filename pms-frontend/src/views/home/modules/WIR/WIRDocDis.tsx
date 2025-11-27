@@ -5,7 +5,13 @@ import { api } from "../../../../api/client";
 import { useAuth } from "../../../../hooks/useAuth";
 import { useBicNameMap, pickBicName } from "./wir.bicNames";
 import type { BicAware } from "./wir.bicNames";
-
+import {
+    type RoleKey,
+    listActiveMembersForProjectRole,
+    resolveActingRoleFor,
+    displayNameLite,
+    todayISO,
+} from "./memberships.helpers";
 type NavState = {
     role?: string;
     project?: { projectId: string; code?: string | null; title?: string | null };
@@ -77,6 +83,10 @@ type WirDoc = {
         createdAt: string;
         meta?: any;
     }>;
+    // --- Inspector recommendation header fields (persisted on BE) ---
+    inspectorRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
+    inspectorRemarks?: string | null;
+    inspectorReviewedAt?: string | null;
 };
 
 const canonicalWirStatus = (s?: string | null) => {
@@ -217,6 +227,41 @@ export default function WIRDocDis() {
     // ---------- Runner edit state & helpers ----------
     const [edits, setEdits] = useState<Record<string, EditBuf>>({});
     const [savingAll, setSavingAll] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
+
+    // Inspector recommendation submit state
+    const [recSubmitting, setRecSubmitting] = useState<null | "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT">(null);
+    // Hold local (unsaved) pick
+    const [pendingRec, setPendingRec] =
+        useState<WirDoc["inspectorRecommendation"] | null>(null);
+    const onPreview = useCallback(() => {
+        setPreviewOpen(true);
+    }, []);
+    const [recLockedReject, setRecLockedReject] = useState(false);
+
+
+    // derived checker: any critical item marked FAIL?
+    const computeCriticalFail = useCallback(() => {
+        if (!row?.items) return false;
+        for (const it of row.items) {
+            const isCritical =
+                !!it.critical || (it.tags?.some(t => /^\s*critical\s*$/i.test(t)) ?? false);
+            const st = edits[it.id]?.status ?? null;
+            if (isCritical && st === "FAIL") return true;
+        }
+        return false;
+    }, [row?.items, edits]);
+
+    // Minimal recommend handler (posts and refreshes WIR)
+    // Minimal recommend handler (posts and refreshes WIR) — no comments
+    // Only set local selection; actual save happens in Save Progress
+    const onRecommend = useCallback(
+        (action: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT") => {
+            if (recLockedReject) return;       // non-mutable when locked
+            setPendingRec(action);
+        },
+        [recLockedReject]
+    );
 
     const setEdit = (itemId: string, patch: Partial<EditBuf>) =>
         setEdits((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), ...patch } }));
@@ -287,19 +332,136 @@ export default function WIRDocDis() {
         }
         if (payloadItems.length === 0) return; // nothing to save
 
-        const payload = { actorRole: "Inspector", items: payloadItems };
+        const payload = {
+            actorRole: "Inspector",
+            items: payloadItems,
+        };
         try {
             setSavingAll(true);
             await api.post(`/projects/${projectId}/wir/${wirId}/runner/inspector-save`, payload);
             const fresh = await api.get(`/projects/${projectId}/wir/${wirId}`);
             const doc = (fresh.data?.wir ?? fresh.data) as WirDoc;
             setRow(doc);
+            setPendingRec(doc.inspectorRecommendation ?? null);
             setEdits(buildEditsFromRow(doc));  // repopulate from saved data
         } finally {
             setSavingAll(false);
         }
 
     }, [row?.items, edits, projectId, wirId, fetchWir]);
+
+    const [hodSelectedUserId, setHodSelectedUserId] = useState<string | null>(null);
+
+    const [hodReviewOpen, setHodReviewOpen] = useState(false);
+    const [hodPlannedPatch, setHodPlannedPatch] = useState<any | null>(null);
+
+    // Patch HOD on header (so approver is visible to all)
+    const patchHodOnHeader = useCallback(
+        async (hodUserId: string) => {
+            await api.patch(`/projects/${projectId}/wir/${wirId}`, {
+                hodId: hodUserId
+                // You can also set bicUserId here if you want to explicitly show the Inspector as BIC:
+                // bicUserId: (row?.bicUserId ?? undefined) || (claims?.userId ?? undefined)
+            });
+        },
+        [projectId, wirId]
+    );
+
+    // Call BE to persist the Inspector recommendation header fields
+    const postInspectorRecommend = useCallback(
+        async (action: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT", comment?: string | null) => {
+            await api.post(
+                `/projects/${projectId}/wir/${wirId}/runner/inspector-recommend`,
+                { action, comment: comment ?? null }
+            );
+        },
+        [projectId, wirId]
+    );
+
+    const onConfirmSendToHod = useCallback(async () => {
+        setHodConfirmOpen(false);
+        if (!hodSelectedUserId) return;
+
+        // Decide final recommendation that will be sent
+        const finalRec: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" =
+            (recLockedReject ? "REJECT" : (pendingRec ?? "APPROVE")) as any;
+
+        // Build the *planned* header patch we will show and (upon OK) apply
+        const planned = {
+            hodId: hodSelectedUserId,
+            bicUserId: hodSelectedUserId,
+            status: "Recommended",
+            version: 1,
+            ...(row?.createdById ? { contractorId: row.createdById } : {}),
+            // we’ll also persist this via /runner/inspector-recommend; include here for audit parity
+            inspectorRecommendation: finalRec,
+        };
+
+        setHodPlannedPatch(planned);
+        setHodReviewOpen(true); // open review dialog
+    }, [hodSelectedUserId, recLockedReject, pendingRec, row?.createdById]);
+
+    // require: every item must have measurement (numeric) AND status PASS/FAIL (remarks optional)
+    const validateAllRunnerFields = useCallback(() => {
+        if (!row?.items?.length) return { ok: false, missing: [] as Array<{ id: string; name: string }> };
+        const missing: Array<{ id: string; name: string }> = [];
+        for (const it of row.items) {
+            const buf = edits[it.id] || {};
+            const raw = (buf.value ?? "").toString().trim();
+            const val = raw === "" ? undefined : parseNum(raw);
+            const status = buf.status ?? null;
+            const hasStatus = status === "PASS" || status === "FAIL";
+            const hasValue = val !== undefined && Number.isFinite(val);
+            if (!hasValue || !hasStatus) {
+                missing.push({ id: it.id, name: it.name || it.code || "Item" });
+            }
+        }
+        return { ok: missing.length === 0, missing };
+    }, [row?.items, edits]);
+
+    // REPLACE: load HOD derived list for this project (use helper-based derivation)
+    const loadHodDerived = useCallback(async () => {
+        setHodLoading(true);
+        setHodErr(null);
+        try {
+            const ON = todayISO();
+            const ROLE_KEYS: RoleKey[] = ["Admin", "Client", "IH-PMT", "Contractor", "Consultant", "PMC", "Supplier"];
+
+            // Collect active members across base roles (dedup by userId)
+            const bag = new Map<string, { userId: string; roleKey: RoleKey; u: any }>();
+            for (const rk of ROLE_KEYS) {
+                const rows = await listActiveMembersForProjectRole(projectId, rk, ON);
+                for (const { user } of rows) {
+                    const uid = String(user.userId);
+                    if (!bag.has(uid)) bag.set(uid, { userId: uid, roleKey: rk, u: user });
+                }
+            }
+
+            // Resolve acting role per user; keep only HOD-capable
+            const out: Array<{ userId: string; fullName: string; acting: "HOD" | "Inspector+HOD" }> = [];
+            for (const { userId, roleKey, u } of bag.values()) {
+                try {
+                    const acting = await resolveActingRoleFor(projectId, roleKey, userId);
+                    if (acting === "HOD" || acting === "Inspector+HOD") {
+                        out.push({ userId, fullName: displayNameLite(u), acting });
+                    }
+                } catch {
+                    // ignore per-user failure
+                }
+            }
+
+            // Sort alphabetically
+            out.sort((a, b) => a.fullName.localeCompare(b.fullName));
+            setHodList(out);
+            setHodSelectedUserId(out[0]?.userId ?? null);
+        } catch (e: any) {
+            setHodErr(e?.response?.data?.error || e?.message || "Failed to derive HOD users.");
+            setHodList([]);
+        } finally {
+            setHodLoading(false);
+        }
+    }, [projectId]);
+
     /* ---------- render helpers ---------- */
 
     // Hydrate local edit buffers when we first load this WIR
@@ -311,6 +473,18 @@ export default function WIRDocDis() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [row?.wirId, row?.updatedAt, row?.items?.length]);
+
+    useEffect(() => {
+        if (!row) return;
+        // seed from server each time doc refreshes
+        setPendingRec(row.inspectorRecommendation ?? null);
+    }, [row?.wirId, row?.updatedAt]);
+
+    useEffect(() => {
+        const lock = computeCriticalFail();
+        setRecLockedReject(lock);
+        if (lock) setPendingRec("REJECT");
+    }, [computeCriticalFail]);
 
     const headerLine = useMemo(() => {
         if (!row) return "";
@@ -346,12 +520,39 @@ export default function WIRDocDis() {
     };
 
     const items = row?.items ?? [];
+    const rec = recLockedReject ? "REJECT" : ((pendingRec ?? row?.inspectorRecommendation) ?? null);
     const itemsCount = items.length;
 
     // input refs per item to focus when validation fails
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     // validation dialog state
     const [valErrItemId, setValErrItemId] = useState<string | null>(null);
+
+    const [sendWarnOpen, setSendWarnOpen] = useState(false);
+    const [sendWarnList, setSendWarnList] = useState<Array<{ id: string; name: string }>>([]);
+    const [hodOpen, setHodOpen] = useState(false);
+    const [hodLoading, setHodLoading] = useState(false);
+    const [hodErr, setHodErr] = useState<string | null>(null);
+    const [hodList, setHodList] = useState<Array<{ userId: string; fullName: string; acting: "HOD" | "Inspector+HOD" }>>([]);
+    const [hodConfirmOpen, setHodConfirmOpen] = useState(false);
+
+    // NEW: click handler used by the button
+    const onSendToHodClick = useCallback(async () => {
+        const res = validateAllRunnerFields();
+        if (!res.ok) {
+            setSendWarnList(res.missing);
+            setSendWarnOpen(true);
+            // focus first missing measurement field if available
+            const first = res.missing[0]?.id;
+            if (first) {
+                setTimeout(() => inputRefs.current[first]?.focus(), 0);
+            }
+            return;
+        }
+        setHodSelectedUserId(null);           // <— reset selection for a fresh open
+        setHodConfirmOpen(true);
+        loadHodDerived();
+    }, [validateAllRunnerFields, inputRefs, loadHodDerived]);
 
     return (
         <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -647,6 +848,74 @@ export default function WIRDocDis() {
                                         })}
                                     </div>
                                 )}
+                                {/* Recommendation tile (bottom) */}
+                                <div className="mt-4 rounded-2xl border dark:border-neutral-800 p-3">
+                                    <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Recommendation
+                                    </div>
+                                    <div className="mt-1 text-[12px] text-gray-600 dark:text-gray-300">
+                                        Outcome suggestion: <b>{rec ?? "—"}</b>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                            onClick={() => onRecommend("APPROVE")}
+                                            className={`text-sm px-3 py-2 rounded border ${rec === "APPROVE"
+                                                ? "bg-emerald-600 text-white border-emerald-700"
+                                                : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                }`}
+                                        >
+                                            Approve
+                                        </button>
+
+                                        <button
+                                            onClick={() => onRecommend("APPROVE_WITH_COMMENTS")}
+                                            className={`text-sm px-3 py-2 rounded border ${rec === "APPROVE_WITH_COMMENTS"
+                                                ? "bg-blue-600 text-white border-blue-700"
+                                                : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                }`}
+                                        >
+                                            Approve w/ Comments
+                                        </button>
+
+                                        <button
+                                            onClick={() => onRecommend("REJECT")}
+                                            className={`text-sm px-3 py-2 rounded border ${rec === "REJECT"
+                                                ? "bg-rose-600 text-white border-rose-700"
+                                                : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                }`}
+                                        >
+                                            Reject
+                                        </button>
+
+                                    </div>
+                                </div>
+                                {/* Bottom action bar */}
+                                <div className="mt-3 flex flex-wrap gap-2 justify-end">
+                                    <button
+                                        onClick={saveAllItems}
+                                        disabled={savingAll || !!recSubmitting}
+                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white disabled:opacity-60"
+                                    >
+                                        {savingAll ? "Saving…" : "Save Progress"}
+                                    </button>
+
+                                    <button
+                                        onClick={onPreview}
+                                        disabled={savingAll || !!recSubmitting}
+                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+                                    >
+                                        Preview
+                                    </button>
+                                    <button
+                                        onClick={onSendToHodClick}
+                                        disabled={savingAll || !!recSubmitting}
+                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+                                    >
+                                        {recSubmitting === "APPROVE" ? "Sending…" : "Send to HOD"}
+                                    </button>
+
+                                </div>
+
                             </div>
                         )}
                     </>
@@ -667,6 +936,272 @@ export default function WIRDocDis() {
                     </div>
                 )}
             </div>
+            {previewOpen && (
+                <div
+                    className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-5xl max-h-[88vh] flex flex-col">
+                        {/* Modal header */}
+                        <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
+                            <div className="text-base sm:text-lg font-semibold dark:text-white">
+                                Preview — Runner (Read only)
+                            </div>
+                            <button
+                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => setPreviewOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Modal content */}
+                        <div className="p-4 overflow-auto">
+                            {items.length === 0 ? (
+                                <div className="text-sm">No items materialized.</div>
+                            ) : (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                    {items.map((it) => {
+                                        const buf = edits[it.id] || {};
+                                        const tol = tolLine(it.base as any, it.plus as any, it.minus as any);
+                                        const req = (it.spec || "").trim();
+                                        const isMandatory = /^mandatory$/i.test(req);
+                                        const isOptional = /^optional$/i.test(req);
+
+                                        return (
+                                            <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3 space-y-3">
+                                                {/* Item meta (same header info as runner card) */}
+                                                <div>
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-semibold dark:text-white">
+                                                                {it.name ?? "Untitled Item"}{tol ? ` — ${tol}` : ""}
+                                                            </div>
+                                                            {it.code ? (
+                                                                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                                    {it.code}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+
+                                                        {it.critical ? (
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                                                Critical
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+
+                                                    {/* Pills: requirement, unit, tolerance */}
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                        {isMandatory && (
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                Mandatory
+                                                            </span>
+                                                        )}
+                                                        {isOptional && (
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                Optional
+                                                            </span>
+                                                        )}
+                                                        {it.unit ? (
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                Unit: {it.unit}
+                                                            </span>
+                                                        ) : null}
+                                                        {tol ? (
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                Tolerance: {tol}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+
+                                                    {/* Tags */}
+                                                    {(it.tags?.length || 0) > 0 ? (
+                                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                                            {it.tags!.map((t, i) => (
+                                                                <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                                                                    {t}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+
+                                                {/* Read-only observation summary */}
+                                                <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-2">
+                                                    <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                        Inspector Observation (Read only)
+                                                    </div>
+
+                                                    <div className="text-sm">
+                                                        <b>Measurement{it.unit ? ` (${it.unit})` : ""}:</b>{" "}
+                                                        {buf.value?.toString().trim() ? buf.value : "—"}
+                                                    </div>
+
+                                                    <div className="text-sm flex items-center gap-2">
+                                                        <b>Status:</b>
+                                                        <span
+                                                            className={`text-[11px] px-2 py-0.5 rounded border ${buf.status === "PASS"
+                                                                ? "bg-emerald-600 text-white border-emerald-700"
+                                                                : "dark:border-neutral-800"
+                                                                }`}
+                                                        >
+                                                            {buf.status ?? "—"}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="text-sm">
+                                                        <b>Remarks:</b>{" "}
+                                                        {buf.remark?.toString().trim() ? buf.remark : "—"}
+                                                    </div>
+
+                                                    <div className="text-sm">
+                                                        <b>Photo:</b>{" "}
+                                                        {buf.photo?.name ? buf.photo.name : "—"}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {hodConfirmOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
+                        <div className="flex items-center justify-between">
+                            <div className="text-base font-semibold dark:text-white">Send to HOD — Confirmation</div>
+                            <button
+                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => setHodConfirmOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="mt-3 text-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                HOD (Derived for this project)
+                            </div>
+
+                            {hodLoading ? (
+                                <div>Loading…</div>
+                            ) : hodErr ? (
+                                <div className="text-rose-600">{hodErr}</div>
+                            ) : hodList.length === 0 ? (
+                                <div>No HOD role discovered for this project.</div>
+                            ) : (
+                                <ul className="space-y-1">
+                                    {hodList.map(u => {
+                                        const checked = hodSelectedUserId === u.userId;
+                                        return (
+                                            <li
+                                                key={u.userId}
+                                                className={`flex items-center justify-between rounded border dark:border-neutral-800 px-3 py-2 cursor-pointer ${checked ? "ring-2 ring-blue-500" : ""
+                                                    }`}
+                                                onClick={() => setHodSelectedUserId(u.userId)}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <input
+                                                        type="radio"
+                                                        name="hod-pick"
+                                                        className="shrink-0"
+                                                        checked={checked}
+                                                        onChange={() => setHodSelectedUserId(u.userId)}
+                                                    />
+                                                    <span className="truncate">{u.fullName}</span>
+                                                </div>
+                                                <span className="text-[11px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
+                                                    {u.acting}
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+
+                            )}
+                        </div>
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                onClick={() => setHodConfirmOpen(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-60"
+                                onClick={onConfirmSendToHod}
+                                disabled={hodLoading || !hodSelectedUserId}   // <— gate by selection
+                            >
+                                Proceed & Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {hodReviewOpen && hodPlannedPatch && (
+                <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                        <div className="text-base font-semibold dark:text-white">Review changes</div>
+
+                        <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                            <div><b>hodId →</b> {hodPlannedPatch.hodId}</div>
+                            <div><b>bicUserId →</b> {hodPlannedPatch.bicUserId}</div>
+                            <div><b>inspectorRecommendation →</b> {hodPlannedPatch.inspectorRecommendation}</div>
+                            <div><b>status →</b> {hodPlannedPatch.status}</div>
+                            <div><b>version →</b> {hodPlannedPatch.version}</div>
+                            {hodPlannedPatch.contractorId && (
+                                <div><b>contractorId →</b> {hodPlannedPatch.contractorId}</div>
+                            )}
+                        </div>
+
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                onClick={() => { setHodReviewOpen(false); setHodPlannedPatch(null); }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-60"
+                                onClick={async () => {
+                                    try {
+                                        setRecSubmitting(hodPlannedPatch.inspectorRecommendation);
+                                        setHodReviewOpen(false);
+
+                                        // 1) Save all runner entries first (existing behavior)
+                                        await saveAllItems();
+
+                                        // 2) Apply header patch in one go (hodId, bicUserId, status, version, contractorId)
+                                        await api.patch(`/projects/${projectId}/wir/${wirId}`, hodPlannedPatch);
+
+                                        // 3) Persist the recommendation via BE endpoint (keeps audit/version parity)
+                                        await api.post(
+                                            `/projects/${projectId}/wir/${wirId}/runner/inspector-recommend`,
+                                            { action: hodPlannedPatch.inspectorRecommendation, comment: null }
+                                        );
+
+                                        // 4) Refresh
+                                        await fetchWir();
+                                    } finally {
+                                        setRecSubmitting(null);
+                                        setHodPlannedPatch(null);
+                                    }
+                                }}
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {valErrItemId && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40"
@@ -697,6 +1232,31 @@ export default function WIRDocDis() {
                                 onClick={() => setValErrItemId(null)}
                             >
                                 Dismiss
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {sendWarnOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                        <div className="text-base font-semibold dark:text-white">Missing required fields</div>
+                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+                            Each runner item must have a numeric <b>Measurement</b> and a <b>Pass/Fail</b> status.
+                        </div>
+                        {sendWarnList.length > 0 && (
+                            <ul className="mt-3 text-sm list-disc pl-5 max-h-48 overflow-auto">
+                                {sendWarnList.map(it => (
+                                    <li key={it.id}>{it.name}</li>
+                                ))}
+                            </ul>
+                        )}
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white"
+                                onClick={() => setSendWarnOpen(false)}
+                            >
+                                Got it
                             </button>
                         </div>
                     </div>

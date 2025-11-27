@@ -7,8 +7,12 @@ import {
   IsArray,
   IsBoolean,
   Length,
+  isInt,
+  IsInt
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export type InspectorRecommendation = 'APPROVE' | 'APPROVE_WITH_COMMENTS' | 'REJECT';
 
 export type WirStatus =
   | 'Draft'
@@ -130,6 +134,22 @@ export class UpdateWirHeaderDto {
   @IsOptional()
   @IsString()
   hodId?: string | null;
+
+   // Allow FE to explicitly set Current BIC (user) on header patch
+  @IsOptional()
+  @IsString()
+  bicUserId?: string | null;
+
+  // Pass-through of inspector recommendation when FE carries it forward for HOD flow
+  @IsOptional()
+  @IsIn(['APPROVE', 'APPROVE_WITH_COMMENTS', 'REJECT'])
+  inspectorRecommendation?: InspectorRecommendation | null;
+
+  // Allow FE to set version in specific flows (e.g., enforce 1 on first submit/recommend)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  version?: number;
 
   @IsOptional()
   @IsISO8601()

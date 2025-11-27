@@ -461,7 +461,7 @@ export default function WIR() {
         // open editor (existing behavior)
         const baseCreate =
           effectiveRole === "Contractor"
-            ? `/home/contractor/projects/${projectId}/wir/new`
+            ? `/home/projects/${projectId}/wir/new`
             : effectiveRole === "PMC"
               ? `/home/pmc/projects/${projectId}/wir/new`
               : effectiveRole === "IH-PMT"
@@ -538,7 +538,7 @@ export default function WIR() {
   const createWir = () => {
     const base =
       effectiveRole === "Contractor"
-        ? `/home/contractor/projects/${projectId}/wir/new`
+        ? `/home/projects/${projectId}/wir/new`
         : effectiveRole === "PMC"
           ? `/home/pmc/projects/${projectId}/wir/new`
           : effectiveRole === "IH-PMT"

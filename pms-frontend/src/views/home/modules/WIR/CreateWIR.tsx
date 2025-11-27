@@ -147,6 +147,26 @@ function getActivityTitleById(
     return undefined;
 }
 
+// --- trust-header helpers ---
+function pickActiveActivityId(wir: any): string {
+    // 1) header wins
+    if (wir?.activityRefId) return String(wir.activityRefId);
+    // 2) fallback to first history meta.activityId (if any)
+    if (Array.isArray(wir?.histories)) {
+        const h = wir.histories.find((x: any) => x?.meta?.activityId);
+        if (h?.meta?.activityId) return String(h.meta.activityId);
+    }
+    return "";
+}
+
+function pickSelectedChecklistIds(wir: any): string[] {
+    if (!Array.isArray(wir?.checklists)) return [];
+    const ids = wir.checklists
+        .map((c: any) => String(c?.checklistId ?? c?.id ?? ""))
+        .filter(Boolean);
+    return Array.from(new Set(ids));
+}
+
 // --- constants/types ---
 const DISCIPLINES = ["Civil", "MEP", "Finishes"] as const;
 type Discipline = typeof DISCIPLINES[number];
@@ -525,23 +545,15 @@ export default function CreateWIR() {
                 // ---- Discipline / Activity ----
                 setDiscipline((row.discipline ?? "") as Discipline | "");
 
-                // Recover activityId from history.meta if not on the row
-                let activityIdFromHistory: string | "" = "";
-                if (Array.isArray(row.histories)) {
-                    const createdH = row.histories.find((h: any) => h?.action === "Created");
-                    const metaAct = createdH?.meta?.activityId;
-                    if (typeof metaAct === "string" && metaAct.trim()) activityIdFromHistory = metaAct.trim();
-                }
-                const resolvedActivityId = String(row.activityId ?? activityIdFromHistory ?? "");
+                // Always trust header: activityRefId wins; fall back to history only if header is empty
+                const resolvedActivityId = pickActiveActivityId(row);
                 setActivityId(resolvedActivityId);
 
                 logWir("edit:activity resolution", {
-                    rowActivityId: row.activityId ?? null,
-                    activityIdFromHistory,
+                    header_activityRefId: row.activityRefId ?? null,
                     resolvedActivityId,
                 });
-                // >>> NEW: if activityId is absent but header carries a title,
-                // queue that title to be matched to options once they load.
+
                 if (!resolvedActivityId && typeof row.title === "string" && row.title.trim()) {
                     pendingActivityTitleRef.current = row.title.trim();
                 }
@@ -604,22 +616,11 @@ export default function CreateWIR() {
                     chosen: wiCandidate,
                 });
 
-                // ---- Preselect attached reference checklists ----
-                // Prefer explicit refChecklistIds (used by Drafts) but also support hydrated checklists.
-                const refIdsFromHydrated: string[] = Array.isArray(row.checklists)
-                    ? row.checklists.map((c: any) => String(c?.checklistId ?? c?.id ?? c)).filter(Boolean)
-                    : [];
-
-                const refIdsFromField: string[] = Array.isArray(row.refChecklistIds)
-                    ? row.refChecklistIds.map((x: any) => String(x)).filter(Boolean)
-                    : [];
-
-                const refIds = (refIdsFromField.length ? refIdsFromField : refIdsFromHydrated);
+                // ---- Preselect attached reference checklists (trust header only) ----
+                const refIds = pickSelectedChecklistIds(row);
                 setSelectedRefIds(refIds);
 
                 logWir("edit:checklists preselect", {
-                    fromField: refIdsFromField,
-                    fromHydrated: refIdsFromHydrated,
                     chosen: refIds,
                 });
 
@@ -642,7 +643,7 @@ export default function CreateWIR() {
     const backToWirList = () => {
         const base =
             role === "Contractor"
-                ? `/home/contractor/projects/${projectId}/wir`
+                ? `/home/projects/${projectId}/wir`
                 : role === "PMC"
                     ? `/home/pmc/projects/${projectId}/wir`
                     : role === "IH-PMT"
@@ -886,34 +887,33 @@ export default function CreateWIR() {
     }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds]);
 
     // Build the exact draft payload (same keys you already send in saveDraft)
-    function buildDraftPayload() {
+    function buildDraftPayload(isPatch = false) {
         const dtISO = composeDateTimeISO(dateISO, hh, mm, ampm) || undefined;
-        const activityTitle =
-            getActivityTitleById(activityId, activities, activityOpts) || undefined;
+        const activityTitle = getActivityTitleById(activityId, activities, activityOpts) || undefined;
 
-        // >>> ADD these two lines: split so PATCH works with BE's UpdateWirHeaderDto
-        // ✅ Only the calendar date part (what BE expects)
         const forDateISO = dtISO ? dtISO.slice(0, 10) : undefined; // "YYYY-MM-DD"
-        const forTimeStr = dtISO ? `${hh}:${mm}` : undefined;                 // "HH:MM"
+        const forTimeStr = dtISO ? `${hh}:${mm}` : undefined;       // "HH:MM"
+
+        // Build the header patch ONCE and mirror it.
+        const headerPatch: any = {
+            discipline: discipline || undefined,
+            activityId: activityId || undefined,
+            title: activityTitle,
+            cityTown: locationText || undefined,
+            description: workInspection || undefined,
+            forDate: forDateISO,
+            forTime: forTimeStr,
+        };
 
         const payload: any = {
             status: "Draft",
-            discipline: discipline || undefined,
-            activityId: activityId || undefined,
-
-            // keep plannedAt for POST/create (BE create splits it)
-            plannedAt: dtISO,
-
-            // >>> ADD these two keys so PATCH/updateHeader gets exactly what it expects
-            forDate: forDateISO,
-            forTime: forTimeStr,
-
-            cityTown: locationText || undefined,      // Location -> cityTown
-            description: workInspection || undefined, // Work Inspection -> description
-            title: activityTitle,                     // Activity title -> title
+            // mirror header fields at top-level for backward compatibility
+            ...headerPatch,
+            header: headerPatch,
+            // plannedAt only for POST/create; omit on PATCH to avoid BE ignoring split fields
+            plannedAt: isPatch ? undefined : dtISO,
             refChecklistIds: selectedRefIds.length ? selectedRefIds : undefined,
             materializeItemsFromRef: false,
-            // >>> NEW: ensure BE never assigns a code during draft save
             assignCode: false,
             clientHints: {
                 dateText,
@@ -922,7 +922,7 @@ export default function CreateWIR() {
                 attachmentsMeta: buildAttachmentsMeta(docs as any),
             },
         };
-        // >>> NEW: stamp author (for create) or fill if missing (for patch)
+
         if (currentUserId) {
             if (!isEdit) {
                 payload.createdById = currentUserId;
@@ -930,6 +930,7 @@ export default function CreateWIR() {
                 payload.createdById = currentUserId;
             }
         }
+
         return payload;
     }
 
@@ -961,25 +962,25 @@ export default function CreateWIR() {
         setSubmitting(true);
         setSubmitErr(null);
         try {
-            // <<< single source of truth
-            const payload = buildDraftPayload();
+            const isPatch = isEdit && !!editId;
+            const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
+            const method = isPatch ? "PATCH" : "POST";
 
-            const path =
-                isEdit && editId
-                    ? `/projects/${projectId}/wir/${editId}`
-                    : `/projects/${projectId}/wir`;
-            const method = isEdit && editId ? "PATCH" : "POST";
+            const payload = buildDraftPayload(isPatch);
+            if (isPatch) delete payload.plannedAt; // hard guard
 
             logWir(`saveDraft -> ${method} ${path}`, payload);
-
-            const res = method === "PATCH"
-                ? await api.patch(path, payload)
-                : await api.post(path, payload);
-
+            const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
             logWir("saveDraft <- response", res?.data);
 
-            // >>> NEW: if editing an existing WIR, mirror checklist selection
-            if (isEdit && editId && selectedRefIds.length) {
+            // Optional: sanity GET to ensure DB reflects new header now
+            if (isPatch) {
+                const check = await api.get(`/projects/${projectId}/wir/${editId}`);
+                logWir("saveDraft:verify <- GET", check?.data);
+            }
+
+            // Keep checklist sync (non-blocking)
+            if (isPatch && selectedRefIds.length) {
                 try {
                     await api.post(
                         `/projects/${projectId}/wir/${editId}/sync-checklists`,
@@ -987,12 +988,10 @@ export default function CreateWIR() {
                     );
                 } catch (e: any) {
                     console.warn("[WIR] sync-checklists (draft) warn:", e?.response?.data || e?.message || e);
-                    // non-blocking: continue
                 }
             }
 
             backToWirList();
-
         } catch (e: any) {
             const err = e?.response?.data || e?.message || e;
             console.error("[WIR] saveDraft error:", err);
@@ -1343,12 +1342,12 @@ export default function CreateWIR() {
                         {submitErr && <div className="text-sm text-rose-600 sm:mr-auto">{submitErr}</div>}
                         <button
                             onClick={() => {
-                                const payload = buildDraftPayload();
-                                const path =
-                                    isEdit && editId
-                                        ? `/projects/${projectId}/wir/${editId}`
-                                        : `/projects/${projectId}/wir`;
-                                const method: "POST" | "PATCH" = isEdit && editId ? "PATCH" : "POST";
+                                const isPatch = isEdit && !!editId;
+                                const payload = buildDraftPayload(isPatch);
+                                if (isPatch) delete payload.plannedAt;
+
+                                const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
+                                const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
 
                                 savePayloadRef.current = payload;
                                 savePathRef.current = path;
@@ -1358,6 +1357,7 @@ export default function CreateWIR() {
                                 setSaveDlgRows(buildPreviewRows(payload));
                                 setSaveDlgOpen(true);
                             }}
+
                             disabled={!roleCanCreate || submitting}
                             className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800 ${!roleCanCreate || submitting ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
                         >

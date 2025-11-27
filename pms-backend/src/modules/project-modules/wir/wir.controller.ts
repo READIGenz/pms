@@ -115,7 +115,29 @@ export class WirController {
       }
     );
   }
-@Post(':wirId/runner/inspector-save')
+
+  @Post(':wirId/runner/inspector-recommend')
+  async inspectorRecommend(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() body: { action: 'APPROVE' | 'APPROVE_WITH_COMMENTS' | 'REJECT'; comment?: string | null },
+    @Req() req: any,
+  ) {
+    const actor = {
+      userId: getAuthUserId(req),
+      fullName: req?.user?.fullName ?? null,
+    };
+
+    // minimal guard
+    const action = body?.action;
+    if (!action || !['APPROVE', 'APPROVE_WITH_COMMENTS', 'REJECT'].includes(action)) {
+      throw new Error('Invalid recommendation action');
+    }
+
+    return this.service.inspectorRecommend(projectId, wirId, { action, comment: body?.comment ?? null }, actor);
+  }
+
+  @Post(':wirId/runner/inspector-save')
   async inspectorSave(
     @Param('projectId') projectId: string,
     @Param('wirId') wirId: string,

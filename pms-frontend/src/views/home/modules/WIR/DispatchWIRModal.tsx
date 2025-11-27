@@ -79,16 +79,17 @@ export default function DispatchWIRModal({
   // NEW: confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(null);
-const { user, claims } = useAuth();
-
-// Same rule we used in CreateWIR.tsx
-const currentUserId =
-  (claims as any)?.sub ||
-  (claims as any)?.userId ||
-  (claims as any)?.id ||
-  (user as any)?.userId ||
-  (user as any)?.id ||
-  null;
+  const { user, claims } = useAuth();
+  const [wirMeta, setWirMeta] = useState<{ code?: string | null; title?: string | null } | null>(null);
+  const [wirHeader, setWirHeader] = useState<any>(null);
+  // Same rule we used in CreateWIR.tsx
+  const currentUserId =
+    (claims as any)?.sub ||
+    (claims as any)?.userId ||
+    (claims as any)?.id ||
+    (user as any)?.userId ||
+    (user as any)?.id ||
+    null;
 
   const params = useParams<{ wirId?: string }>();
   const targetWirId = wirId || params.wirId || undefined;
@@ -146,6 +147,28 @@ const currentUserId =
     };
   }, [open, projectId]);
 
+  // NEW: fetch WIR code/title for the confirm dialog
+  useEffect(() => {
+    let abort = false;
+    async function loadWirMeta() {
+      if (!open || !projectId || !targetWirId) return;
+      try {
+        const { data } = await api.get(`/projects/${projectId}/wir/${targetWirId}`);
+        if (!abort) {
+          setWirHeader(data || null);
+          setWirMeta({ code: data?.code ?? null, title: data?.title ?? null });
+        }
+      } catch {
+        if (!abort) {
+          setWirHeader(null);
+          setWirMeta(null);
+        }
+      }
+    }
+    loadWirMeta();
+    return () => { abort = true; };
+  }, [open, projectId, targetWirId]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return candidates;
@@ -155,6 +178,15 @@ const currentUserId =
         .some((v) => String(v).toLowerCase().includes(q))
     );
   }, [candidates, search]);
+
+  // NEW: label for Confirm dialog
+  const wirLabel = useMemo(() => {
+    if (!targetWirId) return "—";
+    const parts: string[] = [];
+    if (wirMeta?.code) parts.push(String(wirMeta.code));
+    if (wirMeta?.title) parts.push(String(wirMeta.title));
+    return parts.length ? parts.join(" — ") : targetWirId;
+  }, [wirMeta, targetWirId]);
 
   const toggle = (id: string) =>
     setSelectedIds((prev) => {
@@ -177,6 +209,22 @@ const currentUserId =
     });
 
   const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
+
+  // HOD preview dialog
+  const [hodPreviewOpen, setHodPreviewOpen] = useState(false);
+  const [hodPatch, setHodPatch] = useState<Record<string, any> | null>(null);
+
+  const isHodFlow = useMemo(
+    () => !!confirmInspector && (confirmInspector.acting === "HOD" || confirmInspector.acting === "Inspector+HOD"),
+    [confirmInspector]
+  );
+
+  const confirmCta = useMemo(() => {
+    if (!confirmInspector) return (submitting ? "Sending…" : "Confirm & Send");
+    return isHodFlow
+      ? (submitting ? "Sending…" : "Proceed & Send")
+      : (submitting ? "Sending…" : "Confirm & Send");
+  }, [confirmInspector, isHodFlow, submitting]);
 
   function onSend() {
     const inspectorId = Array.from(selectedIds)[0];
@@ -207,17 +255,17 @@ const currentUserId =
     setErr(null);
     try {
       const dispatchBody: any = {
-  inspectorId,
-  assignCode: true,
-  materializeIfNeeded: true,
-};
-// >>> add creator stamp if we have it
-if (currentUserId) dispatchBody.createdById = currentUserId;
+        inspectorId,
+        assignCode: true,
+        materializeIfNeeded: true,
+      };
+      // >>> add creator stamp if we have it
+      if (currentUserId) dispatchBody.createdById = currentUserId;
 
-const { data } = await api.post(
-  `/projects/${projectId}/wir/${targetWirId}/dispatch`,
-  dispatchBody
-);
+      const { data } = await api.post(
+        `/projects/${projectId}/wir/${targetWirId}/dispatch`,
+        dispatchBody
+      );
 
       // --- ensure version = 1 on submit (idempotent/no-op if BE already did it)
       let ensuredVersion: number | undefined = data?.version;
@@ -242,7 +290,7 @@ const { data } = await api.post(
         bicUserId: inspectorId,
         bicFullName: confirmInspector?.fullName || data?.bicFullName || data?.inspectorName, // NEW
         updatedAt: data?.updatedAt,
-        version: ensuredVersion ?? 1,            // <— NEW
+        version: ensuredVersion ?? 1,
       });
 
       // Close confirm + modal
@@ -253,13 +301,13 @@ const { data } = await api.post(
       // Navigate back to WIR list view for this project
       const baseList =
         role === "Contractor"
-          ? `/home/contractor/projects/${projectId}/wir`
+          ? `/home/projects/${projectId}/wir`
           : role === "PMC"
-            ? `/home/pmc/projects/${projectId}/wir`
+            ? `/home/projects/${projectId}/wir`
             : role === "IH-PMT"
-              ? `/home/ihpmt/projects/${projectId}/wir`
+              ? `/home/projects/${projectId}/wir`
               : role === "Client"
-                ? `/home/client/projects/${projectId}/wir`
+                ? `/home/projects/${projectId}/wir`
                 : `/home/projects/${projectId}/wir`;
 
       navigate(baseList, {
@@ -277,8 +325,58 @@ const { data } = await api.post(
 
   const onConfirmSend = () => {
     if (!confirmInspector) return;
+    if (isHodFlow) {
+      // Build patch for preview
+      const hodId = confirmInspector.id;
+      const patch: Record<string, any> = {
+        hodId,
+        bicUserId: hodId,
+        status: "Recommended",
+        version: 1,
+      };
+      // carry inspectorRecommendation if present (from header)
+      if (wirHeader?.inspectorRecommendation != null) {
+        patch.inspectorRecommendation = wirHeader.inspectorRecommendation;
+      }
+      // optional: try mapping createdById to contractorId if available
+      if (currentUserId) {
+        patch.contractorId = currentUserId;
+      }
+      setHodPatch(patch);
+      setHodPreviewOpen(true);
+      return;
+    }
     void performDispatch(confirmInspector.id);
   };
+
+  async function applyHodPatch() {
+    if (!targetWirId || !hodPatch || !confirmInspector) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const { data } = await api.patch(
+        `/projects/${projectId}/wir/${targetWirId}`,
+        hodPatch
+      );
+      onDispatched?.({
+        wirId: data?.wirId ?? targetWirId,
+        status: data?.status ?? "Recommended",
+        code: data?.code ?? undefined,
+        bicUserId: data?.bicUserId ?? hodPatch.bicUserId,
+        bicFullName: confirmInspector.fullName,
+        updatedAt: data?.updatedAt,
+        version: data?.version ?? 1,
+      });
+      setHodPreviewOpen(false);
+      setConfirmOpen(false);
+      setConfirmInspector(null);
+      onClose?.();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Failed to send to HOD.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40">
@@ -479,8 +577,9 @@ const { data } = await api.post(
               </div>
               <div>
                 <span className="font-medium">WIR:</span>{" "}
-                {targetWirId || "—"}
+                {wirLabel}
               </div>
+
               <div>
                 <span className="font-medium">Recipient:</span>{" "}
                 {confirmInspector.fullName} ({confirmInspector.acting})
@@ -497,10 +596,6 @@ const { data } = await api.post(
                   {confirmInspector.phone}
                 </div>
               )}
-              <div className="mt-2 text-[12px] text-gray-500 dark:text-gray-400">
-                This will assign a WIR code (if missing) and send this Work Inspection
-                to the selected Inspector.
-              </div>
             </div>
 
             <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
@@ -520,7 +615,51 @@ const { data } = await api.post(
                   : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                   }`}
               >
-                {submitting ? "Sending…" : "Confirm & Send"}
+                {confirmCta}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {hodPreviewOpen && hodPatch && confirmInspector && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4 sm:p-5">
+            <div className="text-base font-semibold dark:text-white">
+              Confirm Updates (Send to HOD)
+            </div>
+            <div className="mt-3 text-sm text-gray-700 dark:text-gray-200 space-y-1">
+              <div><span className="font-medium">WIR:</span> {wirLabel}</div>
+              <div><span className="font-medium">HOD:</span> {confirmInspector.fullName}</div>
+              <div className="mt-2 font-medium">Fields to update:</div>
+              <ul className="list-disc pl-5 space-y-1">
+                {"hodId" in hodPatch && <li>hodId → <b>{hodPatch.hodId}</b></li>}
+                {"bicUserId" in hodPatch && <li>bicUserId → <b>{hodPatch.bicUserId}</b></li>}
+                {"inspectorRecommendation" in hodPatch && (
+                  <li>inspectorRecommendation → <i className="break-words">{String(hodPatch.inspectorRecommendation)}</i></li>
+                )}
+                {"status" in hodPatch && <li>status → <b>{hodPatch.status}</b></li>}
+                {"version" in hodPatch && <li>version → <b>{hodPatch.version}</b></li>}
+                {"contractorId" in hodPatch && <li>contractorId → <b>{hodPatch.contractorId}</b> <span className="opacity-70">(best-effort)</span></li>}
+              </ul>
+            </div>
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setHodPreviewOpen(false)}
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyHodPatch}
+                disabled={submitting}
+                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${submitting
+                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                  }`}
+              >
+                {submitting ? "Applying…" : "OK, Proceed"}
               </button>
             </div>
           </div>

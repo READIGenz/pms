@@ -118,7 +118,9 @@ export class WirService {
     const counts = await this.prisma.wirHistory.count({
       where: {
         wirId,
-        action: { in: ['Updated', 'ItemsChanged', 'Rescheduled', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned'] },
+        //    action: { in: ['Updated', 'ItemsChanged', 'Rescheduled', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned'] },
+        action: { in: ['Submitted'] },
+
       },
     });
     return 1 + counts;
@@ -218,7 +220,7 @@ export class WirService {
       const wir = await tx.wir.create({
         data: {
           projectId,
-          code,                          // <-- NEW
+          code,
           title,
           status,
           discipline: dto.discipline as any,
@@ -229,6 +231,7 @@ export class WirService {
           stateName,
           createdById: currentUserId ?? undefined,
           seriesId: randomUUID(),
+          activityRefId: dto.activityId ?? undefined,
         },
         select: { wirId: true, code: true, title: true, status: true },
       });
@@ -312,18 +315,19 @@ export class WirService {
     dto: UpdateWirHeaderDto,
     actor?: { userId?: string | null; fullName?: string | null }
   ) {
-    // never let client change creator
     const { createdById: _ignoreCreatedBy, ...safeDto } = (dto as any) || {};
 
     const existing = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
-      select: { createdById: true },
+      select: { createdById: true, status: true },
     });
 
-    const shouldBackfillCreator =
-      !existing?.createdById && !!actor?.userId;
+    const shouldBackfillCreator = !existing?.createdById && !!actor?.userId;
 
-    // Scalars (use undefined to leave unchanged; null to clear if field supports null)
+    // support PATCH with plannedAt too (split into forDate/forTime if provided)
+    const { forDate: splitForDate, forTime: splitForTime } = splitDateTime(safeDto.plannedAt);
+
+    // ---------- scalars ----------
     const patch: Prisma.WirUpdateInput = {
       status: safeDto.status as any,
       discipline: safeDto.discipline as any,
@@ -332,8 +336,11 @@ export class WirService {
       forDate:
         safeDto.forDate !== undefined
           ? (safeDto.forDate ? new Date(safeDto.forDate) : null)
-          : undefined,
-      forTime: safeDto.forTime !== undefined ? safeDto.forTime : undefined,
+          : (splitForDate !== undefined ? splitForDate : undefined),
+      forTime:
+        safeDto.forTime !== undefined
+          ? safeDto.forTime
+          : (splitForTime !== undefined ? splitForTime : undefined),
       cityTown: safeDto.cityTown,
       stateName: safeDto.stateName,
       rescheduleForDate:
@@ -344,40 +351,207 @@ export class WirService {
         safeDto.rescheduleForTime !== undefined ? safeDto.rescheduleForTime : undefined,
       rescheduleReason:
         safeDto.rescheduleReason !== undefined ? safeDto.rescheduleReason : undefined,
-      ...(shouldBackfillCreator
-        ? { createdBy: { connect: { userId: actor!.userId! } } }
-        : {}),
+
+      // activity link via scalar FK
+      activityRefId:
+        safeDto.activityId === null
+          ? null
+          : safeDto.activityId !== undefined
+            ? safeDto.activityId
+            : undefined,
+
+      // ✅ NEW: allow these two scalars to flow through PATCH
+      inspectorRecommendation:
+        safeDto.inspectorRecommendation !== undefined
+          ? (safeDto.inspectorRecommendation as any)
+          : undefined,
+      version:
+        safeDto.version !== undefined ? safeDto.version : undefined,
+
+      // ✅ (optional) keep audit parity timestamp when recommendation is set via PATCH
+      inspectorReviewedAt:
+        safeDto.inspectorRecommendation !== undefined ? new Date() : undefined,
+
+      ...(shouldBackfillCreator ? { createdBy: { connect: { userId: actor!.userId! } } } : {}),
     };
 
-    // Relations (connect/disconnect instead of setting *_Id)
+    // ---------- relations (users) ----------
     const rel: Prisma.WirUpdateInput = {};
-    if (dto.inspectorId !== undefined) {
+    if (safeDto.inspectorId !== undefined) {
       rel.inspector =
-        dto.inspectorId === null
+        safeDto.inspectorId === null
           ? { disconnect: true }
-          : { connect: { userId: dto.inspectorId } };
+          : { connect: { userId: safeDto.inspectorId } };
     }
-    if (dto.contractorId !== undefined) {
+
+    if (safeDto.bicUserId !== undefined) {
+      rel.bic =
+        safeDto.bicUserId === null
+          ? { disconnect: true }
+          : { connect: { userId: safeDto.bicUserId } };
+    }
+
+    if (safeDto.contractorId !== undefined) {
       rel.contractor =
-        dto.contractorId === null
+        safeDto.contractorId === null
           ? { disconnect: true }
-          : { connect: { userId: dto.contractorId } };
+          : { connect: { userId: safeDto.contractorId } };
     }
-    if (dto.hodId !== undefined) {
+    if (safeDto.hodId !== undefined) {
       rel.hod =
-        dto.hodId === null
+        safeDto.hodId === null
           ? { disconnect: true }
-          : { connect: { userId: dto.hodId } };
+          : { connect: { userId: safeDto.hodId } };
     }
 
-    const updated = await this.prisma.wir.update({
-      where: { wirId },
-      data: { ...patch, ...rel },
-    });
+    // If PATCH includes refChecklistIds, we will sync them atomically here.
+    const shouldSyncRefs = Array.isArray(safeDto.refChecklistIds);
 
-    await this.writeHistory(projectId, wirId, 'Updated', undefined, undefined, actor);
+    if (!shouldSyncRefs) {
+      // Simple header-only update
+      const updated = await this.prisma.wir.update({
+        where: { wirId },
+        data: { ...patch, ...rel },
+      });
+
+      // ✅ optional audit parity when recommendation is sent via PATCH
+      if (safeDto.inspectorRecommendation !== undefined) {
+        await this.writeHistory(
+          projectId,
+          wirId,
+          'Recommended',
+          safeDto.inspectorRecommendation === 'APPROVE_WITH_COMMENTS'
+            ? 'Inspector approved with comments'
+            : safeDto.inspectorRecommendation === 'APPROVE'
+              ? 'Inspector approved'
+              : 'Inspector rejected',
+          { recommendation: safeDto.inspectorRecommendation, via: 'PATCH' },
+          actor
+        );
+      }
+
+      await this.writeHistory(
+        projectId,
+        wirId,
+        'Updated',
+        undefined,
+        { activityId: safeDto.activityId ?? undefined },
+        actor
+      );
+
+      const version = await this.computedVersion(wirId);
+      return { ...updated, version };
+    }
+
+    // ---------- Header + Checklist sync in a single transaction ----------
+    const refRows = await this.resolveChecklistIds(safeDto.refChecklistIds || []);
+    const wantIds = new Set(refRows.map(r => r.id));
+    const materialize = !!safeDto.materializeItemsFromRef;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1) Update header
+      const updated = await tx.wir.update({
+        where: { wirId },
+        data: { ...patch, ...rel },
+        select: { wirId: true, status: true },
+      });
+
+      // 2) Compute diff
+      const existing = await tx.wirChecklist.findMany({ where: { wirId } });
+      const haveIds = new Set(existing.map(x => x.checklistId));
+
+      const toAdd = refRows.filter(r => !haveIds.has(r.id));
+      const toRemove = existing.filter(x => !wantIds.has(x.checklistId));
+
+      // 3) Apply removals
+      if (toRemove.length) {
+        await tx.wirChecklist.deleteMany({
+          where: { wirId, checklistId: { in: toRemove.map(x => x.checklistId) } },
+        });
+
+        // Drop snapshot items for removed checklists while still in Draft
+        if (updated.status === 'Draft') {
+          await tx.wirItem.deleteMany({
+            where: { wirId, sourceChecklistId: { in: toRemove.map(x => x.checklistId) } },
+          });
+        }
+      }
+
+      // 4) Apply additions
+      if (toAdd.length) {
+        // preserve order after existing
+        await tx.wirChecklist.createMany({
+          data: toAdd.map((r, idx) => ({
+            wirId,
+            checklistId: r.id,
+            checklistCode: r.code || undefined,
+            checklistTitle: r.title || undefined,
+            discipline: r.discipline as any,
+            versionLabel: r.versionLabel || undefined,
+            order: (existing.length + idx + 1),
+          })),
+        });
+
+        if (materialize) {
+          const items = await tx.refChecklistItem.findMany({
+            where: { checklistId: { in: toAdd.map(r => r.id) } },
+            include: { checklist: true },
+            orderBy: [{ checklistId: 'asc' }, { seq: 'asc' }],
+          });
+
+          if (items.length) {
+            await tx.wirItem.createMany({
+              data: items.map((it, idx) => ({
+                wirId,
+                checklistId: it.checklistId,
+                itemId: it.id,
+                seq: it.seq ?? idx + 1,
+                name: it.text,
+                spec: it.requirement ?? undefined,
+                tolerance: it.tolerance ?? undefined,
+                status: 'Unknown',
+                sourceChecklistId: it.checklistId,
+                sourceChecklistItemId: it.id,
+                code: it.itemCode ?? undefined,
+                unit: it.units ?? undefined,
+                tags: it.tags ?? [],
+                critical: it.critical ?? undefined,
+                aiEnabled: it.aiEnabled ?? undefined,
+                aiConfidence: it.aiConfidence ? new Prisma.Decimal(it.aiConfidence as any) : undefined,
+                base: it.base ? new Prisma.Decimal(it.base as any) : undefined,
+                plus: it.plus ? new Prisma.Decimal(it.plus as any) : undefined,
+                minus: it.minus ? new Prisma.Decimal(it.minus as any) : undefined,
+              })),
+            });
+          }
+        }
+      }
+
+      return {
+        added: toAdd.length,
+        removed: toRemove.length,
+        addedIds: toAdd.map(r => r.id),
+        removedIds: toRemove.map(x => x.checklistId),
+      };
+    }) as { added: number; removed: number; addedIds: string[]; removedIds: string[] };
+
+    // 5) History + version
+    await this.writeHistory(
+      projectId,
+      wirId,
+      'ItemsChanged',
+      `${result.added} added, ${result.removed} removed.`,
+      {
+        activityId: safeDto.activityId ?? undefined,
+        add: result.addedIds,
+        remove: result.removedIds,
+      },
+      actor
+    );
+
+    const updatedHeader = await this.prisma.wir.findUnique({ where: { wirId } });
     const version = await this.computedVersion(wirId);
-    return { ...updated, version };
+    return { ...updatedHeader, version };
   }
 
   async attachChecklists(projectId: string, wirId: string, dto: AttachChecklistsDto, actor?: { userId?: string | null; fullName?: string | null }) {
@@ -848,4 +1022,45 @@ export class WirService {
       }
     });
   }
+
+  async inspectorRecommend(
+    projectId: string,
+    wirId: string,
+    payload: { action: 'APPROVE' | 'APPROVE_WITH_COMMENTS' | 'REJECT'; comment?: string | null },
+    actor?: { userId?: string | null; fullName?: string | null },
+  ) {
+    const now = new Date();
+
+    // write the 3 header fields ONLY; do not change status here
+    const updated = await this.prisma.wir.update({
+      where: { wirId },
+      data: {
+        inspectorRecommendation: payload.action,
+        inspectorRemarks: (payload.comment ?? '').trim() || null,
+        inspectorReviewedAt: now,
+      },
+      select: {
+        wirId: true, code: true, title: true, status: true,
+        inspectorRecommendation: true, inspectorRemarks: true, inspectorReviewedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.writeHistory(
+      projectId,
+      wirId,
+      'Recommended',
+      payload.action === 'APPROVE_WITH_COMMENTS'
+        ? 'Inspector approved with comments'
+        : payload.action === 'APPROVE'
+          ? 'Inspector approved'
+          : 'Inspector rejected',
+      { recommendation: payload.action, comment: payload.comment ?? null },
+      actor,
+    );
+
+    const version = await this.computedVersion(wirId);
+    return { ...updated, version };
+  }
+
 }
