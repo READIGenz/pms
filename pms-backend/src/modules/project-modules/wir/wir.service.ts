@@ -372,6 +372,18 @@ export class WirService {
       inspectorReviewedAt:
         safeDto.inspectorRecommendation !== undefined ? new Date() : undefined,
 
+      // --- HOD finalization fields ---
+      hodOutcome:
+        safeDto.hodOutcome !== undefined ? (safeDto.hodOutcome as any) : undefined,
+      hodRemarks:
+        safeDto.hodRemarks !== undefined
+          ? (safeDto.hodRemarks ? safeDto.hodRemarks : null)
+          : undefined,
+      hodDecidedAt:
+        safeDto.hodDecidedAt !== undefined
+          ? (safeDto.hodDecidedAt ? new Date(safeDto.hodDecidedAt) : null)
+          : undefined,
+
       ...(shouldBackfillCreator ? { createdBy: { connect: { userId: actor!.userId! } } } : {}),
     };
 
@@ -413,6 +425,18 @@ export class WirService {
         where: { wirId },
         data: { ...patch, ...rel },
       });
+
+      // History when HOD outcome is set via PATCH
+      if (safeDto.hodOutcome !== undefined) {
+        await this.writeHistory(
+          projectId,
+          wirId,
+          safeDto.hodOutcome === 'APPROVE' ? 'Approved' : 'Rejected',
+          safeDto.hodRemarks || undefined,
+          { via: 'PATCH' } as any,
+          actor
+        );
+      }
 
       // ✅ optional audit parity when recommendation is sent via PATCH
       if (safeDto.inspectorRecommendation !== undefined) {

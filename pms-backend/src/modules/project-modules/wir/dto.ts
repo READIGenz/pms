@@ -194,6 +194,20 @@ export class UpdateWirHeaderDto {
   @IsBoolean()
   materializeItemsFromRef?: boolean;
 
+  // --- HOD finalization header fields ---
+  @IsOptional()
+  @IsIn(['APPROVE', 'REJECT'])
+  hodOutcome?: 'APPROVE' | 'REJECT' | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  hodRemarks?: string | null;
+
+  @IsOptional()
+  @IsISO8601()
+  hodDecidedAt?: string | null;
+
   @IsOptional()
   clientHints?: Record<string, any>;
 }

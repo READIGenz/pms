@@ -12,9 +12,6 @@ import {
     displayNameLite,
     todayISO,
 } from "./memberships.helpers";
-import InspRecoInspRunner from "./InspRecoInspRunner";
-import InspRecoHODRunner from "./InspRecoHODRunner";
-
 type NavState = {
     role?: string;
     project?: { projectId: string; code?: string | null; title?: string | null };
@@ -63,12 +60,6 @@ type WirDoc = {
     snapshotAt?: string | null;
     bicUserId?: string | null;
     createdById?: string | null;
-    inspectorId?: string | null;
-    hodId?: string | null;
-    contractorId?: string | null;
-    hodOutcome?: "APPROVE" | "REJECT" | null;
-    hodRemarks?: string | null;
-    hodDecidedAt?: string | null;
     version?: number | null;
     updatedAt?: string | null;
     checklists?: Array<{
@@ -99,14 +90,15 @@ type WirDoc = {
 };
 
 const canonicalWirStatus = (s?: string | null) => {
-    const n = (s || "").toString().trim().toLowerCase();
+    const n = (s || "").toString().trim().replace(/\s|_/g, "").toLowerCase();
     if (!n) return "Unknown";
     if (n.includes("draft")) return "Draft";
     if (n.includes("submit")) return "Submitted";
-    if (n.includes("recommend")) return "Recommended";
-    if (n.includes("approve")) return "Approved";
-    if (n.includes("reject")) return "Rejected";
-    if (n.includes("return")) return "Returned";
+    if (n.includes("recommend")) return "InspectorRecommended";
+    if (n.includes("approve")) return "HODApproved";
+    if (n.includes("reject")) return "HODRejected";
+    if (n.includes("hold")) return "OnHold";
+    if (n.includes("close")) return "Closed";
     return "Unknown";
 };
 
@@ -494,61 +486,6 @@ export default function WIRDocDis() {
         if (lock) setPendingRec("REJECT");
     }, [computeCriticalFail]);
 
-    // --- ADD: coerce NavState.role -> RoleKey (case-insensitive)
-    const asRoleKey = (s?: string): RoleKey | null => {
-        switch ((s || "").toLowerCase()) {
-            case "admin": return "Admin";
-            case "client": return "Client";
-            case "ih-pmt": return "IH-PMT";
-            case "contractor": return "Contractor";
-            case "consultant": return "Consultant";
-            case "pmc": return "PMC";
-            case "supplier": return "Supplier";
-            default: return null;
-        }
-    };
-
-    // --- ADD: compute "Runner" visibility (Inspector/HOD acting role + Submitted/Recommended status)
-    const [canSeeRunner, setCanSeeRunner] = useState(false);
-
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            if (!row) { if (alive) setCanSeeRunner(false); return; }
-
-            const statusCanon = canonicalWirStatus(row.status);
-            const statusOk =
-                statusCanon === "Submitted" ||
-                statusCanon === "Recommended" ||
-                statusCanon === "Approved" ||
-                statusCanon === "Rejected";
-            if (!statusOk) { if (alive) setCanSeeRunner(false); return; }
-
-            const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-            const userId =
-                String((claims as any)?.userId || (user as any)?.userId || "");
-
-            if (!roleKey || !userId) { if (alive) setCanSeeRunner(false); return; }
-
-            try {
-                const acting = await resolveActingRoleFor(projectId, roleKey, userId);
-                if (alive) setActingRole((["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any) ? (acting as any) : null);
-
-                const ok = acting === "Inspector" || acting === "HOD" || acting === "Inspector+HOD";
-                if (alive) setCanSeeRunner(ok);
-            } catch {
-                if (alive) { setCanSeeRunner(false); setActingRole(null); }
-            }
-        })();
-        return () => { alive = false; };
-    }, [row?.status, projectId, loc.state, claims, user]);
-
-    // --- ADD: guard subtab if Runner becomes hidden
-    useEffect(() => {
-        if (subtab === "runner" && !canSeeRunner) setSubtab("overview");
-    }, [canSeeRunner, subtab]);
-
-
     const headerLine = useMemo(() => {
         if (!row) return "";
         const parts = [
@@ -559,12 +496,6 @@ export default function WIRDocDis() {
         return parts.join(" — ");
     }, [row]);
 
-    // ADD: visible only when WIR is Approved/Rejected
-    const isFinalized = useMemo(() => {
-        const st = canonicalWirStatus(row?.status);
-        return st === "Approved" || st === "Rejected";
-    }, [row?.status]);
-
     const statusBadge = (value?: string | null) => {
         const v = canonicalWirStatus(value);
         const map: Record<string, string> = {
@@ -572,14 +503,16 @@ export default function WIRDocDis() {
                 "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
             Submitted:
                 "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-            Recommended:
+            InspectorRecommended:
                 "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
-            Approved:
+            HODApproved:
                 "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-            Rejected:
+            HODRejected:
                 "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
-            Returned:
+            OnHold:
                 "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-800",
+            Closed:
+                "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
             Unknown:
                 "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
         };
@@ -603,23 +536,6 @@ export default function WIRDocDis() {
     const [hodList, setHodList] = useState<Array<{ userId: string; fullName: string; acting: "HOD" | "Inspector+HOD" }>>([]);
     const [hodConfirmOpen, setHodConfirmOpen] = useState(false);
 
-    const [actingRole, setActingRole] = useState<"Inspector" | "HOD" | "Inspector+HOD" | null>(null);
-    const [inspRecoInspOpen, setInspRecoInspOpen] = useState(false);
-    const [inspRecoHodOpen, setInspRecoHodOpen] = useState(false);
-
-    // HOD Finalize modal state
-    const [finalizeOpen, setFinalizeOpen] = useState(false);
-    const [finalizeOutcome, setFinalizeOutcome] = useState<"APPROVE" | "REJECT" | null>(null);
-    const [finalizeNote, setFinalizeNote] = useState("");
-
-    // Inspector display name (resolved from inspectorId for Finalize modal)
-    const [inspName, setInspName] = useState<string>("");
-
-    // ADD: Notes modal state
-    const [notesOpen, setNotesOpen] = useState(false);
-    // ADD: runner no-edit permission dialog
-    const [noEditPermOpen, setNoEditPermOpen] = useState(false);
-
     // NEW: click handler used by the button
     const onSendToHodClick = useCallback(async () => {
         const res = validateAllRunnerFields();
@@ -638,96 +554,6 @@ export default function WIRDocDis() {
         loadHodDerived();
     }, [validateAllRunnerFields, inputRefs, loadHodDerived]);
 
-    // onRunnerClick to show dialog when not allowed to open editable runner
-    const onRunnerClick = useCallback(() => {
-        if (!row) return;
-        const st = canonicalWirStatus(row.status);
-
-        // Allow edit only if: (Inspector or Inspector+HOD) + Submitted + BIC === current user
-        const isInspectorish = actingRole === "Inspector" || actingRole === "Inspector+HOD";
-        const currentUid = String((claims as any)?.userId || (user as any)?.userId || "");
-        const isBicSelf = !!row.bicUserId && String(row.bicUserId) === currentUid;
-
-        const canOpenEditable = isInspectorish && st === "Submitted" && isBicSelf;
-
-        if (canOpenEditable) {
-            setSubtab("runner");
-            return;
-        }
-
-        // Read-only summaries for Recommended (unchanged)
-        if (actingRole === "Inspector" && st === "Recommended") {
-            setInspRecoInspOpen(true);
-            return;
-        }
-        if (actingRole === "HOD" && st === "Recommended") {
-            setInspRecoHodOpen(true);
-            return;
-        }
-
-        /* Finalized → always open HOD Review (read-only) */
-        if (
-            (actingRole === "Inspector" || actingRole === "HOD" || actingRole === "Inspector+HOD") &&
-            (st === "Approved" || st === "Rejected")
-        ) {
-            setInspRecoHodOpen(true);
-            return;
-        }
-        // If Runner is visible but not eligible for edit on Submitted → dialog
-        if (st === "Submitted") {
-            setNoEditPermOpen(true);
-        }
-        // Else: no-op
-    }, [row, actingRole, claims, user, setSubtab]);
-
-    const onFinalizeNow = useCallback(async () => {
-        if (!finalizeOutcome) return;
-        try {
-            // reuse recSubmitting flag to gate buttons/spinners consistently
-            setRecSubmitting(finalizeOutcome);
-            const payload = {
-                hodOutcome: finalizeOutcome,
-                hodRemarks: finalizeNote.trim() || null,
-                hodDecidedAt: new Date().toISOString(),
-                status: finalizeOutcome === 'APPROVE' ? 'Approved' : 'Rejected',
-
-            };
-            await api.patch(`/projects/${projectId}/wir/${wirId}`, payload);
-            await fetchWir();
-            setFinalizeOpen(false);
-            setFinalizeOutcome(null);
-            setFinalizeNote("");
-        } finally {
-            setRecSubmitting(null);
-        }
-    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
-
-
-    // Load Inspector name (from inspectorId) when Finalize modal is open
-    useEffect(() => {
-        let alive = true;
-        async function loadInspectorName(id?: string | null) {
-            if (!id) { if (alive) setInspName(""); return; }
-            try {
-                // Try admin endpoint first
-                const { data } = await api.get(`/admin/users/${id}`);
-                const u = (data?.user ?? data) || {};
-                if (alive) setInspName(displayNameLite(u));
-            } catch {
-                try {
-                    // Fallback to non-admin users endpoint if available
-                    const { data } = await api.get(`/users/${id}`);
-                    const u = (data?.user ?? data) || {};
-                    if (alive) setInspName(displayNameLite(u));
-                } catch {
-                    // Final fallback: show the raw id
-                    if (alive) setInspName(String(id));
-                }
-            }
-        }
-        if (finalizeOpen) loadInspectorName((row as any)?.inspectorId);
-        return () => { alive = false; };
-    }, [finalizeOpen, row?.inspectorId]);
     return (
         <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
             {/* Header */}
@@ -775,10 +601,6 @@ export default function WIRDocDis() {
                 <TabButton active={tab === "discussion"} onClick={() => setTab("discussion")}>
                     Discussion
                 </TabButton>
-                {/* ADD: Notes button (opens full-screen modal) */}
-                <TabButton active={false} onClick={() => setNotesOpen(true)}>
-                    Notes
-                </TabButton>
             </div>
 
             {/* Content area */}
@@ -796,12 +618,9 @@ export default function WIRDocDis() {
                             <TabButton active={subtab === "overview"} onClick={() => setSubtab("overview")}>
                                 Overview
                             </TabButton>
-                            {canSeeRunner && (
-                                <TabButton active={subtab === "runner"} onClick={onRunnerClick}>
-                                    Runner
-                                </TabButton>
-                            )}
-
+                            <TabButton active={subtab === "runner"} onClick={() => setSubtab("runner")}>
+                                Runner
+                            </TabButton>
                         </div>
 
                         {subtab === "overview" ? (
@@ -845,77 +664,6 @@ export default function WIRDocDis() {
                                         )}
                                     </div>
                                 </div>
-                                {/* HOD Tile (below Checklists) — visible only while InspectorRecommended */}
-                                {!isFinalized && canonicalWirStatus(row?.status) === "Recommended" && (
-                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                            HOD
-                                        </div>
-                                        <div className="text-sm dark:text-white space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
-                                                    Recommendation
-                                                </span>
-                                                <span className="text-[12px] text-gray-700 dark:text-gray-200">
-                                                    Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
-                                                </span>
-                                            </div>
-                                            <div className="pt-1">
-                                                <button
-                                                    onClick={() => setFinalizeOpen(true)}
-                                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
-                                                    disabled={
-                                                        !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
-                                                        canonicalWirStatus(row.status) !== "Recommended"
-                                                    }
-                                                    title={
-                                                        canonicalWirStatus(row.status) === "Recommended"
-                                                            ? ((actingRole === "HOD" || actingRole === "Inspector+HOD")
-                                                                ? "Open HOD finalization"
-                                                                : "Only HOD can finalize")
-                                                            : "Visible after Inspector recommends"
-                                                    }
-                                                >
-                                                    Finalize Now
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* HOFFinalizedOutcome (visible only after HOD finalizes) */}
-                                {isFinalized && (
-                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                            HOD Finalized Outcome:
-                                        </div>
-                                        <div className="text-sm dark:text-white space-y-1">
-                                            <div>
-                                                <b>Inspector Recommendation:</b> {row.inspectorRecommendation || "—"}
-                                            </div>
-                                            <div>
-                                                <b>Inspector Remarks:</b> {row.inspectorRemarks || "—"}
-                                            </div>
-                                            <div>
-                                                <b>Inspector Reviewed At:</b>{" "}
-                                                {row.inspectorReviewedAt
-                                                    ? new Date(row.inspectorReviewedAt).toLocaleString()
-                                                    : "—"}
-                                            </div>
-                                            <div className="pt-2">
-                                                <b>HOD Outcome:</b> {row.hodOutcome || "—"}
-                                            </div>
-                                            <div>
-                                                <b>HOD Remarks:</b> {row.hodRemarks || "—"}
-                                            </div>
-                                            <div>
-                                                <b>HOD Decided At:</b>{" "}
-                                                {row.hodDecidedAt ? new Date(row.hodDecidedAt).toLocaleString() : "—"}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
                             </div>
                         ) : (
                             // RUNNER — EXACT three-tile layout per your spec
@@ -1188,140 +936,6 @@ export default function WIRDocDis() {
                     </div>
                 )}
             </div>
-            {/* ADD: Full-screen Notes modal */}
-            {notesOpen && (
-                <div
-                    className="fixed inset-0 z-[120] bg-black/40"
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <div className="absolute inset-0 p-3 sm:p-4 md:p-6">
-                        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border dark:border-neutral-800 w-full h-full flex flex-col">
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-3 sm:p-4 border-b dark:border-neutral-800">
-                                <div className="text-base sm:text-lg font-semibold dark:text-white">
-                                    Notes — How this screen works
-                                </div>
-                                <button
-                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                    onClick={() => setNotesOpen(false)}
-                                >
-                                    Close
-                                </button>
-                            </div>
-
-                            {/* Scrollable content */}
-                            <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 text-sm leading-6 dark:text-white">
-                                <section className="space-y-6 max-w-3xl">
-                                    <div>
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Runner tab (the button itself)</div>
-                                        {/* Runner tab (the button itself) */}
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>
-                                                The WIR’s status is <b>Submitted</b> or <b>Recommended</b>, <i>or</i> it is
-                                                <b> Approved</b>/<b>Rejected</b> (finalized shows only for <b>Inspector</b>, <b>HOD</b>, or <b>Inspector+HOD</b>).
-                                            </li>
-                                            <li>
-                                                You are viewing as someone who can act as <b>Inspector</b> or <b>HOD</b> (includes <b>Inspector+HOD</b>).
-                                            </li>
-                                            <li>If any of the above isn’t true, the Runner tab won’t show.</li>
-                                        </ul>
-
-                                    </div>
-
-                                    <div>
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">When you click Runner</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li><b>Inspector or Inspector+HOD + Submitted + BIC is you</b> → opens the <b>Runner items</b> (editable).</li>
-                                            <li><b>Inspector or Inspector+HOD + Submitted + BIC is someone else</b> → shows the <b>Runner — Edit Not Allowed</b> dialog.</li>
-                                            <li><b>Inspector + Recommended</b> → opens <b>Inspector Review</b> (read-only summary modal).</li>
-                                            <li><b>HOD + Recommended</b> → opens <b>HOD Review</b> (read-only summary modal).</li>
-                                            <li>All other combinations → no action here (use the visible tiles on the screen).</li>
-                                        </ul>
-
-                                    </div>
-
-                                    <div>
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Runner items (what you need to fill)</div>
-                                        <p className="mb-2">For each item you want to include in a send:</p>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>Enter a <b>numeric measurement</b> (e.g., 10 or 10.5).</li>
-                                            <li>Choose <b>Pass</b> or <b>Fail</b>.<br /><span className="text-gray-600 dark:text-gray-300">(Remarks and photo are optional unless your process says otherwise.)</span></li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Save Progress (button works when…)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>The WIR is loaded.</li>
-                                            <li>You’ve entered at least some changes.<br /><span className="text-gray-600 dark:text-gray-300">If a measurement isn’t numeric, you’ll get a prompt and the field is focused for fixing.</span></li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Recommendation (Approve / Reject)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>You can pick any option locally while working.</li>
-                                            <li>If any <b>critical</b> item is marked <b>Fail</b>, the recommendation is <b>auto-locked to Reject</b>.</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Send to HOD (to move from Submitted → Recommended)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>All items have a <b>numeric measurement</b> and a <b>Pass/Fail</b> status.</li>
-                                            <li>If anything’s missing, a warning lists the items to complete.</li>
-                                            <li>You pick a <b>HOD</b> from the derived list (only HOD-capable users are shown).</li>
-                                            <li>On confirm, the header is updated and the Inspector recommendation is saved. Resulting WIR status becomes <b>Recommended</b>.</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">HOD tile (the blue “Finalize Now” area)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li><b>Visible</b> only while the WIR is <b>Recommended</b> (and not already Approved/Rejected).</li>
-                                            <li><b>Finalize Now</b> enabled only if you’re acting as <b>HOD</b> or <b>Inspector+HOD</b>.</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Finalize Now (Approve/Reject)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>Choose <b>Approve</b> or <b>Reject</b> and (optionally) add a short note.</li>
-                                            <li>On finalize, WIR moves to <b>Approved</b> or <b>Rejected</b> and the HOD outcome/notes/time are recorded.</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">After finalization</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>The HOD tile hides, and the <b>HOD Finalized Outcome</b> summary appears.</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Preview (read-only snapshot)</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li>Always available in the Runner view to see what will be submitted (no editing there).</li>
-                                        </ul>
-                                    </div>
-
-                                    <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Small safety rails you’ll see</div>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            <li><b>Auto-lock to Reject</b> if any <b>critical</b> item is marked <b>Fail</b>.</li>
-                                            <li><b>Numeric guard:</b> if a measurement isn’t a number, you’ll be asked to correct it.</li>
-                                            <li><b>Missing fields list</b> appears if you try <b>Send to HOD</b> with incomplete items.</li>
-                                            <li>If the Runner tab ever becomes hidden (e.g., status changes), the screen auto-returns to <b>Overview</b>.</li>
-                                        </ul>
-                                    </div>
-                                </section>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {previewOpen && (
                 <div
                     className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40"
@@ -1648,137 +1262,7 @@ export default function WIRDocDis() {
                     </div>
                 </div>
             )}
-            {/* ADD: Inspector review modal */}
-            {inspRecoInspOpen && row && (
-                <InspRecoInspRunner
-                    wir={row}
-                    onClose={() => setInspRecoInspOpen(false)}
-                />
-            )}
 
-            {/* ADD: HOD review modal */}
-            {inspRecoHodOpen && row && (
-                <InspRecoHODRunner
-                    wir={row}
-                    onClose={() => setInspRecoHodOpen(false)}
-                />
-            )}
-            {noEditPermOpen && (
-                <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
-                        <div className="text-base font-semibold dark:text-white">Runner — Edit Not Allowed</div>
-                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                            Editable Runner opens only when <b>Inspector + Submitted + BIC is you</b>.
-                            You currently don’t meet this condition.
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
-                                onClick={() => setNoEditPermOpen(false)}
-                            >
-                                OK
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {finalizeOpen && row && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border dark:border-neutral-800 w-[96vw] max-w-lg max-h-[90vh] overflow-auto p-4 sm:p-5">
-                        {/* Header */}
-                        <div className="flex items-center justify-between">
-                            <div className="text-base sm:text-lg font-semibold dark:text-white">Finalize Outcome</div>
-                            <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                onClick={() => setFinalizeOpen(false)}
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        {/* Tile 1: Details */}
-                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                Finalize Outcome
-                            </div>
-                            <div className="text-sm dark:text-white space-y-1">
-                                <div><b>WIR:</b> {(row.code || row.wirId) + (row.title ? ` — ${row.title}` : "")}</div>
-                                <div><b>Inspector:</b> {inspName || "—"}</div>
-                                <div><b>Inspector Recommendation:</b> {row.inspectorRecommendation || "—"}</div>
-                            </div>
-                        </section>
-
-                        {/* Tile 2: Select Outcome */}
-                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3 space-y-3">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                Select Outcome
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setFinalizeOutcome("APPROVE")}
-                                    className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "APPROVE"
-                                        ? "bg-emerald-600 text-white border-emerald-700"
-                                        : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                        }`}
-                                >
-                                    Approve
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setFinalizeOutcome("REJECT")}
-                                    className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "REJECT"
-                                        ? "bg-rose-600 text-white border-rose-700"
-                                        : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                        }`}
-                                >
-                                    Reject
-                                </button>
-                            </div>
-
-                            <div>
-                                <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">
-                                    Note (optional, max 200 chars)
-                                </label>
-                                <textarea
-                                    value={finalizeNote}
-                                    onChange={(e) => setFinalizeNote(e.target.value.slice(0, 200))}
-                                    rows={3}
-                                    className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
-                                    placeholder="Write a brief note for this decision…"
-                                />
-                                <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
-                                    {finalizeNote.length}/200
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* Footer actions */}
-                        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setFinalizeOpen(false)}
-                                className="w-full sm:w-auto text-sm px-3 py-2 rounded-lg border dark:border-neutral-800"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onFinalizeNow}
-                                disabled={!finalizeOutcome || !!recSubmitting}
-                                className={`w-full sm:w-auto text-sm px-3 py-2 rounded-lg border ${finalizeOutcome && !recSubmitting
-                                    ? "bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-700"
-                                    : "bg-blue-600/60 text-white cursor-not-allowed dark:border-blue-700"
-                                    }`}
-                                title={finalizeOutcome ? "Finalize this WIR" : "Pick Approve or Reject"}
-                            >
-                                {recSubmitting ? "Finalizing…" : "Finalize Now"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </section>
     );
 }
