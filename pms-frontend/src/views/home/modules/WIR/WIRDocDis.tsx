@@ -14,6 +14,7 @@ import {
 } from "./memberships.helpers";
 import InspRecoInspRunner from "./InspRecoInspRunner";
 import InspRecoHODRunner from "./InspRecoHODRunner";
+import WIRDiscussion from "./WIRDiscussion";
 
 type NavState = {
     role?: string;
@@ -152,6 +153,11 @@ function TabButton({
 
 export default function WIRDocDis() {
     const { user, claims } = useAuth();
+    const currentUid = useMemo(
+        () => String((claims as any)?.userId || (user as any)?.userId || ""),
+        [claims, user]
+    );
+
     const loc = useLocation();
     const navigate = useNavigate();
     const params = useParams<{ projectId: string; wirId: string }>();
@@ -511,6 +517,13 @@ export default function WIRDocDis() {
     // --- ADD: compute "Runner" visibility (Inspector/HOD acting role + Submitted/Recommended status)
     const [canSeeRunner, setCanSeeRunner] = useState(false);
 
+    // --- Reschedule modal state ---
+    const [reschedOpen, setReschedOpen] = useState(false);
+    const [reschedDate, setReschedDate] = useState<string>("");
+    const [reschedTime, setReschedTime] = useState<string>("");
+    const [reschedReason, setReschedReason] = useState<string>("");
+    const [reschedSubmitting, setReschedSubmitting] = useState(false);
+
     useEffect(() => {
         let alive = true;
         (async () => {
@@ -548,6 +561,13 @@ export default function WIRDocDis() {
         if (subtab === "runner" && !canSeeRunner) setSubtab("overview");
     }, [canSeeRunner, subtab]);
 
+    useEffect(() => {
+        if (!reschedOpen || !row) return;
+        // Seed pickers from current planned date/time
+        setReschedDate((row.forDate || todayISO()).slice(0, 10));
+        setReschedTime(row.forTime || "");
+        setReschedReason("");
+    }, [reschedOpen, row]);
 
     const headerLine = useMemo(() => {
         if (!row) return "";
@@ -590,6 +610,28 @@ export default function WIRDocDis() {
     const rec = recLockedReject ? "REJECT" : ((pendingRec ?? row?.inspectorRecommendation) ?? null);
     const itemsCount = items.length;
 
+    // Totals for header tile
+    const combinedItemsCount = useMemo(() => {
+        if (row?.items?.length) return row.items.length;
+        const fromChecklists = (row?.checklists ?? []).reduce(
+            (sum, c) => sum + (typeof c.itemsCount === "number" ? c.itemsCount : (typeof c.itemsTotal === "number" ? c.itemsTotal : 0)),
+            0
+        );
+        return fromChecklists || 0;
+    }, [row?.items, row?.checklists]);
+
+    const mandatoryCount = useMemo(() => {
+        if (!row?.items?.length) return 0;
+        return row.items.filter(it => /^mandatory$/i.test((it.spec || "").trim())).length;
+    }, [row?.items]);
+
+    const criticalCount = useMemo(() => {
+        if (!row?.items?.length) return 0;
+        return row.items.filter(it =>
+            !!it.critical || (it.tags?.some(t => /^\s*critical\s*$/i.test(t)) ?? false)
+        ).length;
+    }, [row?.items]);
+
     // input refs per item to focus when validation fails
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     // validation dialog state
@@ -606,6 +648,12 @@ export default function WIRDocDis() {
     const [actingRole, setActingRole] = useState<"Inspector" | "HOD" | "Inspector+HOD" | null>(null);
     const [inspRecoInspOpen, setInspRecoInspOpen] = useState(false);
     const [inspRecoHodOpen, setInspRecoHodOpen] = useState(false);
+    const canReschedule = useMemo(() => {
+        const isInspectorish =
+            actingRole === "Inspector" || actingRole === "Inspector+HOD";
+        const isBicSelf = !!row?.bicUserId && String(row.bicUserId) === currentUid;
+        return isInspectorish && isBicSelf;
+    }, [actingRole, row?.bicUserId, currentUid]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -615,12 +663,15 @@ export default function WIRDocDis() {
     // Inspector display name (resolved from inspectorId for Finalize modal)
     const [inspName, setInspName] = useState<string>("");
 
-    // ADD: Notes modal state
+    // Notes modal state
     const [notesOpen, setNotesOpen] = useState(false);
-    // ADD: runner no-edit permission dialog
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [actorNameMap, setActorNameMap] = useState<Record<string, string>>({});
+
+    // runner no-edit permission dialog
     const [noEditPermOpen, setNoEditPermOpen] = useState(false);
 
-    // NEW: click handler used by the button
+    // click handler used by the button
     const onSendToHodClick = useCallback(async () => {
         const res = validateAllRunnerFields();
         if (!res.ok) {
@@ -656,7 +707,7 @@ export default function WIRDocDis() {
         }
 
         // Read-only summaries for Recommended (unchanged)
-        if (actingRole === "Inspector" && st === "Recommended") {
+        if (isInspectorish && st === "Recommended") {
             setInspRecoInspOpen(true);
             return;
         }
@@ -703,31 +754,65 @@ export default function WIRDocDis() {
     }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
 
 
-    // Load Inspector name (from inspectorId) when Finalize modal is open
+    // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
         let alive = true;
         async function loadInspectorName(id?: string | null) {
             if (!id) { if (alive) setInspName(""); return; }
             try {
-                // Try admin endpoint first
                 const { data } = await api.get(`/admin/users/${id}`);
                 const u = (data?.user ?? data) || {};
                 if (alive) setInspName(displayNameLite(u));
             } catch {
                 try {
-                    // Fallback to non-admin users endpoint if available
                     const { data } = await api.get(`/users/${id}`);
                     const u = (data?.user ?? data) || {};
                     if (alive) setInspName(displayNameLite(u));
                 } catch {
-                    // Final fallback: show the raw id
                     if (alive) setInspName(String(id));
                 }
             }
         }
-        if (finalizeOpen) loadInspectorName((row as any)?.inspectorId);
+        if (finalizeOpen || row?.inspectorId) loadInspectorName((row as any)?.inspectorId);
         return () => { alive = false; };
     }, [finalizeOpen, row?.inspectorId]);
+
+    // Hydrate actor names for ids present in row.histories
+    useEffect(() => {
+        if (!row?.histories?.length) return;
+
+        const need = new Set<string>();
+        for (const h of row.histories) {
+            const id = (h?.actorUserId || "").toString().trim();
+            const hasName = !!h?.actorName || (id && actorNameMap[id]);
+            if (id && !hasName) need.add(id);
+        }
+        if (need.size === 0) return;
+
+        let ignore = false;
+        (async () => {
+            try {
+                // lightweight users list (no memberships needed)
+                const { data } = await api.get("/admin/users", { params: { includeMemberships: 0 } });
+                const users: any[] = Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : []);
+                const next: Record<string, string> = {};
+                for (const u of users) {
+                    const uid = (u?.userId || "").toString();
+                    if (!uid || !need.has(uid)) continue;
+                    next[uid] = displayNameLite(u);
+                }
+                if (!ignore && Object.keys(next).length) {
+                    setActorNameMap((prev) => ({ ...prev, ...next }));
+                }
+            } catch (e) {
+                console.warn("[WIR] actor names hydrate failed", e);
+            }
+        })();
+
+        return () => { ignore = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [row?.histories]);
+
     return (
         <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
             {/* Header */}
@@ -775,7 +860,7 @@ export default function WIRDocDis() {
                 <TabButton active={tab === "discussion"} onClick={() => setTab("discussion")}>
                     Discussion
                 </TabButton>
-                {/* ADD: Notes button (opens full-screen modal) */}
+                {/* Notes button (opens full-screen modal) */}
                 <TabButton active={false} onClick={() => setNotesOpen(true)}>
                     Notes
                 </TabButton>
@@ -808,7 +893,7 @@ export default function WIRDocDis() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="rounded-xl border dark:border-neutral-800 p-3">
                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                        Header
+                                        Submission Summary
                                     </div>
                                     <div className="text-sm dark:text-white space-y-1">
                                         <div><b>Code:</b> {row.code || "—"}</div>
@@ -822,6 +907,19 @@ export default function WIRDocDis() {
                                         </div>
                                         <div><b>Location:</b> {row.cityTown || "—"}</div>
                                         <div><b>Version:</b> {typeof row.version === "number" ? `v${row.version}` : "—"}</div>
+                                        <div><b>Checklists:</b> {combinedItemsCount} items • {mandatoryCount} mandatory • {criticalCount} critical</div>
+                                        <div><b>Inspector of Record:</b> {inspName || "—"}</div>
+                                        <div><b>Ball in Court:</b> {bicName || "—"}</div>                                    </div>
+                                    {/* WIR History link */}
+                                    <div className="pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setHistoryOpen(true)}
+                                            className="text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                            title="View complete WIR change history"
+                                        >
+                                            View WIR History{typeof row.histories?.length === "number" ? ` (${row.histories.length})` : ""}
+                                        </button>
                                     </div>
                                 </div>
 
@@ -845,6 +943,20 @@ export default function WIRDocDis() {
                                         )}
                                     </div>
                                 </div>
+                                {/* Reschedule button (below Checklists) — visible only for Inspector/Inspector+HOD who is BIC */}
+                                {canReschedule && (
+                                    <div className="md:col-span-2 flex justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={() => setReschedOpen(true)}
+                                            className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-amber-600 text-white hover:opacity-95"
+                                            title="Change the planned date/time for this inspection"
+                                        >
+                                            Reschedule Inspection
+                                        </button>
+                                    </div>
+                                )}
+
                                 {/* HOD Tile (below Checklists) — visible only while InspectorRecommended */}
                                 {!isFinalized && canonicalWirStatus(row?.status) === "Recommended" && (
                                     <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
@@ -1172,20 +1284,12 @@ export default function WIRDocDis() {
                         )}
                     </>
                 ) : (
-                    // Discussion tab placeholder
-                    <div>
-                        <div className="text-sm text-gray-600 dark:text-gray-300">
-                            Discussion thread for <b>{row.code || row.wirId}</b> will appear here.
-                        </div>
-                        <div className="mt-3 rounded-xl border dark:border-neutral-800 p-3">
-                            <div className="text-[12px] text-gray-500 dark:text-gray-400">
-                                Signed in as: {creatorName}
-                            </div>
-                            <div className="mt-2 text-sm">
-                                <em>Coming soon: comments list + add comment box.</em>
-                            </div>
-                        </div>
-                    </div>
+                    /* Discussion tab */
+                    <WIRDiscussion
+                        wirCode={row?.code ?? null}
+                        wirId={row?.wirId ?? wirId}   // always a string from params as fallback
+                        creatorName={creatorName}
+                    />
                 )}
             </div>
             {/* ADD: Full-screen Notes modal */}
@@ -1234,8 +1338,9 @@ export default function WIRDocDis() {
                                         <ul className="list-disc pl-5 space-y-1">
                                             <li><b>Inspector or Inspector+HOD + Submitted + BIC is you</b> → opens the <b>Runner items</b> (editable).</li>
                                             <li><b>Inspector or Inspector+HOD + Submitted + BIC is someone else</b> → shows the <b>Runner — Edit Not Allowed</b> dialog.</li>
-                                            <li><b>Inspector + Recommended</b> → opens <b>Inspector Review</b> (read-only summary modal).</li>
+                                            <li><b>Inspector or Inspector+HOD + Recommended</b> → opens <b>Inspector Review</b> (read-only summary modal).</li>
                                             <li><b>HOD + Recommended</b> → opens <b>HOD Review</b> (read-only summary modal).</li>
+                                            <li><b>Inspector or HOD or Inspector+HOD + Rejected/Approved </b> → opens <b>HOD Review</b> (read-only summary modal).</li>
                                             <li>All other combinations → no action here (use the visible tiles on the screen).</li>
                                         </ul>
 
@@ -1307,7 +1412,7 @@ export default function WIRDocDis() {
                                     </div>
 
                                     <div>
-                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Small safety rails you’ll see</div>
+                                        <div className="text:[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Small safety rails:</div>
                                         <ul className="list-disc pl-5 space-y-1">
                                             <li><b>Auto-lock to Reject</b> if any <b>critical</b> item is marked <b>Fail</b>.</li>
                                             <li><b>Numeric guard:</b> if a measurement isn’t a number, you’ll be asked to correct it.</li>
@@ -1317,6 +1422,177 @@ export default function WIRDocDis() {
                                     </div>
                                 </section>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {reschedOpen && row && (
+                <div
+                    className="fixed inset-0 z-[112] flex items-center justify-center bg-black/40"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                            <div className="text-base font-semibold dark:text-white">Reschedule Inspection</div>
+                            <button
+                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => setReschedOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="mt-3 space-y-3 text-sm">
+                            <div className="rounded-xl border dark:border-neutral-800 p-3">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                    Current Plan
+                                </div>
+                                <div className="dark:text-white">
+                                    <b>Date:</b> {row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}{" "}
+                                    • <b>Time:</b> {row.forTime || "—"}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    New Schedule
+                                </div>
+
+                                <div>
+                                    <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">Date</label>
+                                    <input
+                                        type="date"
+                                        value={reschedDate}
+                                        onChange={(e) => setReschedDate(e.target.value)}
+                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">Time</label>
+                                    <input
+                                        type="time"
+                                        value={reschedTime}
+                                        onChange={(e) => setReschedTime(e.target.value)}
+                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">Reason</label>
+                                    <textarea
+                                        value={reschedReason}
+                                        onChange={(e) => setReschedReason(e.target.value)}
+                                        rows={3}
+                                        placeholder="Why is this being rescheduled?"
+                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                onClick={() => setReschedOpen(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-3 py-2 text-sm rounded-lg bg-amber-600 text-white disabled:opacity-60"
+                                disabled={reschedSubmitting || !reschedDate || !reschedTime || !reschedReason.trim()}
+                                onClick={async () => {
+                                    try {
+                                        setReschedSubmitting(true);
+                                        await api.patch(`/projects/${projectId}/wir/${wirId}`, {
+                                            rescheduleForDate: reschedDate || null,
+                                            rescheduleForTime: reschedTime || null,
+                                            rescheduleReason: reschedReason.trim() || null,
+                                            rescheduledById: currentUid || null,
+                                        });
+                                        await fetchWir();
+                                        setReschedOpen(false);
+                                    } finally {
+                                        setReschedSubmitting(false);
+                                    }
+                                }}
+                            >
+                                {reschedSubmitting ? "Saving…" : "Save Reschedule"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {historyOpen && row && (
+                <div
+                    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-3xl max-h-[85vh] overflow-auto">
+                        {/* Header */}
+                        <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
+                            <div className="text-base sm:text-lg font-semibold dark:text-white">
+                                WIR History — {row.code || row.wirId}
+                            </div>
+                            <button
+                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => setHistoryOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-4">
+                            {(row.histories?.length || 0) === 0 ? (
+                                <div className="text-sm text-gray-600 dark:text-gray-300">No history recorded.</div>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {[...(row.histories || [])]
+                                        .slice()
+                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                        .map((h) => (
+                                            <li key={h.id} className="rounded-xl border dark:border-neutral-800 p-3">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="text-sm dark:text-white font-medium">
+                                                        {h.action || "Action"}
+                                                    </div>
+                                                    <div className="text-[12px] text-gray-600 dark:text-gray-300">
+                                                        {h.createdAt ? new Date(h.createdAt).toLocaleString() : "—"}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-1 text-[12px] text-gray-700 dark:text-gray-300">
+                                                    <b>Actor:</b>{" "}
+                                                    {h.actorName || (h.actorUserId ? actorNameMap[String(h.actorUserId)] : "") || h.actorUserId || "—"}
+                                                </div>
+
+                                                {h.notes?.toString().trim() ? (
+                                                    <div className="mt-1 text-[12px] text-gray-700 dark:text-gray-300">
+                                                        <b>Notes:</b> {h.notes}
+                                                    </div>
+                                                ) : null}
+                                                { /*         {h.meta ? (
+                                                    <details className="mt-2">
+                                                        <summary className="cursor-pointer text-[12px] text-gray-600 dark:text-gray-400">
+                                                            Show metadata
+                                                        </summary>
+                                                        <pre className="mt-1 text-[11px] overflow-auto p-2 rounded bg-gray-50 dark:bg-neutral-800 dark:text-gray-200">
+                                                            {JSON.stringify(h.meta, null, 2)}
+                                                        </pre>
+                                                    </details>
+                                                ) : null}
+                                           */}
+                                            </li>
+                                        ))}
+                                </ul>
+                            )}
                         </div>
                     </div>
                 </div>

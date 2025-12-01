@@ -1,3 +1,4 @@
+//pms/pms-backend/src/modules/project-modules/wir/wir.controller.ts
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { WirService } from './wir.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
@@ -148,4 +149,66 @@ export class WirController {
     await this.service.inspectorSave(projectId, wirId, dto, user);
     return { ok: true };
   }
+
+  // ---- Discussion: list
+@Get(':wirId/discussion')
+async listDiscussion(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Query('after') after?: string,
+  @Query('limit') limit?: string,
+) {
+  return this.service.listDiscussion(projectId, wirId, {
+    after: after || null,
+    limit: limit ? Number(limit) : undefined,
+  });
+}
+
+// ---- Discussion: add
+@Post(':wirId/discussion')
+async addDiscussion(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Body() body: { text?: string | null; parentId?: string | null; fileUrl?: string | null; fileName?: string | null },
+  @Req() req: any,
+) {
+  const actor = {
+    userId: getAuthUserId(req),
+    fullName: req?.user?.fullName ?? null,
+  };
+  return this.service.addDiscussion(projectId, wirId, body, actor);
+}
+
+// ---- Discussion: edit
+@Patch(':wirId/discussion/:commentId')
+async editDiscussion(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Param('commentId') commentId: string,
+  @Body() body: { text?: string | null; fileUrl?: string | null; fileName?: string | null },
+  @Req() req: any,
+) {
+  const actor = {
+    userId: getAuthUserId(req),
+    isSuperAdmin: !!req?.user?.isSuperAdmin,
+  };
+  return this.service.editDiscussion(projectId, wirId, commentId, body, actor);
+}
+
+// ---- Discussion: delete (soft)
+@Delete(':wirId/discussion/:commentId')
+async deleteDiscussion(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @Param('commentId') commentId: string,
+  @Req() req: any,
+) {
+  const actor = {
+    userId: getAuthUserId(req),
+    isSuperAdmin: !!req?.user?.isSuperAdmin,
+  };
+  return this.service.deleteDiscussion(projectId, wirId, commentId, actor);
+}
+
+
 }

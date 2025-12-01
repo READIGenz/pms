@@ -1,3 +1,4 @@
+//pms/pms-backend/src/modules/project-modules/wir/wir.servive.ts
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
@@ -123,7 +124,7 @@ export class WirService {
 
       },
     });
-    return 1 + counts;
+    return counts;
   }
 
   // ---------- core ----------
@@ -1085,6 +1086,186 @@ export class WirService {
 
     const version = await this.computedVersion(wirId);
     return { ...updated, version };
+  }
+
+  // ---------- discussion helpers ----------
+  private async ensureWir(projectId: string, wirId: string) {
+    const wir = await this.prisma.wir.findFirst({ where: { wirId, projectId }, select: { wirId: true } });
+    if (!wir) throw new NotFoundException('WIR not found for project');
+    return wir;
+  }
+
+  private async writeHistoryNote(
+    projectId: string,
+    wirId: string,
+    text: string,
+    actor?: { userId?: string | null; fullName?: string | null }
+  ) {
+    // Optional mirror to timeline
+    await this.prisma.wirHistory.create({
+      data: {
+        projectId,
+        wirId,
+        action: 'NoteAdded',
+        notes: text,
+        actorUserId: actor?.userId || undefined,
+        actorName: actor?.fullName || undefined,
+      },
+    });
+  }
+
+  // ---------- discussion CRUD ----------
+  async deleteDiscussion(
+    projectId: string,
+    wirId: string,
+    commentId: string,
+    actor?: { userId?: string | null; isSuperAdmin?: boolean | null }
+  ) {
+    await this.ensureWir(projectId, wirId);
+
+    const existing = await this.prisma.wirDiscussion.findFirst({
+      where: { id: commentId, wirId, deletedAt: null },
+      select: { id: true, authorId: true },
+    });
+    if (!existing) return { ok: true }; // idempotent
+
+    const isAuthor = actor?.userId && actor.userId === existing.authorId;
+    if (!isAuthor && !actor?.isSuperAdmin) throw new BadRequestException('Not allowed to delete this comment');
+
+    await this.prisma.wirDiscussion.update({
+      where: { id: commentId },
+      data: { deletedAt: new Date() },
+    });
+
+    return { ok: true };
+  }
+  private toCommentRow(r: any) {
+    return {
+      id: r.id,
+      wirId: r.wirId,
+      text: r.body,                                  // <- FE wants `text`
+      authorUserId: r.authorId ?? r.author?.userId ?? null,
+      authorName:
+        (r.author?.firstName || r.author?.lastName)
+          ? [r.author?.firstName, r.author?.lastName].filter(Boolean).join(" ")
+          : r.authorName ?? null,                    // fallback if you ever pass actorName
+      createdAt: r.createdAt,
+      editedAt: r.updatedAt ?? null,                 // <- FE wants `editedAt`
+      // keep optional file fields if you later show attachments:
+      fileUrl: r.fileUrl ?? null,
+      fileName: r.fileName ?? null,
+    };
+  }
+  // ---------- discussion CRUD (mapped to FE shape) ----------
+  async listDiscussion(
+    projectId: string,
+    wirId: string,
+    opts?: { after?: string | null; limit?: number | null }
+  ) {
+    await this.ensureWir(projectId, wirId);
+
+    const limit = Math.min(Math.max(opts?.limit ?? 200, 1), 500);
+    const after = opts?.after ? new Date(opts.after) : null;
+
+    const rows = await this.prisma.wirDiscussion.findMany({
+      where: {
+        wirId,
+        deletedAt: null,
+        ...(after ? { createdAt: { gt: after } } : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true, wirId: true, authorId: true, parentId: true,
+        body: true, fileUrl: true, fileName: true,
+        createdAt: true, updatedAt: true,
+        author: { select: { userId: true, firstName: true, lastName: true } },
+      },
+      take: limit,
+    });
+
+    return { items: rows.map(r => this.toCommentRow(r)) };
+  }
+
+  async addDiscussion(
+    projectId: string,
+    wirId: string,
+    body: { text?: string | null; parentId?: string | null; fileUrl?: string | null; fileName?: string | null },
+    actor?: { userId?: string | null; fullName?: string | null }
+  ) {
+    await this.ensureWir(projectId, wirId);
+
+    const text = (body?.text || '').trim();
+    if (!text) throw new BadRequestException('Comment text is required.');
+    if (text.length > 5000) throw new BadRequestException('Comment too long (max 5000 chars).');
+
+    if (body?.parentId) {
+      const parent = await this.prisma.wirDiscussion.findFirst({
+        where: { id: body.parentId, wirId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!parent) throw new BadRequestException('Invalid parent comment.');
+    }
+
+    const row = await this.prisma.wirDiscussion.create({
+      data: {
+        wirId,
+        authorId: actor?.userId || (() => { throw new BadRequestException('Actor required'); })(),
+        parentId: body?.parentId || undefined,
+        body: text,
+        fileUrl: body?.fileUrl || undefined,
+        fileName: body?.fileName || undefined,
+      },
+      select: {
+        id: true, wirId: true, authorId: true, parentId: true,
+        body: true, fileUrl: true, fileName: true, createdAt: true, updatedAt: true,
+        author: { select: { userId: true, firstName: true, lastName: true } },
+      },
+    });
+
+    await this.writeHistoryNote(projectId, wirId, text, actor);
+
+    return { item: this.toCommentRow(row) };
+  }
+
+  async editDiscussion(
+    projectId: string,
+    wirId: string,
+    commentId: string,
+    body: { text?: string | null; fileUrl?: string | null; fileName?: string | null },
+    actor?: { userId?: string | null; isSuperAdmin?: boolean | null }
+  ) {
+    await this.ensureWir(projectId, wirId);
+
+    const existing = await this.prisma.wirDiscussion.findFirst({
+      where: { id: commentId, wirId, deletedAt: null },
+      select: { id: true, authorId: true },
+    });
+    if (!existing) throw new NotFoundException('Comment not found');
+
+    const isAuthor = actor?.userId && actor.userId === existing.authorId;
+    if (!isAuthor && !actor?.isSuperAdmin) {
+      throw new BadRequestException('Not allowed to edit this comment');
+    }
+
+    const text = (body?.text ?? '').trim();
+    if (!text) throw new BadRequestException('Comment text is required.');
+    if (text.length > 5000) throw new BadRequestException('Comment too long (max 5000 chars).');
+
+    const updated = await this.prisma.wirDiscussion.update({
+      where: { id: commentId },
+      data: {
+        body: text,
+        fileUrl: body?.fileUrl ?? null,
+        fileName: body?.fileName ?? null,
+      },
+      select: {
+        id: true, wirId: true, authorId: true, parentId: true,
+        body: true, fileUrl: true, fileName: true, createdAt: true, updatedAt: true,
+        author: { select: { userId: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return { item: this.toCommentRow(updated) };
   }
 
 }
