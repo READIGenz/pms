@@ -140,6 +140,9 @@ export class WirService {
         bicUserId: true,
         version: true,
         createdById: true,
+        rescheduleForDate: true,
+        rescheduleForTime: true,
+        rescheduleReason: true,
         _count: { select: { items: true } },
       },
     }).then(rows => rows.map(r => ({
@@ -156,6 +159,10 @@ export class WirService {
       bicUserId: r.bicUserId ?? null,
       version: r.version ?? null,
       createdById: r.createdById ?? null,
+      rescheduleForDate: r.rescheduleForDate ?? null,
+      rescheduleForTime: r.rescheduleForTime ?? null,
+      rescheduleReason: r.rescheduleReason ?? null,
+      rescheduled: (r.rescheduleForDate != null) || (r.rescheduleForTime != null),
     })));
   }
 

@@ -131,6 +131,9 @@ type WirLite = {
   bicUserId?: string | null;
   bicFullName?: string | null;
   bicUser?: { fullName?: string | null } | null;
+  rescheduleForDate?: string | null;
+  rescheduleForTime?: string | null;
+  rescheduleReason?: string | null;
 };
 
 type ProjectState = {
@@ -309,6 +312,9 @@ export default function WIR() {
         // NEW: pull-throughs (support snake_case fallbacks)
         forDate: r.forDate ?? r.for_date ?? null,
         forTime: r.forTime ?? r.for_time ?? null,
+        rescheduleForDate: r.rescheduleForDate ?? r.reschedule_for_date ?? null,
+        rescheduleForTime: r.rescheduleForTime ?? r.reschedule_for_time ?? null,
+        rescheduleReason: r.rescheduleReason ?? r.reschedule_reason ?? null,
         bicUserId: r.bicUserId ?? r.bic_user_id ?? null,
         bicFullName:
           r.bicFullName ??
@@ -648,7 +654,14 @@ export default function WIR() {
           const forTime = w.forTime ?? any?.for_time ?? null;
           const itemsDisp =
             typeof w.itemsCount === "number" ? w.itemsCount : "—";
+          // --- Reschedule flags ---
+          const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
 
+          const reschedTip = isRescheduled
+            ? `Rescheduled → ${w.rescheduleForDate ? new Date(w.rescheduleForDate).toLocaleDateString() : "—"
+            } • ${w.rescheduleForTime || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+            }`
+            : "";
           return (
             <button
               key={w.wirId}
@@ -682,6 +695,16 @@ export default function WIR() {
                 {/* Status + pills + BIC */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
+                  {isRescheduled && (
+                    <span
+                      title={reschedTip}
+                      className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700
+               bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                    >
+                      Rescheduled
+                    </span>
+                  )}
+
                   {wirCfg && (
                     <>
                       <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">

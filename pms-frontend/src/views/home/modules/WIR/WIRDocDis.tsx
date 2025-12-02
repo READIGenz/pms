@@ -97,6 +97,10 @@ type WirDoc = {
     inspectorRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
     inspectorRemarks?: string | null;
     inspectorReviewedAt?: string | null;
+    rescheduleForDate?: string | null;
+    rescheduleForTime?: string | null;
+    rescheduleReason?: string | null;
+    rescheduledById?: string | null;
 };
 
 const canonicalWirStatus = (s?: string | null) => {
@@ -563,10 +567,12 @@ export default function WIRDocDis() {
 
     useEffect(() => {
         if (!reschedOpen || !row) return;
-        // Seed pickers from current planned date/time
-        setReschedDate((row.forDate || todayISO()).slice(0, 10));
-        setReschedTime(row.forTime || "");
-        setReschedReason("");
+        // Seed from latest effective schedule (reschedule* if present, else original for*/time)
+        const seedDateISO = (row.rescheduleForDate || row.forDate || todayISO()).slice(0, 10);
+        const seedTime = row.rescheduleForTime || row.forTime || "";
+        setReschedDate(seedDateISO);
+        setReschedTime(seedTime);
+        setReschedReason(row.rescheduleReason || "");
     }, [reschedOpen, row]);
 
     const headerLine = useMemo(() => {
@@ -905,6 +911,15 @@ export default function WIRDocDis() {
                                             {row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}
                                             {row.forTime ? ` • ${row.forTime}` : ""}
                                         </div>
+                                        {(row.rescheduleForDate || row.rescheduleForTime) && (
+                                            <div>
+                                                <b>Rescheduled:</b>{" "}
+                                                {row.rescheduleForDate
+                                                    ? new Date(row.rescheduleForDate).toLocaleDateString()
+                                                    : "—"}
+                                                {row.rescheduleForTime ? ` • ${row.rescheduleForTime}` : ""}
+                                            </div>
+                                        )}
                                         <div><b>Location:</b> {row.cityTown || "—"}</div>
                                         <div><b>Version:</b> {typeof row.version === "number" ? `v${row.version}` : "—"}</div>
                                         <div><b>Checklists:</b> {combinedItemsCount} items • {mandatoryCount} mandatory • {criticalCount} critical</div>
@@ -1447,16 +1462,27 @@ export default function WIRDocDis() {
 
                         {/* Body */}
                         <div className="mt-3 space-y-3 text-sm">
+                            {/* Plan summary (original vs current) */}
                             <div className="rounded-xl border dark:border-neutral-800 p-3">
                                 <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                    Current Plan
+                                    Plan
                                 </div>
-                                <div className="dark:text-white">
-                                    <b>Date:</b> {row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}{" "}
-                                    • <b>Time:</b> {row.forTime || "—"}
+                                <div className="dark:text-white space-y-1">
+                                    <div>
+                                        <b>Original:</b>{" "}
+                                        {row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}{" "}
+                                        • <b>Time:</b> {row.forTime || "—"}
+                                    </div>
+                                    <div>
+                                        <b>Current:</b>{" "}
+                                        {(row.rescheduleForDate
+                                            ? new Date(row.rescheduleForDate).toLocaleDateString()
+                                            : (row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"))}{" "}
+                                        • <b>Time:</b>{" "}
+                                        {row.rescheduleForTime || row.forTime || "—"}
+                                    </div>
                                 </div>
                             </div>
-
                             <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-3">
                                 <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     New Schedule
