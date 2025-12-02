@@ -75,8 +75,7 @@ export default function DispatchWIRModal({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Recipient[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // NEW: confirm dialog state
+  const [selectedId, setSelectedId] = useState<string | null>(null);  // NEW: confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(null);
   const { user, claims } = useAuth();
@@ -101,7 +100,7 @@ export default function DispatchWIRModal({
       setLoading(true);
       setErr(null);
       setCandidates([]);
-      setSelectedIds(new Set());
+      setSelectedId(null);
 
       try {
         // list all active PMC members for this project (today)
@@ -188,28 +187,9 @@ export default function DispatchWIRModal({
     return parts.length ? parts.join(" — ") : targetWirId;
   }, [wirMeta, targetWirId]);
 
-  const toggle = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => setSelectedId((prev) => (prev === id ? null : id));
 
-  const allVisibleSelected =
-    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
-  const toggleAllVisible = () =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allVisibleSelected) {
-        filtered.forEach((r) => next.delete(r.id));
-      } else {
-        filtered.forEach((r) => next.add(r.id));
-      }
-      return next;
-    });
-
-  const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
-
+  const canSend = !!selectedId && !submitting && !!targetWirId;
   // helper: canonical status checks
   const isDraftStatus = (s?: string | null) =>
     typeof s === "string" && s.toLowerCase().includes("draft");
@@ -246,7 +226,7 @@ export default function DispatchWIRModal({
   }, [isHodFlow, submitting]);
 
   function onSend() {
-    const inspectorId = Array.from(selectedIds)[0];
+    const inspectorId = selectedId || "";
     if (!inspectorId) {
       setErr("Please pick an Inspector.");
       return;
@@ -473,15 +453,6 @@ export default function DispatchWIRModal({
                 placeholder="Search by name, email, phone, or role…"
                 className="flex-1 text-[15px] sm:text-sm border rounded-lg px-3 py-3 sm:py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
               />
-              <button
-                type="button"
-                onClick={toggleAllVisible}
-                className="text-xs sm:text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap disabled:opacity-60"
-                disabled={!filtered.length}
-                title={allVisibleSelected ? "Clear all (visible)" : "Select all (visible)"}
-              >
-                {allVisibleSelected ? "Clear" : "Select all"}
-              </button>
             </div>
 
             {/* List */}
@@ -504,10 +475,11 @@ export default function DispatchWIRModal({
                     key={r.id}
                     className="flex items-start gap-3 p-3 rounded-xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
                   >
-                    <input
-                      type="checkbox"
+                    + <input
+                      type="radio"
+                      name="recipient"
                       className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
-                      checked={selectedIds.has(r.id)}
+                      checked={selectedId === r.id}
                       onChange={() => toggle(r.id)}
                     />
                     <div className="min-w-0 flex-1">
@@ -537,8 +509,7 @@ export default function DispatchWIRModal({
 
             {/* Mini summary */}
             <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
-              Selected: <b>{selectedIds.size}</b>
-            </div>
+              Selected: <b>{selectedId ? 1 : 0}</b>            </div>
           </section>
 
           {/* Tile 2: AI Routing & Summary (placeholder) */}
@@ -574,8 +545,7 @@ export default function DispatchWIRModal({
                   ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                   : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
                   }`}
-                title={canSend ? "Send" : "Select at least one recipient"}
-              >
+                title={canSend ? "Send" : "Select a recipient"}              >
                 {submitting ? "Sending…" : "Send"}
               </button>
             </div>
