@@ -2,9 +2,21 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
-import { Prisma, WirItemStatus, WirStatus } from '@prisma/client';
+import { Prisma, WirItemStatus, WirStatus, HodOutcome } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
+
+function toHodOutcomeEnum(v?: string | null): HodOutcome | undefined {
+  if (v == null) return undefined;
+  const t = String(v).trim().toUpperCase();
+
+  // Accept common UI variants
+  if (t === 'ACCEPT' || t === 'APPROVE' || t === 'APPROVED') return HodOutcome.ACCEPT;
+  if (t === 'REJECT' || t === 'REJECTED') return HodOutcome.REJECT;
+  if (t === 'RETURN' || t === 'RETURNED') return HodOutcome.RETURN;
+
+  return undefined;
+}
 
 type WirActionLiteral =
   | 'Created'
@@ -324,6 +336,12 @@ export class WirService {
     actor?: { userId?: string | null; fullName?: string | null }
   ) {
     const { createdById: _ignoreCreatedBy, ...safeDto } = (dto as any) || {};
+    // Validate HOD outcome early so we surface a clean 400 (not a Prisma error)
+    if (safeDto.hodOutcome !== undefined && toHodOutcomeEnum(safeDto.hodOutcome) === undefined) {
+      throw new BadRequestException(
+        `Invalid hodOutcome '${safeDto.hodOutcome}'. Use ACCEPT | RETURN | REJECT (UI synonyms: Approved/Approve, Reject/Rejected, Return/Returned).`
+      );
+    }
 
     const existing = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
@@ -368,7 +386,7 @@ export class WirService {
             ? safeDto.activityId
             : undefined,
 
-      // ✅ NEW: allow these two scalars to flow through PATCH
+      // allow these two scalars to flow through PATCH
       inspectorRecommendation:
         safeDto.inspectorRecommendation !== undefined
           ? (safeDto.inspectorRecommendation as any)
@@ -376,13 +394,15 @@ export class WirService {
       version:
         safeDto.version !== undefined ? safeDto.version : undefined,
 
-      // ✅ (optional) keep audit parity timestamp when recommendation is set via PATCH
+      //  (optional) keep audit parity timestamp when recommendation is set via PATCH
       inspectorReviewedAt:
         safeDto.inspectorRecommendation !== undefined ? new Date() : undefined,
 
-      // --- HOD finalization fields ---
+      // --- HOD finalization fields (map UI → Prisma enum) ---
       hodOutcome:
-        safeDto.hodOutcome !== undefined ? (safeDto.hodOutcome as any) : undefined,
+        safeDto.hodOutcome !== undefined
+          ? toHodOutcomeEnum(safeDto.hodOutcome)
+          : undefined,
       hodRemarks:
         safeDto.hodRemarks !== undefined
           ? (safeDto.hodRemarks ? safeDto.hodRemarks : null)
@@ -428,25 +448,41 @@ export class WirService {
     const shouldSyncRefs = Array.isArray(safeDto.refChecklistIds);
 
     if (!shouldSyncRefs) {
-      // Simple header-only update
-      const updated = await this.prisma.wir.update({
-        where: { wirId },
-        data: { ...patch, ...rel },
-      });
-
-      // History when HOD outcome is set via PATCH
-      if (safeDto.hodOutcome !== undefined) {
-        await this.writeHistory(
-          projectId,
-          wirId,
-          safeDto.hodOutcome === 'APPROVE' ? 'Approved' : 'Rejected',
-          safeDto.hodRemarks || undefined,
-          { via: 'PATCH' } as any,
-          actor
-        );
+      // Simple header-only update (with safe error surface)
+      let updated: any;
+      try {
+        updated = await this.prisma.wir.update({
+          where: { wirId },
+          data: { ...patch, ...rel },
+        });
+      } catch (e: any) {
+        // Make enum/constraint problems visible to FE instead of generic 500
+        const msg = e?.message || 'Update failed';
+        const code = e?.code || '';
+        const meta = e?.meta ? JSON.stringify(e.meta) : '';
+        throw new BadRequestException(`WIR update failed: ${msg}${code ? ` [${code}]` : ''}${meta ? ` :: ${meta}` : ''}`);
       }
 
-      // ✅ optional audit parity when recommendation is sent via PATCH
+      // History when HOD outcome is set via PATCH (use enum mapping)
+      if (safeDto.hodOutcome !== undefined) {
+        const mapped = toHodOutcomeEnum(safeDto.hodOutcome);
+        if (mapped) {
+          await this.writeHistory(
+            projectId,
+            wirId,
+            mapped === HodOutcome.ACCEPT
+              ? 'Approved'
+              : mapped === HodOutcome.REJECT
+                ? 'Rejected'
+                : 'Returned',
+            safeDto.hodRemarks || undefined,
+            { via: 'PATCH' } as any,
+            actor
+          );
+        }
+      }
+
+      // optional audit parity when recommendation is sent via PATCH
       if (safeDto.inspectorRecommendation !== undefined) {
         await this.writeHistory(
           projectId,

@@ -751,27 +751,32 @@ export default function WIRDocDis() {
     }, [row, actingRole, claims, user, setSubtab]);
 
     const onFinalizeNow = useCallback(async () => {
-        if (!finalizeOutcome) return;
-        try {
-            // reuse recSubmitting flag to gate buttons/spinners consistently
-            setRecSubmitting(finalizeOutcome);
-            const payload = {
-                hodOutcome: finalizeOutcome,
-                hodRemarks: finalizeNote.trim() || null,
-                hodDecidedAt: new Date().toISOString(),
-                status: finalizeOutcome === 'APPROVE' ? 'Approved' : 'Rejected',
+  if (!finalizeOutcome) return;
+  try {
+    setRecSubmitting(finalizeOutcome);
 
-            };
-            await api.patch(`/projects/${projectId}/wir/${wirId}`, payload);
-            await fetchWir();
-            setFinalizeOpen(false);
-            setFinalizeOutcome(null);
-            setFinalizeNote("");
-        } finally {
-            setRecSubmitting(null);
-        }
-    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
+    // Phase 1: ONLY required fields; omit empty hodRemarks
+    const p1: any = {
+      hodOutcome: finalizeOutcome as "APPROVE" | "REJECT",
+      hodDecidedAt: new Date().toISOString(),
+    };
+    const note = finalizeNote.trim();
+    if (note) p1.hodRemarks = note; // ← include only if non-empty
 
+    await api.patch(`/projects/${projectId}/wir/${wirId}`, p1);
+
+    // Phase 2: flip header status (Title-case)
+    const headerStatus = finalizeOutcome === "APPROVE" ? "Approved" : "Rejected";
+    await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: headerStatus });
+
+    await fetchWir();
+    setFinalizeOpen(false);
+    setFinalizeOutcome(null);
+    setFinalizeNote("");
+  } finally {
+    setRecSubmitting(null);
+  }
+}, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
 
     // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
@@ -1088,6 +1093,13 @@ export default function WIRDocDis() {
                                         {items.map((it) => {
                                             const buf = edits[it.id] || {};
                                             const tol = tolLine(it.base as any, it.plus as any, it.minus as any);
+                                            const tolPill = (() => {
+                                                const op = (it.tolerance || "").toString().trim();
+                                                const b = it.base != null ? String(it.base) : "";
+                                                const u = (it.unit || "").toString().trim();
+                                                const parts = [op, b, u].filter(Boolean);
+                                                return parts.length ? parts.join(" ") : null;
+                                            })();
 
                                             return (
                                                 <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3 space-y-3">
@@ -1097,7 +1109,7 @@ export default function WIRDocDis() {
                                                             <div className="min-w-0">
                                                                 {/* Title of item -- tolerance base value plus minus value */}
                                                                 <div className="text-sm font-semibold dark:text-white">
-                                                                    {it.name ?? "Untitled Item"}{tol ? ` — ${tol}` : ""}
+                                                                    {it.name ?? "Untitled Item"}{tol ? ` — ${tolPill}` : ""}
                                                                 </div>
 
                                                                 {/* Below: Item code */}
@@ -1141,9 +1153,9 @@ export default function WIRDocDis() {
                                                                     Unit: {it.unit}
                                                                 </span>
                                                             ) : null}
-                                                            {tol ? (
+                                                            {tolPill ? (
                                                                 <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
-                                                                    Tolerance: {tol}
+                                                                    Tolerance: {tolPill}
                                                                 </span>
                                                             ) : null}
                                                         </div>
@@ -1667,6 +1679,13 @@ export default function WIRDocDis() {
                                     {items.map((it) => {
                                         const buf = edits[it.id] || {};
                                         const tol = tolLine(it.base as any, it.plus as any, it.minus as any);
+                                        const tolPill = (() => {
+                                            const op = (it.tolerance || "").toString().trim();
+                                            const b = it.base != null ? String(it.base) : "";
+                                            const u = (it.unit || "").toString().trim();
+                                            const parts = [op, b, u].filter(Boolean);
+                                            return parts.length ? parts.join(" ") : null; // e.g., "<= 20 mm"
+                                        })();
                                         const req = (it.spec || "").trim();
                                         const isMandatory = /^mandatory$/i.test(req);
                                         const isOptional = /^optional$/i.test(req);
@@ -1678,7 +1697,7 @@ export default function WIRDocDis() {
                                                     <div className="flex items-start justify-between gap-3">
                                                         <div className="min-w-0">
                                                             <div className="text-sm font-semibold dark:text-white">
-                                                                {it.name ?? "Untitled Item"}{tol ? ` — ${tol}` : ""}
+                                                                {it.name ?? "Untitled Item"}{tol ? ` — ${tolPill}` : ""}
                                                             </div>
                                                             {it.code ? (
                                                                 <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
@@ -1711,9 +1730,9 @@ export default function WIRDocDis() {
                                                                 Unit: {it.unit}
                                                             </span>
                                                         ) : null}
-                                                        {tol ? (
+                                                        {tolPill ? (
                                                             <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
-                                                                Tolerance: {tol}
+                                                                Tolerance: {tolPill}
                                                             </span>
                                                         ) : null}
                                                     </div>
