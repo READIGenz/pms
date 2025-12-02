@@ -667,12 +667,20 @@ export default function WIRDocDis() {
     const [actingRole, setActingRole] = useState<"Inspector" | "HOD" | "Inspector+HOD" | null>(null);
     const [inspRecoInspOpen, setInspRecoInspOpen] = useState(false);
     const [inspRecoHodOpen, setInspRecoHodOpen] = useState(false);
+    // const canReschedule = useMemo(() => {
+    //     const isInspectorish =
+    //         actingRole === "Inspector" || actingRole === "Inspector+HOD";
+    //     const isBicSelf = !!row?.bicUserId && String(row.bicUserId) === currentUid;
+    //     return isInspectorish && isBicSelf;
+    // }, [actingRole, row?.bicUserId, currentUid]);
+
     const canReschedule = useMemo(() => {
         const isInspectorish =
             actingRole === "Inspector" || actingRole === "Inspector+HOD";
         const isBicSelf = !!row?.bicUserId && String(row.bicUserId) === currentUid;
-        return isInspectorish && isBicSelf;
-    }, [actingRole, row?.bicUserId, currentUid]);
+        const isSubmitted = canonicalWirStatus(row?.status) === "Submitted";
+        return isInspectorish && isBicSelf && isSubmitted;
+    }, [actingRole, row?.bicUserId, currentUid, row?.status]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -751,32 +759,32 @@ export default function WIRDocDis() {
     }, [row, actingRole, claims, user, setSubtab]);
 
     const onFinalizeNow = useCallback(async () => {
-  if (!finalizeOutcome) return;
-  try {
-    setRecSubmitting(finalizeOutcome);
+        if (!finalizeOutcome) return;
+        try {
+            setRecSubmitting(finalizeOutcome);
 
-    // Phase 1: ONLY required fields; omit empty hodRemarks
-    const p1: any = {
-      hodOutcome: finalizeOutcome as "APPROVE" | "REJECT",
-      hodDecidedAt: new Date().toISOString(),
-    };
-    const note = finalizeNote.trim();
-    if (note) p1.hodRemarks = note; // ← include only if non-empty
+            // Phase 1: ONLY required fields; omit empty hodRemarks
+            const p1: any = {
+                hodOutcome: finalizeOutcome as "APPROVE" | "REJECT",
+                hodDecidedAt: new Date().toISOString(),
+            };
+            const note = finalizeNote.trim();
+            if (note) p1.hodRemarks = note; // ← include only if non-empty
 
-    await api.patch(`/projects/${projectId}/wir/${wirId}`, p1);
+            await api.patch(`/projects/${projectId}/wir/${wirId}`, p1);
 
-    // Phase 2: flip header status (Title-case)
-    const headerStatus = finalizeOutcome === "APPROVE" ? "Approved" : "Rejected";
-    await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: headerStatus });
+            // Phase 2: flip header status (Title-case)
+            const headerStatus = finalizeOutcome === "APPROVE" ? "Approved" : "Rejected";
+            await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: headerStatus });
 
-    await fetchWir();
-    setFinalizeOpen(false);
-    setFinalizeOutcome(null);
-    setFinalizeNote("");
-  } finally {
-    setRecSubmitting(null);
-  }
-}, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
+            await fetchWir();
+            setFinalizeOpen(false);
+            setFinalizeOutcome(null);
+            setFinalizeNote("");
+        } finally {
+            setRecSubmitting(null);
+        }
+    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir]);
 
     // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
