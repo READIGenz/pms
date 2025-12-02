@@ -46,6 +46,17 @@ const normalizeRole = (raw?: string) => {
 const isIsoLike = (v: any) =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
 const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
+const fmtTime12 = (t?: string | null) => {
+  if (!t) return "";
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t));
+  if (!m) return String(t);
+  let h = Math.max(0, Math.min(23, parseInt(m[1]!, 10)));
+  const mm = m[2]!;
+  const ampm: "AM" | "PM" = h >= 12 ? "PM" : "AM";
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  return `${String(h12).padStart(2, "0")}:${mm} ${ampm}`;
+};
 
 type WirStatusCanonical =
   | "Draft"
@@ -652,16 +663,22 @@ export default function WIR() {
           const forDateDisp = forDateRaw ? new Date(forDateRaw).toLocaleDateString() : "—";
 
           const forTime = w.forTime ?? any?.for_time ?? null;
+          const forTimeDisp = fmtTime12(forTime);
+
           const itemsDisp =
             typeof w.itemsCount === "number" ? w.itemsCount : "—";
+
           // --- Reschedule flags ---
           const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
+          const reschedTimeRaw = w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
+          const reschedTimeDisp = fmtTime12(reschedTimeRaw);
 
           const reschedTip = isRescheduled
             ? `Rescheduled → ${w.rescheduleForDate ? new Date(w.rescheduleForDate).toLocaleDateString() : "—"
-            } • ${w.rescheduleForTime || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+            } • ${reschedTimeDisp || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
             }`
             : "";
+
           return (
             <button
               key={w.wirId}
@@ -730,7 +747,7 @@ export default function WIR() {
 
                 {/* Details line: forDate • forTime • items */}
                 <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
-                  {forDateDisp} <span className="mx-1.5">•</span> {forTime || "—"}{" "}
+                  {forDateDisp} <span className="mx-1.5">•</span> {forTimeDisp || "—"}{" "}
                   <span className="mx-1.5">•</span> Items: {itemsDisp}
                 </div>
               </div>

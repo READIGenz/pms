@@ -115,6 +115,19 @@ const canonicalWirStatus = (s?: string | null) => {
     return "Unknown";
 };
 
+// 12-hour formatter for "HH:MM" strings
+const fmtTime12 = (t?: string | null) => {
+    if (!t) return "";
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t));
+    if (!m) return String(t);
+    let h = Math.max(0, Math.min(23, parseInt(m[1]!, 10)));
+    const mm = m[2]!;
+    const ampm: "AM" | "PM" = h >= 12 ? "PM" : "AM";
+    let h12 = h % 12;
+    if (h12 === 0) h12 = 12;
+    return `${String(h12).padStart(2, "0")}:${mm} ${ampm}`;
+};
+
 // Tolerance formatter → "20 (+3/-2)"
 const tolLine = (base?: number | null, plus?: number | null, minus?: number | null) => {
     const b = base ?? null, p = plus ?? null, m = minus ?? null;
@@ -909,7 +922,7 @@ export default function WIRDocDis() {
                                         <div>
                                             <b>Planned:</b>{" "}
                                             {row.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}
-                                            {row.forTime ? ` • ${row.forTime}` : ""}
+                                            {row.forTime ? ` • ${fmtTime12(row.forTime)}` : ""}
                                         </div>
                                         {(row.rescheduleForDate || row.rescheduleForTime) && (
                                             <div>
@@ -917,9 +930,10 @@ export default function WIRDocDis() {
                                                 {row.rescheduleForDate
                                                     ? new Date(row.rescheduleForDate).toLocaleDateString()
                                                     : "—"}
-                                                {row.rescheduleForTime ? ` • ${row.rescheduleForTime}` : ""}
+                                                {row.rescheduleForTime ? ` • ${fmtTime12(row.rescheduleForTime)}` : ""}
                                             </div>
                                         )}
+
                                         <div><b>Location:</b> {row.cityTown || "—"}</div>
                                         <div><b>Version:</b> {typeof row.version === "number" ? `v${row.version}` : "—"}</div>
                                         <div><b>Checklists:</b> {combinedItemsCount} items • {mandatoryCount} mandatory • {criticalCount} critical</div>
