@@ -210,21 +210,40 @@ export default function DispatchWIRModal({
 
   const canSend = selectedIds.size > 0 && !submitting && !!targetWirId;
 
+  // helper: canonical status checks
+  const isDraftStatus = (s?: string | null) =>
+    typeof s === "string" && s.toLowerCase().includes("draft");
+  const isSubmittedStatus = (s?: string | null) =>
+    typeof s === "string" && s.toLowerCase().includes("submit");
+
   // HOD preview dialog
   const [hodPreviewOpen, setHodPreviewOpen] = useState(false);
   const [hodPatch, setHodPatch] = useState<Record<string, any> | null>(null);
 
-  const isHodFlow = useMemo(
-    () => !!confirmInspector && (confirmInspector.acting === "HOD" || confirmInspector.acting === "Inspector+HOD"),
-    [confirmInspector]
-  );
+  // const isHodFlow = useMemo(
+  //   () => !!confirmInspector && (confirmInspector.acting === "HOD" || confirmInspector.acting === "Inspector+HOD"),
+  //   [confirmInspector]
+  // );
+  const isHodFlow = useMemo(() => {
+    // route by current WIR status:
+    // - Draft      -> Inspector dispatch ("Confirm & Send")
+    // - Submitted  -> HOD path ("Proceed & Send")
+    return isSubmittedStatus(wirHeader?.status);
+  }, [wirHeader?.status]);
+
+  // const confirmCta = useMemo(() => {
+  //   if (!confirmInspector) return (submitting ? "Sending…" : "Confirm & Send");
+  //   return isHodFlow
+  //     ? (submitting ? "Sending…" : "Proceed & Send")
+  //     : (submitting ? "Sending…" : "Confirm & Send");
+  // }, [confirmInspector, isHodFlow, submitting]);
 
   const confirmCta = useMemo(() => {
-    if (!confirmInspector) return (submitting ? "Sending…" : "Confirm & Send");
+    // status-driven CTA
     return isHodFlow
       ? (submitting ? "Sending…" : "Proceed & Send")
       : (submitting ? "Sending…" : "Confirm & Send");
-  }, [confirmInspector, isHodFlow, submitting]);
+  }, [isHodFlow, submitting]);
 
   function onSend() {
     const inspectorId = Array.from(selectedIds)[0];

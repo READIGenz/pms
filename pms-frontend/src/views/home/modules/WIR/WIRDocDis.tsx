@@ -1877,6 +1877,8 @@ export default function WIRDocDis() {
 
                                         // 4) Refresh
                                         await fetchWir();
+                                        backToList(); // navigate to list after successful send
+
                                     } finally {
                                         setRecSubmitting(null);
                                         setHodPlannedPatch(null);
