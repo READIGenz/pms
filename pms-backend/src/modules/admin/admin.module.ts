@@ -11,10 +11,13 @@ import { AdminMaterialsModule } from './ref/material/admin.materials.module';
 import { AdminChecklistsModule } from './ref/checklist/admin.checklists.module';
 import { AdminModuleSettingsModule } from './module-settings/module-settings.module';
 import { AuditModule } from './audit/audit.module';
+import { AdminDashboardModule } from './dashboard/admin.dashboard.module';
 
 @Module({
   imports: [AdminUsersModule, AdminProjectsModule,AdminCompaniesModule, 
     AdminAssignmentsModule,AdminPermissionsModule, 
-    AdminPermissionsExplorerModule, AdminActivitiesModule, AdminMaterialsModule,AdminChecklistsModule, AdminModuleSettingsModule, AuditModule],
+    AdminPermissionsExplorerModule, AdminActivitiesModule, 
+    AdminMaterialsModule,AdminChecklistsModule, AdminModuleSettingsModule,
+     AuditModule, AdminDashboardModule],
 })
 export class AdminModule {}

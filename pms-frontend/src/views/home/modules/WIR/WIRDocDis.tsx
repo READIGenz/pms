@@ -1280,7 +1280,7 @@ export default function WIRDocDis() {
                                             Approve
                                         </button>
 
-                                        <button
+                                 {/*       <button
                                             onClick={() => onRecommend("APPROVE_WITH_COMMENTS")}
                                             className={`text-sm px-3 py-2 rounded border ${rec === "APPROVE_WITH_COMMENTS"
                                                 ? "bg-blue-600 text-white border-blue-700"
@@ -1289,7 +1289,7 @@ export default function WIRDocDis() {
                                         >
                                             Approve w/ Comments
                                         </button>
-
+*/}
                                         <button
                                             onClick={() => onRecommend("REJECT")}
                                             className={`text-sm px-3 py-2 rounded border ${rec === "REJECT"

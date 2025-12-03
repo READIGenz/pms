@@ -35,6 +35,7 @@ import MyProjects from './views/home/MyProjects';
 import WIR from './views/home/modules/WIR/WIR';
 import CreateWIR from './views/home/modules/WIR/CreateWIR';
 import WIRDocDis from './views/home/modules/WIR/WIRDocDis';
+import Dashboard from './views/admin/Dashboard';
 //import WIR_PMC from './views/home/modules/WIR/WIR.PMC';
 //import WIR_IHPMT from './views/home/modules/WIR/WIR.IHPMT';
 //import WIR_Client from './views/home/modules/WIR/WIR.Client';
@@ -60,7 +61,7 @@ export default function App() {
 
         {/* Admin area */}
         <Route path="/admin" element={<RequireAuth><AdminHome /></RequireAuth>}>
-          <Route index element={<div className="p-4">Dashboard</div>} />
+          <Route index element={<Dashboard />} />
           <Route path="users" element={<Users />} />
           <Route path="users/:id" element={<Users />} />
           <Route path="users/new" element={<UserCreate />} />
