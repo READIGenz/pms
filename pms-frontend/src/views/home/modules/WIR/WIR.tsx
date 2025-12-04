@@ -145,6 +145,8 @@ type WirLite = {
   rescheduleForDate?: string | null;
   rescheduleForTime?: string | null;
   rescheduleReason?: string | null;
+  inspectorRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
+  hodOutcome?: "ACCEPT" | "REJECT" | null;
 };
 
 type ProjectState = {
@@ -333,6 +335,8 @@ export default function WIR() {
           r.bic_user_full_name ??
           (r.bicUser?.fullName ?? null),
         bicUser: r.bicUser ? { fullName: r.bicUser.fullName ?? null } : null,
+        inspectorRecommendation: r.inspectorRecommendation ?? null,
+        hodOutcome: r.hodOutcome ?? null,
       }));
 
       logWir("list:mapped WirLite[]", { count: mapped.length, sample: mapped.slice(0, 3) });
@@ -712,6 +716,32 @@ export default function WIR() {
                 {/* Status + pills + BIC */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
+                  {(() => {
+                    const st = canonicalWirStatus(w.status);
+                    // For Approved, reflect what exactly was accepted (Approve / Approve w/ comments / Reject)
+                    if (st === "HODApproved") {
+                      const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
+                      const label =
+                        ir === "APPROVE_WITH_COMMENTS" ? "Approve w/ comments" :
+                          ir === "APPROVE" ? "Approve" :
+                            ir === "REJECT" ? "Reject" : null;
+                      return label ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+                          {label}
+                        </span>
+                      ) : null;
+                    }
+                    // For Rejected, keep it explicit
+                    if (st === "HODRejected") {
+                      return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
+                          Reject
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {isRescheduled && (
                     <span
                       title={reschedTip}

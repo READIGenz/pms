@@ -14,6 +14,7 @@ const getAuthUserId = (req: any): string | null =>
 export class WirController {
   constructor(private readonly service: WirService) { }
 
+
   @Get()
   async list(@Param('projectId') projectId: string) {
     return this.service.listByProject(projectId);
@@ -151,64 +152,85 @@ export class WirController {
   }
 
   // ---- Discussion: list
-@Get(':wirId/discussion')
-async listDiscussion(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Query('after') after?: string,
-  @Query('limit') limit?: string,
-) {
-  return this.service.listDiscussion(projectId, wirId, {
-    after: after || null,
-    limit: limit ? Number(limit) : undefined,
-  });
-}
+  @Get(':wirId/discussion')
+  async listDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Query('after') after?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.listDiscussion(projectId, wirId, {
+      after: after || null,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
 
-// ---- Discussion: add
-@Post(':wirId/discussion')
-async addDiscussion(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Body() body: { text?: string | null; parentId?: string | null; fileUrl?: string | null; fileName?: string | null },
-  @Req() req: any,
-) {
-  const actor = {
-    userId: getAuthUserId(req),
-    fullName: req?.user?.fullName ?? null,
-  };
-  return this.service.addDiscussion(projectId, wirId, body, actor);
-}
+  // ---- Discussion: add
+  @Post(':wirId/discussion')
+  async addDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() body: { text?: string | null; parentId?: string | null; fileUrl?: string | null; fileName?: string | null },
+    @Req() req: any,
+  ) {
+    const actor = {
+      userId: getAuthUserId(req),
+      fullName: req?.user?.fullName ?? null,
+    };
+    return this.service.addDiscussion(projectId, wirId, body, actor);
+  }
 
-// ---- Discussion: edit
-@Patch(':wirId/discussion/:commentId')
-async editDiscussion(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Param('commentId') commentId: string,
-  @Body() body: { text?: string | null; fileUrl?: string | null; fileName?: string | null },
-  @Req() req: any,
-) {
-  const actor = {
-    userId: getAuthUserId(req),
-    isSuperAdmin: !!req?.user?.isSuperAdmin,
-  };
-  return this.service.editDiscussion(projectId, wirId, commentId, body, actor);
-}
+  // ---- Discussion: edit
+  @Patch(':wirId/discussion/:commentId')
+  async editDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Param('commentId') commentId: string,
+    @Body() body: { text?: string | null; fileUrl?: string | null; fileName?: string | null },
+    @Req() req: any,
+  ) {
+    const actor = {
+      userId: getAuthUserId(req),
+      isSuperAdmin: !!req?.user?.isSuperAdmin,
+    };
+    return this.service.editDiscussion(projectId, wirId, commentId, body, actor);
+  }
 
-// ---- Discussion: delete (soft)
-@Delete(':wirId/discussion/:commentId')
-async deleteDiscussion(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @Param('commentId') commentId: string,
-  @Req() req: any,
-) {
-  const actor = {
-    userId: getAuthUserId(req),
-    isSuperAdmin: !!req?.user?.isSuperAdmin,
-  };
-  return this.service.deleteDiscussion(projectId, wirId, commentId, actor);
-}
+  // ---- Discussion: delete (soft)
+  @Delete(':wirId/discussion/:commentId')
+  async deleteDiscussion(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Param('commentId') commentId: string,
+    @Req() req: any,
+  ) {
+    const actor = {
+      userId: getAuthUserId(req),
+      isSuperAdmin: !!req?.user?.isSuperAdmin,
+    };
+    return this.service.deleteDiscussion(projectId, wirId, commentId, actor);
+  }
 
+  // Create next WIR version strictly with provided items (no fallback)
+  @Post(':wirId/followup')
+  async createFollowup(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Body() body: { forDate?: string; forTime?: string; note?: string | null; includeItemIds?: string[]; title?: string | null; description?: string | null },
+    @Req() req: any,
+  ) {
+    const userId = getAuthUserId(req);
+    const plannedAt =
+      body?.forDate
+        ? `${body.forDate}T${(body.forTime || '00:00')}:00`
+        : undefined;
+
+    return this.service.rollForward(projectId, wirId, userId, {
+      plannedAt,
+      itemIds: body?.includeItemIds ?? [],                // ← strictly use what FE sends
+      title: body?.title ?? undefined,
+      description: (body?.description ?? body?.note) || undefined,
+    });
+  }
 
 }

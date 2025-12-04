@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   listActiveMembersForProjectRole,
   resolveActingRoleFor,
+  resolveActingRoleForVerbose,
   todayISO,
   type ActingRole,
 } from "./memberships.helpers";
@@ -113,8 +114,12 @@ export default function DispatchWIRModal({
           const uid = String(user.userId || "");
           if (!uid) continue;
 
-          const acting: ActingRole = await resolveActingRoleFor(projectId, "PMC", uid);
-          if (acting === "ViewerOnly") continue; // hide PMC without WIR acting perms
+          //  const acting: ActingRole = await resolveActingRoleFor(projectId, "PMC", uid);
+          const diag = await resolveActingRoleForVerbose(projectId, "PMC", uid);
+          console.log("[DispatchWIR] role diag", { uid, name: displayName(user), ...diag });
+          const acting: ActingRole = diag.acting;
+
+          if (acting === "HOD") continue; // exclude pure HOD; allow ViewerOnly + Inspector + Inspector+HOD
 
           mapped.push({
             id: uid,

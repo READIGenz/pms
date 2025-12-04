@@ -136,3 +136,60 @@ export async function resolveActingRoleFor(
 
   return deduceActingRole(effV, effRz, effRv, effAp);
 }
+
+export type ActingRoleVerbose = {
+  acting: ActingRole;
+  eff: { view: boolean; raise: boolean; review: boolean; approve: boolean };
+  base: { view: boolean; raise: boolean; review: boolean; approve: boolean };
+  overrides: { view?: "inherit" | "deny" | false; raise?: "inherit" | "deny" | false; review?: "inherit" | "deny" | false; approve?: "inherit" | "deny" | false };
+  reason: string;
+};
+
+function brief(over?: "inherit" | "deny" | false | undefined) {
+  return over === undefined ? "—" : over === false ? "false" : over;
+}
+
+/** Same as resolveActingRoleFor, but explains WHY */
+export async function resolveActingRoleForVerbose(
+  projectId: string,
+  roleKey: RoleKey,
+  userId: string
+): Promise<ActingRoleVerbose> {
+  // 1) base (allow) from role template
+  const base = await getRoleBaseMatrix(projectId, roleKey as any);
+  const baseView    = !!base?.WIR?.view;
+  const baseRaise   = !!base?.WIR?.raise;
+  const baseReview  = !!base?.WIR?.review;
+  const baseApprove = !!base?.WIR?.approve;
+
+  // 2) user overrides (deny-only)
+  let overRow: ActingRoleVerbose["overrides"] = {};
+  try {
+    const { data } = await api.get(`/admin/permissions/projects/${projectId}/users/${userId}/overrides`);
+    const m = (data?.matrix ?? data) || {};
+    overRow = (m?.WIR ?? {}) as ActingRoleVerbose["overrides"];
+  } catch { /* no overrides */ }
+
+  // 3) effective (deny-only composition)
+  const effV  = effAllow(baseView,    overRow.view);
+  const effRz = effAllow(baseRaise,   overRow.raise);
+  const effRv = effAllow(baseReview,  overRow.review);
+  const effAp = effAllow(baseApprove, overRow.approve);
+
+  const acting = deduceActingRole(effV, effRz, effRv, effAp);
+
+  // 4) reason line (compact)
+  const reason =
+    `base(view=${baseView},raise=${baseRaise},review=${baseReview},approve=${baseApprove}) ` +
+    `over(view=${brief(overRow.view)},raise=${brief(overRow.raise)},review=${brief(overRow.review)},approve=${brief(overRow.approve)}) ` +
+    `=> eff(view=${effV},raise=${effRz},review=${effRv},approve=${effAp}) ` +
+    `=> ${acting}`;
+
+  return {
+    acting,
+    eff: { view: effV, raise: effRz, review: effRv, approve: effAp },
+    base: { view: baseView, raise: baseRaise, review: baseReview, approve: baseApprove },
+    overrides: overRow,
+    reason,
+  };
+}

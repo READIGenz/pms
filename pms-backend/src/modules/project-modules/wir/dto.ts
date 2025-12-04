@@ -20,7 +20,8 @@ export type WirStatus =
   | 'Recommended'
   | 'Approved'
   | 'Rejected'
-  | 'Returned';
+  | 'Returned'
+  | 'APPROVE_WITH_COMMENTS';
 
 export type Discipline = 'Civil' | 'MEP' | 'Finishes';
 
@@ -28,7 +29,7 @@ export class CreateWirDto {
   // FE sends these (from CreateWIR.tsx)
 
   @IsOptional()
-  @IsIn(['Draft', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned'])
+  @IsIn(['Draft', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned', 'APPROVE_WITH_COMMENTS'])
   status?: WirStatus; // default Draft
 
   @IsOptional()
@@ -53,20 +54,20 @@ export class CreateWirDto {
   @IsString()
   @Length(0, 200)
   location?: string; // saved to Wir.description (site location notes)
- 
+
   @IsOptional()
   @IsString()
   cityTown?: string;
 
-   @IsOptional()
+  @IsOptional()
   @IsString()
   @Length(0, 200)
   description?: string;        // already present (good)
 
-    @IsOptional()
+  @IsOptional()
   @IsString()
   stateName?: string;          // <— add this
-  
+
   @IsOptional()
   @IsString()
   @Length(0, 200)
@@ -90,7 +91,7 @@ export class CreateWirDto {
 export class UpdateWirHeaderDto {
   // keep existing header fields…
   @IsOptional()
-  @IsIn(['Draft', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned'])
+  @IsIn(['Draft', 'Submitted', 'Recommended', 'Approved', 'Rejected', 'Returned', 'APPROVE_WITH_COMMENTS'])
   status?: WirStatus;
 
   @IsOptional()
@@ -135,7 +136,7 @@ export class UpdateWirHeaderDto {
   @IsString()
   hodId?: string | null;
 
-   // Allow FE to explicitly set Current BIC (user) on header patch
+  // Allow FE to explicitly set Current BIC (user) on header patch
   @IsOptional()
   @IsString()
   bicUserId?: string | null;
@@ -252,7 +253,7 @@ export class RollForwardDto {
 export class DispatchWirDto {
   @IsOptional()
   inspectorId!: string;                // selected PMC inspector (required)
-  
+
   @IsOptional()
   materializeIfNeeded?: boolean = true; // default true: do copy-on-dispatch if not done
 }

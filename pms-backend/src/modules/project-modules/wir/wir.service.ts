@@ -1,4 +1,4 @@
-//pms/pms-backend/src/modules/project-modules/wir/wir.servive.ts
+//pms/pms-backend/src/modules/project-modules/wir/wir.service.ts
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
@@ -155,6 +155,8 @@ export class WirService {
         rescheduleForDate: true,
         rescheduleForTime: true,
         rescheduleReason: true,
+        inspectorRecommendation: true,
+        hodOutcome: true,
         _count: { select: { items: true } },
       },
     }).then(rows => rows.map(r => ({
@@ -175,6 +177,8 @@ export class WirService {
       rescheduleForTime: r.rescheduleForTime ?? null,
       rescheduleReason: r.rescheduleReason ?? null,
       rescheduled: (r.rescheduleForDate != null) || (r.rescheduleForTime != null),
+      inspectorRecommendation: r.inspectorRecommendation,
+      hodOutcome: r.hodOutcome,
     })));
   }
 
@@ -345,13 +349,26 @@ export class WirService {
 
     const existing = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
-      select: { createdById: true, status: true },
+      select: { createdById: true, status: true, hodOutcome: true },
     });
 
     const shouldBackfillCreator = !existing?.createdById && !!actor?.userId;
 
     // support PATCH with plannedAt too (split into forDate/forTime if provided)
     const { forDate: splitForDate, forTime: splitForTime } = splitDateTime(safeDto.plannedAt);
+
+    // ---- Guard: allow APPROVE_WITH_COMMENTS only from Recommended with HOD=ACCEPT
+    if ((safeDto.status as any) === 'APPROVE_WITH_COMMENTS') {
+      const mappedIncomingHod = toHodOutcomeEnum(safeDto.hodOutcome);
+      const effectiveHod = mappedIncomingHod ?? existing?.hodOutcome ?? undefined;
+
+      if (existing?.status !== 'Recommended') {
+        throw new BadRequestException('APPROVE_WITH_COMMENTS allowed only from Recommended status.');
+      }
+      if (effectiveHod !== 'ACCEPT') {
+        throw new BadRequestException('HOD must Accept before APPROVE_WITH_COMMENTS.');
+      }
+    }
 
     // ---------- scalars ----------
     const patch: Prisma.WirUpdateInput = {
@@ -461,6 +478,17 @@ export class WirService {
         const code = e?.code || '';
         const meta = e?.meta ? JSON.stringify(e.meta) : '';
         throw new BadRequestException(`WIR update failed: ${msg}${code ? ` [${code}]` : ''}${meta ? ` :: ${meta}` : ''}`);
+      }
+
+      if (safeDto.status === 'APPROVE_WITH_COMMENTS') {
+        await this.writeHistory(
+          projectId,
+          wirId,
+          'Approved',                 // keep existing action literal
+          'Approved with comments',   // clear note for UI
+          { withComments: true },     // meta to distinguish in timeline
+          actor
+        );
       }
 
       // History when HOD outcome is set via PATCH (use enum mapping)
@@ -782,6 +810,7 @@ export class WirService {
   }
 
   // Create a new WIR “version” with only failed/NCR items (true versioning via new row)
+  // === REPLACE the entire rollForward method with this ===
   async rollForward(projectId: string, wirId: string, currentUserId: string | null, dto: RollForwardDto) {
     const src = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
@@ -789,24 +818,17 @@ export class WirService {
     });
     if (!src) throw new NotFoundException('WIR not found');
 
-    // choose items
-    let itemIds = dto.itemIds?.length ? dto.itemIds : null;
-    if (!itemIds) {
-      // carry forward FAIL/NCR
-      const failIds = src.items
-        .filter(it => (it.inspectorStatus === 'FAIL') || (it.status === 'NCR'))
-        .map(it => it.id);
-      itemIds = failIds;
-    }
-
-    if (!itemIds?.length) {
-      throw new BadRequestException('No items to roll forward (no failures/NCR and none explicitly provided).');
+    // choose items (STRICT: must be provided by caller; no auto fallback)
+    const itemIds = Array.isArray(dto.itemIds) ? dto.itemIds.filter(Boolean) : [];
+    if (itemIds.length === 0) {
+      throw new BadRequestException('No items provided to roll forward.');
     }
 
     const { forDate, forTime } = splitDateTime(dto.plannedAt);
 
-    const next = await this.prisma.$transaction(async tx => {
-      // create header (new WIR row)
+    // Create the new WIR and clone items INSIDE the tx...
+    const next = await this.prisma.$transaction(async (tx) => {
+      // 1) create header (new WIR row)
       const nextWir = await tx.wir.create({
         data: {
           projectId,
@@ -817,30 +839,28 @@ export class WirService {
           forDate: forDate ?? undefined,
           forTime: forTime ?? undefined,
           createdById: currentUserId ?? undefined,
-          seriesId: src.seriesId,           // <-- REQUIRED: keep same series
+          seriesId: src.seriesId,
         },
       });
 
-      // attach same checklists (by checklistId) preserving order/meta
-      if (src.checklists.length) {
-        await tx.wirChecklist.createMany({
-          data: src.checklists.map(c => ({
-            wirId: nextWir.wirId,
-            checklistId: c.checklistId,
-            checklistCode: c.checklistCode ?? undefined,
-            checklistTitle: c.checklistTitle ?? undefined,
-            discipline: c.discipline ?? undefined,
-            versionLabel: c.versionLabel ?? undefined,
-            itemsTotal: c.itemsTotal ?? 0,
-            itemIds: c.itemIds ?? [],
-            itemsCount: c.itemsCount ?? undefined,
-            order: c.order ?? 0,
-          })),
-        });
-      }
+      // 2) (optional) attach same checklists if you want to carry them forward
+      // If you want parity, uncomment and keep if you had it before:
+      // if (src.checklists.length) {
+      //   await tx.wirChecklist.createMany({
+      //     data: src.checklists.map((c, idx) => ({
+      //       wirId: nextWir.wirId,
+      //       checklistId: c.checklistId,
+      //       checklistCode: c.checklistCode ?? undefined,
+      //       checklistTitle: c.checklistTitle ?? undefined,
+      //       discipline: c.discipline ?? undefined,
+      //       versionLabel: c.versionLabel ?? undefined,
+      //       order: c.order ?? (idx + 1),
+      //     })),
+      //   });
+      // }
 
-      // clone the chosen items (provenance retained)
-      const chosen = src.items.filter(it => itemIds!.includes(it.id));
+      // 3) clone the chosen items (provenance retained)
+      const chosen = src.items.filter(it => itemIds.includes(it.id));
       if (chosen.length) {
         await tx.wirItem.createMany({
           data: chosen.map((it, idx) => ({
@@ -868,11 +888,26 @@ export class WirService {
         });
       }
 
-      await this.writeHistory(projectId, wirId, 'Updated', 'Rolled forward to next version.', { nextWirId: nextWir.wirId });
-      await this.writeHistory(projectId, nextWir.wirId, 'Created', 'Created by roll-forward', { fromWirId: wirId });
-
+      // IMPORTANT: do NOT write history here (still inside tx)
       return nextWir;
     });
+
+    // ...and write history AFTER the tx finishes using the root client
+    await this.writeHistory(
+      projectId,
+      wirId,
+      'Updated',
+      'Rolled forward to next version.',
+      { nextWirId: next.wirId }
+    );
+
+    await this.writeHistory(
+      projectId,
+      next.wirId,
+      'Created',
+      'Created by roll-forward',
+      { fromWirId: wirId }
+    );
 
     const version = await this.computedVersion(next.wirId);
     return { wirId: next.wirId, version, title: next.title, status: next.status };
