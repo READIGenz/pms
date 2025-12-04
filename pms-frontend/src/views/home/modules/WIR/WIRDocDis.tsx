@@ -169,6 +169,16 @@ function TabButton({
     );
 }
 
+// Decide who gets Ball in Court after HOD finalizes
+function nextBicUserIdAfterFinalize(doc: WirDoc, outcome: "APPROVE" | "REJECT"): string | null {
+    const contractor = (doc.contractorId || doc.createdById || null) as string | null;
+    if (outcome === "APPROVE") {
+        return doc.inspectorRecommendation === "APPROVE_WITH_COMMENTS" ? contractor : null;
+    }
+    // outcome === "REJECT"
+    return contractor;
+}
+
 export default function WIRDocDis() {
     const { user, claims } = useAuth();
     const currentUid = useMemo(
@@ -549,31 +559,50 @@ export default function WIRDocDis() {
     const [reschedSubmitting, setReschedSubmitting] = useState(false);
     const [followupOpen, setFollowupOpen] = useState(false);
 
+    // --- ADD: compute "Runner" visibility incl. Contractor on certain statuses
     useEffect(() => {
         let alive = true;
         (async () => {
             if (!row) { if (alive) setCanSeeRunner(false); return; }
 
             const statusCanon = canonicalWirStatus(row.status);
-            const statusOk =
-                statusCanon === "Submitted" ||
-                statusCanon === "Recommended" ||
-                statusCanon === "Approved" ||
-                statusCanon === "Rejected";
+            const statusOk = [
+                "Submitted",
+                "Recommended",
+                "Approved",
+                "Rejected",
+                "Approved w/ Comments",
+            ].includes(statusCanon);
+
             if (!statusOk) { if (alive) setCanSeeRunner(false); return; }
 
             const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-            const userId =
-                String((claims as any)?.userId || (user as any)?.userId || "");
+            const userId = String((claims as any)?.userId || (user as any)?.userId || "");
 
+            // If explicitly Contractor → allow Runner tab only for Recommended / Finalized (read-only later)
+            if (roleKey === "Contractor") {
+                const contractorViewOk =
+                    statusCanon === "Recommended" ||
+                    statusCanon === "Approved" ||
+                    statusCanon === "Rejected" ||
+                    statusCanon === "Approved w/ Comments";
+                if (alive) {
+                    setActingRole(null);   // Contractor isn't Inspector/HOD
+                    setCanSeeRunner(contractorViewOk);
+                }
+                return;
+            }
+
+            // For non-Contractor → original Inspector/HOD logic
             if (!roleKey || !userId) { if (alive) setCanSeeRunner(false); return; }
 
             try {
                 const acting = await resolveActingRoleFor(projectId, roleKey, userId);
-                if (alive) setActingRole((["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any) ? (acting as any) : null);
-
-                const ok = acting === "Inspector" || acting === "HOD" || acting === "Inspector+HOD";
-                if (alive) setCanSeeRunner(ok);
+                if (alive) {
+                    const isIH = (["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any);
+                    setActingRole(isIH ? (acting as any) : null);
+                    setCanSeeRunner(isIH);
+                }
             } catch {
                 if (alive) { setCanSeeRunner(false); setActingRole(null); }
             }
@@ -697,13 +726,16 @@ export default function WIRDocDis() {
         return isInspectorish && isBicSelf && isSubmitted;
     }, [actingRole, row?.bicUserId, currentUid, row?.status]);
 
-    // ADD: show CTA only when APPROVE_WITH_COMMENTS + HOD ACCEPT
+    // Show CTA only when APPROVE_WITH_COMMENTS + Contractor + BIC
     const showReschedCta = useMemo(() => {
-        return (
-            row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS" &&
-            row?.hodOutcome === "APPROVE"
-        );
-    }, [row?.inspectorRecommendation, row?.hodOutcome]);
+        const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
+        const isContractor = roleKey === "Contractor";
+        const isBicSelf =
+            !!row?.bicUserId && String(row.bicUserId) === currentUid;
+        const isApprovedWithComments =
+            canonicalWirStatus(row?.status) === "Approved w/ Comments";
+        return isApprovedWithComments && isContractor && isBicSelf;
+    }, [row?.status, row?.bicUserId, loc.state, currentUid]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -744,11 +776,13 @@ export default function WIRDocDis() {
         if (!row) return;
         const st = canonicalWirStatus(row.status);
 
-        // Allow edit only if: (Inspector or Inspector+HOD) + Submitted + BIC === current user
+        // Determine viewer role (for Contractor read-only behavior)
+        const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
+
+        // Inspector/Inspector+HOD edit condition (unchanged)
         const isInspectorish = actingRole === "Inspector" || actingRole === "Inspector+HOD";
         const currentUid = String((claims as any)?.userId || (user as any)?.userId || "");
         const isBicSelf = !!row.bicUserId && String(row.bicUserId) === currentUid;
-
         const canOpenEditable = isInspectorish && st === "Submitted" && isBicSelf;
 
         if (canOpenEditable) {
@@ -756,7 +790,22 @@ export default function WIRDocDis() {
             return;
         }
 
-        // Read-only summaries for Recommended (unchanged)
+        // === Contractor: always read-only ===
+        if (roleKey === "Contractor") {
+            if (st === "Recommended") {
+                // show summary modal (HOD review summary is fine for everyone)
+                setInspRecoHodOpen(true);
+                return;
+            }
+            if (st === "Approved" || st === "Rejected" || st === "Approved w/ Comments") {
+                setInspRecoHodOpen(true);
+                return;
+            }
+            // For Submitted or others, Contractor does nothing here
+            return;
+        }
+
+        // === Non-contractor read-only paths ===
         if (isInspectorish && st === "Recommended") {
             setInspRecoInspOpen(true);
             return;
@@ -766,43 +815,51 @@ export default function WIRDocDis() {
             return;
         }
 
-        /* Finalized → always open HOD Review (read-only) */
+        // Finalized → everyone with Inspector/HOD capability gets HOD summary
         if (
             (actingRole === "Inspector" || actingRole === "HOD" || actingRole === "Inspector+HOD") &&
-            (st === "Approved" || st === "Rejected")
+            (st === "Approved" || st === "Rejected" || st === "Approved w/ Comments")
         ) {
             setInspRecoHodOpen(true);
             return;
         }
-        // If Runner is visible but not eligible for edit on Submitted → dialog
+
+        // Submitted but not eligible to edit → show guard dialog
         if (st === "Submitted") {
             setNoEditPermOpen(true);
         }
-        // Else: no-op
-    }, [row, actingRole, claims, user, setSubtab]);
+    }, [row, actingRole, claims, user, loc.state, setSubtab]);
 
     const onFinalizeNow = useCallback(async () => {
         if (!finalizeOutcome) return;
         try {
             setFinalizeSubmitting(finalizeOutcome);
 
-            // Phase 1: persist HOD outcome (Accept/Reject)
-            const p1: any = { hodOutcome: finalizeOutcome, hodDecidedAt: new Date().toISOString() };
+            // Compute next BIC based on outcome + inspectorRecommendation
+            const bicAfter = nextBicUserIdAfterFinalize(row!, finalizeOutcome);
+
+            // PATCH #1: HOD decision + BIC shift
+            const p1: any = {
+                hodOutcome: finalizeOutcome,
+                hodDecidedAt: new Date().toISOString(),
+                bicUserId: bicAfter,                 // ← set BIC here
+            };
             const note = finalizeNote.trim();
-            if (note) p1.hodRemarks = note; // ← include only if non-empty
+            if (note) p1.hodRemarks = note;
 
             await api.patch(`/projects/${projectId}/wir/${wirId}`, p1);
 
-            // Phase 2: set final WIR status based on HOD decision
+            // PATCH #2: Final status
             if (finalizeOutcome === "APPROVE") {
                 const finalStatus =
-                    (row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS")
+                    row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS"
                         ? "APPROVE_WITH_COMMENTS"
                         : "Approved";
                 await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: finalStatus });
             } else {
                 await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: "Rejected" });
             }
+
             await fetchWir();
             setFinalizeOpen(false);
             setFinalizeOutcome(null);
@@ -810,8 +867,7 @@ export default function WIRDocDis() {
         } finally {
             setFinalizeSubmitting(null);
         }
-    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir
-        , row?.inspectorRecommendation]);
+    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir, row?.inspectorRecommendation]);
 
     useEffect(() => {
         if (finalizeOpen) setFinalizeNote("");
