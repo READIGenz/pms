@@ -41,10 +41,114 @@ function splitDateTime(iso?: string | null): { forDate?: Date; forTime?: string 
   return { forDate: d, forTime: `${hh}:${mm}` };
 }
 
+function ymd(d?: Date | null): string | undefined {
+  if (!d) return undefined;
+  // local, TZ-safe YYYY-MM-DD (no toISOString() drift)
+  const Y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2, '0');
+  const D = String(d.getDate()).padStart(2, '0');
+  return `${Y}-${M}-${D}`;
+}
+
+type WirContract = {
+  wirId: string;
+  projectId: string;
+  status: string;
+  discipline?: string | null;
+  activityRefId?: string | null;
+  title?: string | null; // activity title
+  cityTown?: string | null;
+  description?: string | null;
+  forDate?: string;      // "YYYY-MM-DD"
+  forTime?: string | null; // "HH:MM"
+  checklists: Array<{ checklistId: string; code?: string | null; title?: string | null; itemsCount?: number }>;
+  items?: any[]; // subset ok
+  histories: Array<{ action: string; meta?: any; createdAt: Date; actorUserId?: string | null; actorName?: string | null }>;
+  version: number;
+  prevWirId?: string | null;
+  seriesId?: string | null;
+};
+
 @Injectable()
 export class WirService {
 
   constructor(private prisma: PrismaService) { }
+
+  private buildWirContract(row: any, version: number): WirContract {
+    // activityId fallback from histories
+    const hist = Array.isArray(row.histories) ? row.histories : [];
+    const lastMetaAct = hist
+      .find((h: any) => h?.meta && (h.meta as any).activityId)
+      ?.meta as any | undefined;
+
+    // title: prefer activity snapshot title if present
+    const activityTitle =
+      row?.activitySnapshot?.title ??
+      row?.title ??
+      null;
+
+    // prevWirId from "Created by roll-forward" meta or similar
+    const createdHist = hist.find(
+      (h: any) => h?.action === 'Created' && h?.meta && (h.meta as any).fromWirId
+    );
+    const prevWirId = createdHist ? (createdHist.meta as any).fromWirId : null;
+
+    // checklist → itemsCount via currently loaded items (no extra DB hits)
+    const items = Array.isArray(row.items) ? row.items : [];
+    const byChecklistCount = items.reduce((acc: Record<string, number>, it: any) => {
+      const cid = it.checklistId || it.sourceChecklistId;
+      if (!cid) return acc;
+      acc[cid] = (acc[cid] || 0) + 1;
+      return acc;
+    }, {});
+
+    const checklists = (Array.isArray(row.checklists) ? row.checklists : []).map((c: any) => ({
+      checklistId: c.checklistId,
+      code: c.checklistCode ?? null,
+      title: c.checklistTitle ?? null,
+      itemsCount: byChecklistCount[c.checklistId],
+    }));
+
+    // items: return a light subset (safe for FE – optional but helpful)
+    const slimItems = items.map((it: any) => ({
+      id: it.id,
+      checklistId: it.checklistId ?? it.sourceChecklistId ?? null,
+      code: it.code ?? null,
+      name: it.name ?? null,
+      required: it.required ?? null,
+      critical: it.critical ?? null,
+      unit: it.unit ?? null,
+      tolerance: it.tolerance ?? null,
+      tags: it.tags ?? [],
+      status: it.status ?? null,
+      inspectorStatus: it.inspectorStatus ?? null,
+    }));
+
+    return {
+      wirId: row.wirId,
+      projectId: row.projectId,
+      status: row.status,
+      discipline: row.discipline ?? null,
+      activityRefId: row.activityRefId ?? (lastMetaAct?.activityId ?? null),
+      title: activityTitle,
+      cityTown: row.cityTown ?? null,
+      description: row.description ?? null,
+      forDate: ymd(row.forDate),
+      forTime: row.forTime ?? null,
+      checklists,
+      items: slimItems,
+      histories: hist.map((h: any) => ({
+        action: h.action,
+        meta: h.meta ?? undefined,
+        createdAt: h.createdAt,
+        actorUserId: h.actorUserId ?? null,
+        actorName: h.actorName ?? null,
+      })),
+      version,
+      prevWirId,
+      seriesId: row.seriesId ?? null,
+    };
+  }
 
   // ---------- helpers ----------
   private async resolveChecklistIds(idsOrCodes: string[]) {
@@ -182,7 +286,7 @@ export class WirService {
     })));
   }
 
-  async get(projectId: string, wirId: string) {
+  async get(projectId: string, wirId: string, opts?: { contract?: boolean }) {
     const wir = await this.prisma.wir.findFirst({
       where: { wirId, projectId },
       include: {
@@ -203,7 +307,10 @@ export class WirService {
     if (!wir) throw new NotFoundException('WIR not found');
 
     const version = await this.computedVersion(wirId);
-    return { ...wir, version };
+    if (opts?.contract) {
+      return this.buildWirContract(wir as any, version);
+    }
+    return { ...(wir as any), version };
   }
 
   // --- Generate next WIR code inside a transaction (fixed-width so lexicographic sort works)

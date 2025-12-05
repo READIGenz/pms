@@ -68,7 +68,7 @@ type WirDoc = {
     inspectorId?: string | null;
     hodId?: string | null;
     contractorId?: string | null;
-    hodOutcome?: "APPROVE" | "REJECT" | null;
+    hodOutcome?: "ACCEPT" | "REJECT" | null;
     hodRemarks?: string | null;
     hodDecidedAt?: string | null;
     version?: number | null;
@@ -216,6 +216,12 @@ export default function WIRDocDis() {
                 ) || ""
                 : "",
         [row, bicNameMap]
+    );
+
+    // Role carried via NavState (string like "Contractor", "PMC", "IH-PMT", etc.)
+    const effectiveRole = useMemo(
+        () => ((loc.state as NavState | undefined)?.role ?? null),
+        [loc.state]
     );
 
     const creatorName =
@@ -697,13 +703,22 @@ export default function WIRDocDis() {
         return isInspectorish && isBicSelf && isSubmitted;
     }, [actingRole, row?.bicUserId, currentUid, row?.status]);
 
-    // ADD: show CTA only when APPROVE_WITH_COMMENTS + HOD ACCEPT
+    // SHOW "Schedule Followup" only when:
+    // 1) Inspector recommended AWC,
+    // 2) HOD accepted,
+    // 3) WIR is finalized (Approved/Rejected/APPROVE_WITH_COMMENTS),
+    // 4) Current user is the BIC (usually the contractor after ACCEPT+AWC)
     const showReschedCta = useMemo(() => {
-        return (
-            row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS" &&
-            row?.hodOutcome === "APPROVE"
-        );
-    }, [row?.inspectorRecommendation, row?.hodOutcome]);
+        const accepted = row?.hodOutcome === "ACCEPT";
+        const awc = row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS";
+        const isFinal = (() => {
+            const st = canonicalWirStatus(row?.status);
+            return st === "Approved" || st === "APPROVE_WITH_COMMENTS" || st === "Rejected";
+        })();
+        const isBicSelf = !!row?.bicUserId && String(row.bicUserId) === currentUid;
+
+        return accepted && awc && isFinal && isBicSelf;
+    }, [row?.hodOutcome, row?.inspectorRecommendation, row?.status, row?.bicUserId, currentUid]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -2194,11 +2209,14 @@ export default function WIRDocDis() {
                     wir={row}
                     nextVersionLabel={nextVersionLabel}
                     onClose={() => setFollowupOpen(false)}
-                    // Optional: when you wire backend later, you can navigate to the new WIR here.
                     onCreated={(newWirId?: string) => {
                         setFollowupOpen(false);
                         if (newWirId) {
-                            navigate(`/home/projects/${projectId}/wir/${newWirId}`, { replace: true });
+                            // Send to list; highlight & auto-scroll handled by WIR.tsx you already added
+                            navigate(`/home/projects/${projectId}/wir?hl=${newWirId}`, {
+                                replace: true,
+                                state: { role: effectiveRole, project: { projectId } },
+                            });
                         }
                     }}
                 />

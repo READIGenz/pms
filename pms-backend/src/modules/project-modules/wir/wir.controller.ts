@@ -24,11 +24,11 @@ export class WirController {
   async get(
     @Param('projectId') projectId: string,
     @Param('wirId') wirId: string,
+    @Query('contract') contract?: string,
   ) {
-    // Service currently expects (projectId, wirId). We'll add default includes inside the service in the next step.
-    return this.service.get(projectId, wirId);
+    const wantContract = contract === '1' || contract === 'true';
+    return this.service.get(projectId, wirId, { contract: wantContract });
   }
-
 
   @Post()
   async create(

@@ -167,11 +167,20 @@ type WirListCfg = {
   exportPdfAllowed: boolean;
 } | null;
 
+const [highlightId, setHighlightId] = useState<string | null>(null);
+const [hlEl, setHlEl] = useState<HTMLButtonElement | null>(null);
+
 /* ---------------- main ---------------- */
 
 export default function WIR() {
   const { user, claims } = useAuth();
   const loc = useLocation();
+
+  useEffect(() => {
+    const id = new URLSearchParams(loc.search).get("hl");
+    setHighlightId(id);
+  }, [loc.search]);
+
   const navigate = useNavigate();
   const params = useParams<{ projectId: string }>();
 
@@ -445,6 +454,18 @@ export default function WIR() {
     });
   }, [list, search, currentUserId]);
 
+  useEffect(() => {
+    if (!highlightId || !hlEl) return;
+    const t = setTimeout(() => {
+      hlEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      // clear the hl param from URL (keeps history clean)
+      const url = new URL(window.location.href);
+      url.searchParams.delete("hl");
+      window.history.replaceState({}, "", url.toString());
+    }, 60);
+    return () => clearTimeout(t);
+  }, [highlightId, hlEl, filtered]);
+
   const kpis = useMemo(() => {
     const total = filtered.length;
     let submitted = 0,
@@ -656,6 +677,7 @@ export default function WIR() {
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map((w) => {
           const busy = preflightId === w.wirId;
+          const isHL = highlightId && w.wirId === highlightId;
 
           // Prefer normalized fields (now preserved in mapping), with light fallbacks:
           const any = w as any;
@@ -686,33 +708,38 @@ export default function WIR() {
           return (
             <button
               key={w.wirId}
+              ref={isHL ? setHlEl : undefined}
               onClick={() => !busy && openWirDetail(w)}
               disabled={busy}
-              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""}`}
+              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""} ${isHL ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 rounded-2xl" : ""
+                }`}
+              title={isHL ? "New follow-up created" : undefined}
             >
               <div
                 className="
-                  h-full rounded-2xl border dark:border-neutral-800
-                  p-4 sm:p-5
-                  bg-white dark:bg-neutral-900
-                  transition
-                  hover:bg-gray-50 dark:hover:bg-neutral-800
-                "
+      h-full rounded-2xl border dark:border-neutral-800
+      p-4 sm:p-5
+      bg-white dark:bg-neutral-900
+      transition
+      hover:bg-gray-50 dark:hover:bg-neutral-800
+    "
               >
                 {/* Heading */}
-                <div className="min-w-0">
+                <div className="min-w-0 flex items-center gap-2">
                   <div className="text-sm sm:text-base font-semibold dark:text-white truncate">
                     {[
                       w.code || undefined,
                       (w.title || w.wirId || undefined),
                       (typeof w.version === "number" ? `v${w.version}` : undefined),
-                    ]
-                      .filter(Boolean)
-                      .join(" — ")}
+                    ].filter(Boolean).join(" — ")}
                     {busy ? " • checking…" : ""}
                   </div>
+                  {isHL && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                      New
+                    </span>
+                  )}
                 </div>
-
                 {/* Status + pills + BIC */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
