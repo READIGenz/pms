@@ -12,6 +12,11 @@ type WirDocLite = {
   rescheduleForTime?: string | null;
   // minimal item shape needed to filter FAILED ones
   items?: Array<{ id: string; inspectorStatus?: "PASS" | "FAIL" | "NA" | null }>;
+  version?: number | null;
+  contractorId?: string | null;
+  bicUserId?: string | null;
+  cityTown?: string | null;
+  stateName?: string | null;
 };
 
 export default function FollowupScheduleModal({
@@ -55,6 +60,11 @@ export default function FollowupScheduleModal({
         .filter((it) => (it.inspectorStatus || "").toUpperCase() === "FAIL")
         .map((it) => it.id),
     [wir.items]
+  );
+
+  const nextVersionNum = useMemo(
+    () => (typeof wir?.version === "number" ? wir.version + 1 : 1),
+    [wir?.version]
   );
 
   return (
@@ -147,6 +157,13 @@ export default function FollowupScheduleModal({
                   forTime: time,
                   note: note?.trim() || null,
                   includeItemIds: failedItemIds, // ONLY the failed items
+                  // Chain & hand-off fields
+                  prevWirId: wir.wirId,                            // link to parent
+                  version: nextVersionNum,                         // incremented version
+                  contractorId: wir.contractorId ?? null,          // carry contractor
+                  bicUserId: wir.contractorId ?? wir.bicUserId ?? null, // hand BIC to contractor (fallback to existing BIC)
+                  cityTown: wir.cityTown ?? null,                  // carry location (optional)
+                  stateName: wir.stateName ?? null,                // carry location (optional)
                 };
                 const { data } = await api.post(
                   `/projects/${projectId}/wir/${wir.wirId}/followup`,

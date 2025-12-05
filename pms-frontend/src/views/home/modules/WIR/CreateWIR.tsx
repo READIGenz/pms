@@ -392,6 +392,7 @@ export default function CreateWIR() {
     const pendingActivityTitleRef = useRef<string | null>(null);
 
     const [dispatchOpen, setDispatchOpen] = useState(false);
+    const [wirIdForModal, setWirIdForModal] = useState<string>(editId || "");
 
     function matchActivityIdFromTitle(title: string): string | null {
         if (!title) return null;
@@ -1050,6 +1051,46 @@ export default function CreateWIR() {
         }
     };
 
+    const saveDraftBeforeDispatch = async () => {
+        if (!projectId || submitting) return;
+        setSubmitting(true);
+        setSubmitErr(null);
+        try {
+            // treat presence of wirIdForModal as PATCH; else POST to create
+            const isPatch = !!wirIdForModal;
+            const path = isPatch ? `/projects/${projectId}/wir/${wirIdForModal}` : `/projects/${projectId}/wir`;
+            const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
+
+            const payload = buildDraftPayload(isPatch);
+            if (isPatch) delete payload.plannedAt; // guard: PATCH uses split fields
+
+            logWir(`autoSaveDraft -> ${method} ${path}`, payload);
+            const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+            logWir("autoSaveDraft <- response", res?.data);
+
+            // Extract a stable wirId from common API shapes
+            const newId =
+                String(
+                    res?.data?.data?.wirId ??
+                    res?.data?.wir?.wirId ??
+                    res?.data?.wirId ??
+                    res?.data?.id ??
+                    ""
+                ) || wirIdForModal;
+
+            if (newId) setWirIdForModal(newId);
+
+            // open the dispatch modal now that we’re sure a draft exists
+            setDispatchOpen(true);
+        } catch (e: any) {
+            const err = e?.response?.data || e?.message || e;
+            console.error("[WIR] autoSaveDraft error:", err);
+            setSubmitErr(err?.error || err?.message || "Failed to save draft before dispatch.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     /* ---------------- UI (mobile-first) ---------------- */
 
     return (
@@ -1365,7 +1406,7 @@ export default function CreateWIR() {
                         </button>
 
                         <button
-                            onClick={() => setDispatchOpen(true)}
+                            onClick={saveDraftBeforeDispatch}
                             disabled={!roleCanCreate || submitting || !hasRequiredForSubmit}
                             className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${!roleCanCreate || submitting || !hasRequiredForSubmit
                                 ? "bg-emerald-600/60 text-white cursor-not-allowed"
@@ -1669,7 +1710,7 @@ export default function CreateWIR() {
                         : (projectFromState?.title || `Project: ${projectId}`)
                 }
                 projectId={projectId}
-                wirId={editId || ""}
+                wirId={wirIdForModal || ""}
             />
 
         </div>

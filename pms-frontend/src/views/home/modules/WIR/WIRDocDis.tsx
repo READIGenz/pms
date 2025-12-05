@@ -110,7 +110,8 @@ const canonicalWirStatus = (s?: string | null) => {
     if (n.includes("draft")) return "Draft";
     if (n.includes("submit")) return "Submitted";
     if (n.includes("recommend")) return "Recommended";
-    if (n.includes("approve_with_comments")) return "Approved w/ Comments"; if (n.includes("approve")) return "Approved";
+    if (n.includes("approve_with_comments")) return "APPROVE_WITH_COMMENTS";
+    if (n.includes("approve")) return "Approved";
     if (n.includes("reject")) return "Rejected";
     if (n.includes("return")) return "Returned";
     return "Unknown";
@@ -167,16 +168,6 @@ function TabButton({
             {children}
         </button>
     );
-}
-
-// Decide who gets Ball in Court after HOD finalizes
-function nextBicUserIdAfterFinalize(doc: WirDoc, outcome: "APPROVE" | "REJECT"): string | null {
-    const contractor = (doc.contractorId || doc.createdById || null) as string | null;
-    if (outcome === "APPROVE") {
-        return doc.inspectorRecommendation === "APPROVE_WITH_COMMENTS" ? contractor : null;
-    }
-    // outcome === "REJECT"
-    return contractor;
 }
 
 export default function WIRDocDis() {
@@ -275,9 +266,9 @@ export default function WIRDocDis() {
     const [recSubmitting, setRecSubmitting] =
         useState<null | "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT">(null);
 
-    // HOD finalize submit state (new, accepts "APPROVE" | "REJECT")
+    // HOD finalize submit state (new, accepts "ACCEPT" | "REJECT")
     const [finalizeSubmitting, setFinalizeSubmitting] =
-        useState<null | "APPROVE" | "REJECT">(null);
+        useState<null | "ACCEPT" | "REJECT">(null);
 
     // Hold local (unsaved) pick
     const [pendingRec, setPendingRec] =
@@ -559,50 +550,31 @@ export default function WIRDocDis() {
     const [reschedSubmitting, setReschedSubmitting] = useState(false);
     const [followupOpen, setFollowupOpen] = useState(false);
 
-    // --- ADD: compute "Runner" visibility incl. Contractor on certain statuses
     useEffect(() => {
         let alive = true;
         (async () => {
             if (!row) { if (alive) setCanSeeRunner(false); return; }
 
             const statusCanon = canonicalWirStatus(row.status);
-            const statusOk = [
-                "Submitted",
-                "Recommended",
-                "Approved",
-                "Rejected",
-                "Approved w/ Comments",
-            ].includes(statusCanon);
-
+            const statusOk =
+                statusCanon === "Submitted" ||
+                statusCanon === "Recommended" ||
+                statusCanon === "Approved" ||
+                statusCanon === "Rejected";
             if (!statusOk) { if (alive) setCanSeeRunner(false); return; }
 
             const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-            const userId = String((claims as any)?.userId || (user as any)?.userId || "");
+            const userId =
+                String((claims as any)?.userId || (user as any)?.userId || "");
 
-            // If explicitly Contractor → allow Runner tab only for Recommended / Finalized (read-only later)
-            if (roleKey === "Contractor") {
-                const contractorViewOk =
-                    statusCanon === "Recommended" ||
-                    statusCanon === "Approved" ||
-                    statusCanon === "Rejected" ||
-                    statusCanon === "Approved w/ Comments";
-                if (alive) {
-                    setActingRole(null);   // Contractor isn't Inspector/HOD
-                    setCanSeeRunner(contractorViewOk);
-                }
-                return;
-            }
-
-            // For non-Contractor → original Inspector/HOD logic
             if (!roleKey || !userId) { if (alive) setCanSeeRunner(false); return; }
 
             try {
                 const acting = await resolveActingRoleFor(projectId, roleKey, userId);
-                if (alive) {
-                    const isIH = (["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any);
-                    setActingRole(isIH ? (acting as any) : null);
-                    setCanSeeRunner(isIH);
-                }
+                if (alive) setActingRole((["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any) ? (acting as any) : null);
+
+                const ok = acting === "Inspector" || acting === "HOD" || acting === "Inspector+HOD";
+                if (alive) setCanSeeRunner(ok);
             } catch {
                 if (alive) { setCanSeeRunner(false); setActingRole(null); }
             }
@@ -643,7 +615,7 @@ export default function WIRDocDis() {
     // ADD: visible only when WIR is Approved/Rejected
     const isFinalized = useMemo(() => {
         const st = canonicalWirStatus(row?.status);
-        return st === "Approved" || st === "Rejected" || st === "Approved w/ Comments";
+        return st === "Approved" || st === "Rejected" || st === "APPROVE_WITH_COMMENTS";
     }, [row?.status]);
 
     const statusBadge = (value?: string | null) => {
@@ -657,8 +629,7 @@ export default function WIRDocDis() {
                 "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
             Approved:
                 "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-            "Approved w/ Comments":
-                "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+            APPROVE_WITH_COMMENTS: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
             Rejected:
                 "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
             Returned:
@@ -726,21 +697,17 @@ export default function WIRDocDis() {
         return isInspectorish && isBicSelf && isSubmitted;
     }, [actingRole, row?.bicUserId, currentUid, row?.status]);
 
-    // Show CTA only when APPROVE_WITH_COMMENTS + Contractor + BIC
+    // ADD: show CTA only when APPROVE_WITH_COMMENTS + HOD ACCEPT
     const showReschedCta = useMemo(() => {
-        const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-        const isContractor = roleKey === "Contractor";
-        const isBicSelf =
-            !!row?.bicUserId && String(row.bicUserId) === currentUid;
-        const isApprovedWithComments =
-            canonicalWirStatus(row?.status) === "Approved w/ Comments";
-        return isApprovedWithComments && isContractor && isBicSelf;
-    }, [row?.status, row?.bicUserId, loc.state, currentUid]);
+        return (
+            row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS" &&
+            row?.hodOutcome === "APPROVE"
+        );
+    }, [row?.inspectorRecommendation, row?.hodOutcome]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
-    const [finalizeOutcome, setFinalizeOutcome] = useState<"APPROVE" | "REJECT" | null>(null);
-    const [finalizeNote, setFinalizeNote] = useState<string>("");
+    const [finalizeOutcome, setFinalizeOutcome] = useState<"ACCEPT" | "REJECT" | null>(null); const [finalizeNote, setFinalizeNote] = useState("");
 
     // Inspector display name (resolved from inspectorId for Finalize modal)
     const [inspName, setInspName] = useState<string>("");
@@ -776,13 +743,11 @@ export default function WIRDocDis() {
         if (!row) return;
         const st = canonicalWirStatus(row.status);
 
-        // Determine viewer role (for Contractor read-only behavior)
-        const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-
-        // Inspector/Inspector+HOD edit condition (unchanged)
+        // Allow edit only if: (Inspector or Inspector+HOD) + Submitted + BIC === current user
         const isInspectorish = actingRole === "Inspector" || actingRole === "Inspector+HOD";
         const currentUid = String((claims as any)?.userId || (user as any)?.userId || "");
         const isBicSelf = !!row.bicUserId && String(row.bicUserId) === currentUid;
+
         const canOpenEditable = isInspectorish && st === "Submitted" && isBicSelf;
 
         if (canOpenEditable) {
@@ -790,22 +755,7 @@ export default function WIRDocDis() {
             return;
         }
 
-        // === Contractor: always read-only ===
-        if (roleKey === "Contractor") {
-            if (st === "Recommended") {
-                // show summary modal (HOD review summary is fine for everyone)
-                setInspRecoHodOpen(true);
-                return;
-            }
-            if (st === "Approved" || st === "Rejected" || st === "Approved w/ Comments") {
-                setInspRecoHodOpen(true);
-                return;
-            }
-            // For Submitted or others, Contractor does nothing here
-            return;
-        }
-
-        // === Non-contractor read-only paths ===
+        // Read-only summaries for Recommended (unchanged)
         if (isInspectorish && st === "Recommended") {
             setInspRecoInspOpen(true);
             return;
@@ -815,51 +765,68 @@ export default function WIRDocDis() {
             return;
         }
 
-        // Finalized → everyone with Inspector/HOD capability gets HOD summary
+        /* Finalized → always open HOD Review (read-only) */
         if (
             (actingRole === "Inspector" || actingRole === "HOD" || actingRole === "Inspector+HOD") &&
-            (st === "Approved" || st === "Rejected" || st === "Approved w/ Comments")
+            (st === "Approved" || st === "Rejected")
         ) {
             setInspRecoHodOpen(true);
             return;
         }
-
-        // Submitted but not eligible to edit → show guard dialog
+        // If Runner is visible but not eligible for edit on Submitted → dialog
         if (st === "Submitted") {
             setNoEditPermOpen(true);
         }
-    }, [row, actingRole, claims, user, loc.state, setSubtab]);
+        // Else: no-op
+    }, [row, actingRole, claims, user, setSubtab]);
 
     const onFinalizeNow = useCallback(async () => {
         if (!finalizeOutcome) return;
         try {
             setFinalizeSubmitting(finalizeOutcome);
 
-            // Compute next BIC based on outcome + inspectorRecommendation
-            const bicAfter = nextBicUserIdAfterFinalize(row!, finalizeOutcome);
+            // Phase 1: persist HOD outcome (APPROVE / REJECT) AND shift BIC per rules
+            const mappedOutcome: "APPROVE" | "REJECT" =
+                finalizeOutcome === "ACCEPT" ? "APPROVE" : "REJECT";
 
-            // PATCH #1: HOD decision + BIC shift
+            // contractor fallback: prefer contractorId, else createdById, else null
+            const contractorUid =
+                (row?.contractorId && String(row.contractorId)) ||
+                (row?.createdById && String(row.createdById)) ||
+                null;
+
+            // Compute next BIC:
+            // - If APPROVE and Inspector had APPROVE_WITH_COMMENTS → contractor
+            // - If APPROVE and Inspector had APPROVE (no comments) → null
+            // - If REJECT → contractor
+            let nextBicUserId: string | null = null;
+            if (mappedOutcome === "APPROVE") {
+                nextBicUserId =
+                    row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS"
+                        ? contractorUid
+                        : null;
+            } else {
+                // REJECT
+                nextBicUserId = contractorUid;
+            }
+
             const p1: any = {
-                hodOutcome: finalizeOutcome,
+                hodOutcome: mappedOutcome,
                 hodDecidedAt: new Date().toISOString(),
-                bicUserId: bicAfter,                 // ← set BIC here
+                // include hodRemarks only if user typed any
+                ...(finalizeNote.trim() ? { hodRemarks: finalizeNote.trim() } : {}),
+                bicUserId: nextBicUserId,
             };
-            const note = finalizeNote.trim();
-            if (note) p1.hodRemarks = note;
 
             await api.patch(`/projects/${projectId}/wir/${wirId}`, p1);
 
-            // PATCH #2: Final status
-            if (finalizeOutcome === "APPROVE") {
-                const finalStatus =
-                    row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS"
-                        ? "APPROVE_WITH_COMMENTS"
-                        : "Approved";
-                await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: finalStatus });
+            // Phase 2: set final WIR status based on HOD decision
+            if (finalizeOutcome === "ACCEPT") {
+                // Final status must be one of the BE-allowed enums
+                await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: "Approved" });
             } else {
                 await api.patch(`/projects/${projectId}/wir/${wirId}`, { status: "Rejected" });
             }
-
             await fetchWir();
             setFinalizeOpen(false);
             setFinalizeOutcome(null);
@@ -867,11 +834,8 @@ export default function WIRDocDis() {
         } finally {
             setFinalizeSubmitting(null);
         }
-    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir, row?.inspectorRecommendation]);
-
-    useEffect(() => {
-        if (finalizeOpen) setFinalizeNote("");
-    }, [finalizeOpen]);
+    }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir
+        , row?.inspectorRecommendation]);
 
     // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
@@ -1087,44 +1051,42 @@ export default function WIRDocDis() {
                                 )}
 
                                 {/* HOD Tile (below Checklists) — visible only while InspectorRecommended */}
-                                {!isFinalized &&
-                                    canonicalWirStatus(row?.status) === "Recommended" &&
-                                    (actingRole === "HOD" || actingRole === "Inspector+HOD") && (
-                                        <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
-                                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                                HOD
+                                {!isFinalized && canonicalWirStatus(row?.status) === "Recommended" && (
+                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                            HOD
+                                        </div>
+                                        <div className="text-sm dark:text-white space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
+                                                    Recommendation
+                                                </span>
+                                                <span className="text-[12px] text-gray-700 dark:text-gray-200">
+                                                    Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
+                                                </span>
                                             </div>
-                                            <div className="text-sm dark:text-white space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
-                                                        Recommendation
-                                                    </span>
-                                                    <span className="text-[12px] text-gray-700 dark:text-gray-200">
-                                                        Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
-                                                    </span>
-                                                </div>
-                                                <div className="pt-1">
-                                                    <button
-                                                        onClick={() => setFinalizeOpen(true)}
-                                                        className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
-                                                        disabled={
-                                                            !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
-                                                            canonicalWirStatus(row.status) !== "Recommended"
-                                                        }
-                                                        title={
-                                                            canonicalWirStatus(row.status) === "Recommended"
-                                                                ? ((actingRole === "HOD" || actingRole === "Inspector+HOD")
-                                                                    ? "Open HOD finalization"
-                                                                    : "Only HOD can finalize")
-                                                                : "Visible after Inspector recommends"
-                                                        }
-                                                    >
-                                                        Finalize Now
-                                                    </button>
-                                                </div>
+                                            <div className="pt-1">
+                                                <button
+                                                    onClick={() => setFinalizeOpen(true)}
+                                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+                                                    disabled={
+                                                        !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
+                                                        canonicalWirStatus(row.status) !== "Recommended"
+                                                    }
+                                                    title={
+                                                        canonicalWirStatus(row.status) === "Recommended"
+                                                            ? ((actingRole === "HOD" || actingRole === "Inspector+HOD")
+                                                                ? "Open HOD finalization"
+                                                                : "Only HOD can finalize")
+                                                            : "Visible after Inspector recommends"
+                                                    }
+                                                >
+                                                    Finalize Now
+                                                </button>
                                             </div>
                                         </div>
-                                    )}
+                                    </div>
+                                )}
 
                                 {/* HOFFinalizedOutcome (visible only after HOD finalizes) */}
                                 {isFinalized && (
@@ -2164,8 +2126,8 @@ export default function WIRDocDis() {
                             <div className="flex flex-wrap gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setFinalizeOutcome("APPROVE")}
-                                    className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "APPROVE"
+                                    onClick={() => setFinalizeOutcome("ACCEPT")}
+                                    className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "ACCEPT"
                                         ? "bg-emerald-600 text-white border-emerald-700"
                                         : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                         }`}
@@ -2214,7 +2176,7 @@ export default function WIRDocDis() {
                                 type="button"
                                 onClick={onFinalizeNow}
                                 disabled={!finalizeOutcome || !!finalizeSubmitting}
-                                className={`w-full sm:w-auto text-sm px-3 py-2 rounded-lg border ${finalizeOutcome && !finalizeSubmitting
+                                className={`w-full sm:w-auto text-sm px-3 py-2 rounded-lg border ${finalizeOutcome && !recSubmitting
                                     ? "bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-700"
                                     : "bg-blue-600/60 text-white cursor-not-allowed dark:border-blue-700"
                                     }`}
