@@ -570,8 +570,8 @@ export default function WIRDocDis() {
             if (!statusOk) { if (alive) setCanSeeRunner(false); return; }
 
             const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
-            const userId =
-                String((claims as any)?.userId || (user as any)?.userId || "");
+            const userId = String((claims as any)?.userId || (user as any)?.userId || "");
+            const contractorView = roleKey === "Contractor";
 
             if (!roleKey || !userId) { if (alive) setCanSeeRunner(false); return; }
 
@@ -579,7 +579,13 @@ export default function WIRDocDis() {
                 const acting = await resolveActingRoleFor(projectId, roleKey, userId);
                 if (alive) setActingRole((["Inspector", "HOD", "Inspector+HOD"] as const).includes(acting as any) ? (acting as any) : null);
 
-                const ok = acting === "Inspector" || acting === "HOD" || acting === "Inspector+HOD";
+                // Runner visibility:
+                // - Inspector/HOD/Inspector+HOD → as before
+                // - Contractor → read-only on Recommended/Approved/Rejected
+                const contractorStatusOk =
+                    contractorView && (statusCanon === "Recommended" || statusCanon === "Approved" || statusCanon === "Rejected");
+
+                const ok = acting === "Inspector" || acting === "HOD" || acting === "Inspector+HOD" || contractorStatusOk;
                 if (alive) setCanSeeRunner(ok);
             } catch {
                 if (alive) { setCanSeeRunner(false); setActingRole(null); }
@@ -758,6 +764,22 @@ export default function WIRDocDis() {
         if (!row) return;
         const st = canonicalWirStatus(row.status);
 
+        // NEW: Contractor read-only flows
+        const roleKey = asRoleKey((loc.state as NavState | undefined)?.role);
+        const contractorView = roleKey === "Contractor";
+        if (contractorView) {
+            if (st === "Recommended") {
+                // Inspector review summary for Contractor
+                setInspRecoInspOpen(true);
+                return;
+            }
+            if (st === "Approved" || st === "Rejected") {
+                // HOD review summary for Contractor
+                setInspRecoHodOpen(true);
+                return;
+            }
+            // Submitted or other statuses: fall through to existing guards (no edit)
+        }
         // Allow edit only if: (Inspector or Inspector+HOD) + Submitted + BIC === current user
         const isInspectorish = actingRole === "Inspector" || actingRole === "Inspector+HOD";
         const currentUid = String((claims as any)?.userId || (user as any)?.userId || "");
