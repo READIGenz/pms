@@ -167,14 +167,14 @@ type WirListCfg = {
   exportPdfAllowed: boolean;
 } | null;
 
-const [highlightId, setHighlightId] = useState<string | null>(null);
-const [hlEl, setHlEl] = useState<HTMLButtonElement | null>(null);
-
 /* ---------------- main ---------------- */
 
 export default function WIR() {
   const { user, claims } = useAuth();
   const loc = useLocation();
+
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [hlEl, setHlEl] = useState<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const id = new URLSearchParams(loc.search).get("hl");
