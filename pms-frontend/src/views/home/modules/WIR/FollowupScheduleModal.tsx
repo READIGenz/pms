@@ -18,6 +18,8 @@ type WirDocLite = {
   rescheduleForTime?: string | null;
   version?: number | null;
   items?: WirItemLite[];
+  seriesId?: string | null;           // Needed to pass parent series
+
 };
 
 export default function FollowupScheduleModal({
@@ -39,6 +41,22 @@ export default function FollowupScheduleModal({
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  function buildFollowupBody() {
+    return {
+      forDate: dateISO,                       // "YYYY-MM-DD"
+      forTime: time,                          // "HH:mm"
+      includeItemIds: failedItemIds,          // controller maps -> itemIds
+      title:
+        nextVersionLabel && (wir?.title || "").trim()
+          ? `${wir.title} ${nextVersionLabel}`
+          : wir?.title || undefined,
+      description: note?.trim() || undefined, // controller reads description or note
+    };
+  }
+
   // Load authoritative WIR (with items + latest inspector/status mirrors)
   const [fullWir, setFullWir] = useState<any | null>(null);
   const [loadingWir, setLoadingWir] = useState(false);
@@ -58,7 +76,10 @@ export default function FollowupScheduleModal({
       try {
         setLoadingWir(true);
         const { data } = await api.get(`/projects/${projectId}/wir/${wir.wirId}`);
-        if (!ignore) setFullWir(data || null);
+        // unwrap common shapes: {data}, {wir}, or bare row
+        const row =
+          (data && (data.data || data.wir)) ? (data.data || data.wir) : data;
+        if (!ignore) setFullWir(row || null);
       } catch {
         if (!ignore) setFullWir(null);
       } finally {
@@ -96,17 +117,24 @@ export default function FollowupScheduleModal({
     setSubmitting(true);
     setErr(null);
     try {
-      // EXACT shape the controller expects for /followup
-      const body = {
-        forDate: dateISO,                            // "YYYY-MM-DD"
-        forTime: time,                               // "HH:mm"
-        includeItemIds: failedItemIds,               // REQUIRED by controller
-        title:
-          nextVersionLabel && (wir?.title || "").trim()
-            ? `${wir.title} ${nextVersionLabel}`
-            : wir?.title || undefined,
-        description: note?.trim() || undefined,      // optional
-      };
+      // series continuity: prefer freshly loaded WIR (authoritative), fallback to prop
+      const base = (fullWir || wir) as any;
+      const seriesId = base?.seriesId || undefined;
+
+      // // EXACT shape the controller expects for /followup
+      // const body = {
+      //   forDate: dateISO,                            // "YYYY-MM-DD"
+      //   forTime: time,                               // "HH:mm"
+      //   includeItemIds: failedItemIds,               // REQUIRED by controller
+      //   title:
+      //     nextVersionLabel && (wir?.title || "").trim()
+      //       ? `${wir.title} ${nextVersionLabel}`
+      //       : wir?.title || undefined,
+      //   description: note?.trim() || undefined,      // optional
+      //   seriesId,                                    // *Explicit series continuity
+
+      // };
+      const body = buildFollowupBody();
 
       const { data } = await api.post(
         `/projects/${projectId}/wir/${wir.wirId}/followup`,
@@ -119,9 +147,9 @@ export default function FollowupScheduleModal({
     } catch (e: any) {
       setErr(
         e?.response?.data?.message ||
-          e?.response?.data?.error ||
-          e?.message ||
-          "Failed to create follow-up."
+        e?.response?.data?.error ||
+        e?.message ||
+        "Failed to create follow-up."
       );
     } finally {
       setSubmitting(false);
@@ -227,7 +255,7 @@ export default function FollowupScheduleModal({
           <button
             className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white disabled:opacity-60"
             disabled={disabled}
-            onClick={createFollowup}
+            onClick={() => setConfirmOpen(true)}
             title={
               failedItemIds.length === 0
                 ? "There are no FAILED/NCR items in this WIR"
@@ -237,6 +265,91 @@ export default function FollowupScheduleModal({
             {submitting ? "Creating…" : "Create Follow-up"}
           </button>
         </div>
+        {confirmOpen && (
+          <div className="fixed inset-0 z-[114] flex items-center justify-center bg-black/50">
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-base font-semibold dark:text-white">Confirm Follow-up</div>
+                <button
+                  className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  onClick={() => !confirmBusy && setConfirmOpen(false)}
+                  disabled={confirmBusy}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-3 text-sm divide-y">
+                <div className="py-2 flex justify-between gap-3">
+                  <div className="text-gray-600 dark:text-gray-300">Parent</div>
+                  <div className="text-right dark:text-white truncate">
+                    {(wir.code ? `${wir.code} — ` : "") + (wir.title || "WIR")}
+                  </div>
+                </div>
+
+                <div className="py-2 flex justify-between gap-3">
+                  <div className="text-gray-600 dark:text-gray-300">Date</div>
+                  <div className="text-right dark:text-white">{dateISO || "—"}</div>
+                </div>
+
+                <div className="py-2 flex justify-between gap-3">
+                  <div className="text-gray-600 dark:text-gray-300">Time</div>
+                  <div className="text-right dark:text-white">{time || "—"}</div>
+                </div>
+
+                <div className="py-2 flex justify-between gap-3">
+                  <div className="text-gray-600 dark:text-gray-300">Failed Items</div>
+                  <div className="text-right dark:text-white">{failedItemIds.length}</div>
+                </div>
+
+                <div className="py-2">
+                  <div className="text-gray-600 dark:text-gray-300 mb-1">Failed Item IDs (sample)</div>
+                  <div className="text-[12px] font-mono break-all dark:text-white">
+                    {failedItemIds.slice(0, 5).join(", ")}{failedItemIds.length > 5 ? " …" : ""}
+                  </div>
+                </div>
+
+                <div className="py-2">
+                  <div className="text-gray-600 dark:text-gray-300 mb-1">JSON to be sent</div>
+                  <pre className="text-[12px] leading-snug whitespace-pre-wrap break-all font-mono p-2 rounded-lg border dark:border-neutral-800 dark:text-white bg-gray-50 dark:bg-neutral-800/50">
+                    {JSON.stringify(buildFollowupBody(), null, 2)}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                  onClick={() => setConfirmOpen(false)}
+                  disabled={confirmBusy}
+                >
+                  Back
+                </button>
+                <button
+                  className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white disabled:opacity-60"
+                  onClick={async () => {
+                    setConfirmBusy(true);
+                    try {
+                      await createFollowup();
+                    } finally {
+                      setConfirmBusy(false);
+                      setConfirmOpen(false);
+                    }
+                  }}
+                  disabled={confirmBusy || submitting || loadingWir || failedItemIds.length === 0}
+                  title={
+                    failedItemIds.length === 0
+                      ? "There are no FAILED/NCR items in this WIR"
+                      : "Create next version with only FAILED/NCR items"
+                  }
+                >
+                  {confirmBusy ? "Creating…" : "Confirm & Create"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

@@ -741,6 +741,54 @@ export default function WIRDocDis() {
     // runner no-edit permission dialog
     const [noEditPermOpen, setNoEditPermOpen] = useState(false);
 
+    // Helper: contractor fallback uid (prefer contractorId, else createdById)
+    const contractorUid = useMemo<string | null>(() => {
+        const c1 = row?.contractorId ? String(row.contractorId) : null;
+        const c2 = !c1 && row?.createdById ? String(row.createdById) : null;
+        return c1 || c2 || null;
+    }, [row?.contractorId, row?.createdById]);
+
+    // Map local finalizeOutcome → HOD header outcome
+    const mappedFinalizeOutcome = useMemo<"APPROVE" | "REJECT" | null>(() => {
+        if (!finalizeOutcome) return null;
+        return finalizeOutcome === "ACCEPT" ? "APPROVE" : "REJECT";
+    }, [finalizeOutcome]);
+
+    // Build Phase 1 preview payload (header patch)
+    const finalizePhase1Preview = useMemo(() => {
+        if (!mappedFinalizeOutcome) return null;
+
+        // bicUserId re-assignment per rules
+        let nextBic: string | null = null;
+        if (mappedFinalizeOutcome === "APPROVE") {
+            nextBic =
+                row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS"
+                    ? contractorUid
+                    : null;
+        } else {
+            // REJECT
+            nextBic = contractorUid;
+        }
+
+        const p1: Record<string, any> = {
+            hodOutcome: mappedFinalizeOutcome, // "APPROVE" | "REJECT"
+            hodDecidedAt: new Date().toISOString(),
+            bicUserId: nextBic,
+        };
+        const note = (finalizeNote || "").trim();
+        if (note) p1.hodRemarks = note;
+
+        return p1;
+    }, [mappedFinalizeOutcome, finalizeNote, row?.inspectorRecommendation, contractorUid]);
+
+    // Build Phase 2 preview payload (status patch)
+    const finalizePhase2Preview = useMemo(() => {
+        if (!mappedFinalizeOutcome) return null;
+        return {
+            status: mappedFinalizeOutcome === "APPROVE" ? "Approved" : "Rejected",
+        };
+    }, [mappedFinalizeOutcome]);
+
     // click handler used by the button
     const onSendToHodClick = useCallback(async () => {
         const res = validateAllRunnerFields();
@@ -2197,6 +2245,65 @@ export default function WIRDocDis() {
                                 <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
                                     {finalizeNote.length}/200
                                 </div>
+                            </div>
+                        </section>
+
+                        {/* Tile 3: What will be sent */}
+                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                What will be sent
+                            </div>
+
+                            <div className="text-[12px] text-gray-700 dark:text-gray-300">
+                                When HOD clicks <b>“Finalize Now”</b>:
+                            </div>
+
+                            {/* Phase 1 — header patch */}
+                            <div className="rounded-lg border dark:border-neutral-800 p-3">
+                                <div className="text-[12px] font-semibold mb-1">Phase 1 — header patch (single PATCH)</div>
+                                {mappedFinalizeOutcome ? (
+                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100 p-2 rounded">
+                                        {JSON.stringify(finalizePhase1Preview, null, 2)}
+                                    </pre>
+                                ) : (
+                                    <div className="text-[12px] text-gray-600 dark:text-gray-400">
+                                        Pick <b>Accept</b> or <b>Reject</b> to preview the exact payload.
+                                    </div>
+                                )}
+                                <ul className="mt-2 list-disc pl-5 text-[12px] text-gray-700 dark:text-gray-300 space-y-1">
+                                    <li><code>hodOutcome</code> = <code>"APPROVE"</code> for Accept, <code>"REJECT"</code> for Reject (mapped from local <code>"ACCEPT"</code> | <code>"REJECT"</code>).</li>
+                                    <li><code>hodDecidedAt</code> = current ISO timestamp.</li>
+                                    <li><code>hodRemarks</code> included only if note is non-empty (trimmed).</li>
+                                    <li><code>bicUserId</code> reassigned per rules:
+                                        <ul className="list-disc pl-5 mt-1">
+                                            <li>APPROVE + Inspector <code>APPROVE_WITH_COMMENTS</code> → contractorUid (fallback: <code>contractorId</code>, else <code>createdById</code>, else <code>null</code>)</li>
+                                            <li>APPROVE + Inspector plain <code>APPROVE</code> → <code>null</code></li>
+                                            <li>REJECT → contractorUid (same fallback)</li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            {/* Phase 2 — status patch */}
+                            <div className="rounded-lg border dark:border-neutral-800 p-3">
+                                <div className="text-[12px] font-semibold mb-1">Phase 2 — status patch (separate PATCH)</div>
+                                {mappedFinalizeOutcome ? (
+                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100 p-2 rounded">
+                                        {JSON.stringify(finalizePhase2Preview, null, 2)}
+                                    </pre>
+                                ) : (
+                                    <div className="text-[12px] text-gray-600 dark:text-gray-400">
+                                        Pick an outcome to see the final status payload.
+                                    </div>
+                                )}
+                                <ul className="mt-2 list-disc pl-5 text-[12px] text-gray-700 dark:text-gray-300 space-y-1">
+                                    <li>If Accept → <code>{"{ status: \"Approved\" }"}</code></li>
+                                    <li>If Reject → <code>{"{ status: \"Rejected\" }"}</code></li>
+                                </ul>
+                            </div>
+
+                            <div className="text-[12px] text-gray-700 dark:text-gray-300">
+                                Then the app refreshes the document via <code>fetchWir()</code>, closes the modal, and clears local finalize state.
                             </div>
                         </section>
 

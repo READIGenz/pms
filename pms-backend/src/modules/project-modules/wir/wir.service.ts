@@ -87,12 +87,13 @@ export class WirService {
       row?.title ??
       null;
 
-    // prevWirId from "Created by roll-forward" meta or similar
+    // prevWirId: prefer row.prevWirId if present; else fall back to history meta
     const createdHist = hist.find(
       (h: any) => h?.action === 'Created' && h?.meta && (h.meta as any).fromWirId
     );
-    const prevWirId = createdHist ? (createdHist.meta as any).fromWirId : null;
-
+    const prevWirId =
+      (row?.prevWirId as string | null | undefined) ??
+      (createdHist ? (createdHist.meta as any).fromWirId : null);
     // checklist → itemsCount via currently loaded items (no extra DB hits)
     const items = Array.isArray(row.items) ? row.items : [];
     const byChecklistCount = items.reduce((acc: Record<string, number>, it: any) => {
@@ -917,8 +918,8 @@ export class WirService {
   }
 
   // Create a new WIR “version” with only failed/NCR items (true versioning via new row)
-  // === REPLACE the entire rollForward method with this ===
   async rollForward(projectId: string, wirId: string, currentUserId: string | null, dto: RollForwardDto) {
+    // fetch parent row (scalars + relations)
     const src = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
       include: { items: true, checklists: true },
@@ -935,6 +936,15 @@ export class WirService {
 
     // Create the new WIR and clone items INSIDE the tx...
     const next = await this.prisma.$transaction(async (tx) => {
+      // derive child version & code inside the same DB transaction
+      const parentVersion = (Number(src.version) || 1);
+      const nextVersion = parentVersion + 1;
+      const baseCode = (src.code && src.code.trim().length)
+        ? src.code.trim()
+        : await this.nextWirCode(tx);
+      const childCode = `${baseCode} v${nextVersion}`;
+      // BEFORE creating the child row, derive safe snapshot id
+const snapshotId: string | undefined = (src.activitySnapshot as any)?.id;
       // 1) create header (new WIR row)
       const nextWir = await tx.wir.create({
         data: {
@@ -947,24 +957,17 @@ export class WirService {
           forTime: forTime ?? undefined,
           createdById: currentUserId ?? undefined,
           seriesId: src.seriesId,
+          // Persist version and derived child code
+          code: childCode,
+          version: nextVersion,
+          // explicit parent linkage for follow-ups
+          prevWirId: wirId,
+          // --- Activity link & snapshot inheritance (freeze definition if parent had it) ---
+          activityRefId: src.activityRefId ?? snapshotId ?? undefined,
+          activitySnapshot: src.activitySnapshot ?? undefined,
+          activitySnapshotVersion: (src.activitySnapshotVersion ?? undefined),
         },
       });
-
-      // 2) (optional) attach same checklists if you want to carry them forward
-      // If you want parity, uncomment and keep if you had it before:
-      // if (src.checklists.length) {
-      //   await tx.wirChecklist.createMany({
-      //     data: src.checklists.map((c, idx) => ({
-      //       wirId: nextWir.wirId,
-      //       checklistId: c.checklistId,
-      //       checklistCode: c.checklistCode ?? undefined,
-      //       checklistTitle: c.checklistTitle ?? undefined,
-      //       discipline: c.discipline ?? undefined,
-      //       versionLabel: c.versionLabel ?? undefined,
-      //       order: c.order ?? (idx + 1),
-      //     })),
-      //   });
-      // }
 
       // 3) clone the chosen items (provenance retained)
       const chosen = src.items.filter(it => itemIds.includes(it.id));
@@ -1016,6 +1019,8 @@ export class WirService {
       { fromWirId: wirId }
     );
 
+    //const version = await this.computedVersion(next.wirId);
+    // keep return shape; version already set above, but we compute for parity with existing callers
     const version = await this.computedVersion(next.wirId);
     return { wirId: next.wirId, version, title: next.title, status: next.status };
   }
