@@ -2341,11 +2341,13 @@ export default function WIRDocDis() {
                     onCreated={(newWirId?: string) => {
                         setFollowupOpen(false);
                         if (newWirId) {
-                            // Send to list; highlight & auto-scroll handled by WIR.tsx you already added
-                            navigate(`/home/projects/${projectId}/wir?hl=${newWirId}`, {
-                                replace: true,
-                                state: { role: effectiveRole, project: { projectId } },
-                            });
+                            const role = (loc.state as NavState | undefined)?.role;
+                            const project = (loc.state as NavState | undefined)?.project || { projectId };
+                            // Open Create in EDIT mode for this freshly created follow-up
+                            navigate(
+                                `/home/projects/${projectId}/wir/create?mode=followup&editId=${newWirId}`,
+                                { state: { role, project }, replace: true }
+                            );
                         }
                     }}
                 />

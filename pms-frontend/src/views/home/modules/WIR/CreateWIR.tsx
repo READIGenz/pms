@@ -159,12 +159,33 @@ function pickActiveActivityId(wir: any): string {
     return "";
 }
 
+// function pickSelectedChecklistIds(wir: any): string[] {
+//     if (!Array.isArray(wir?.checklists)) return [];
+//     const ids = wir.checklists
+//         .map((c: any) => String(c?.checklistId ?? c?.id ?? ""))
+//         .filter(Boolean);
+//     return Array.from(new Set(ids));
+// }
 function pickSelectedChecklistIds(wir: any): string[] {
-    if (!Array.isArray(wir?.checklists)) return [];
-    const ids = wir.checklists
-        .map((c: any) => String(c?.checklistId ?? c?.id ?? ""))
-        .filter(Boolean);
-    return Array.from(new Set(ids));
+    const out = new Set<string>();
+
+    // 1) Normal drafts/edits: checklists[] present
+    if (Array.isArray(wir?.checklists) && wir.checklists.length) {
+        for (const c of wir.checklists) {
+            const id = String(c?.checklistId ?? c?.id ?? "");
+            if (id) out.add(id);
+        }
+    }
+
+    // 2) Follow-up drafts: checklists[] empty, but items[] carry sourceChecklistId
+    if (out.size === 0 && Array.isArray(wir?.items)) {
+        for (const it of wir.items) {
+            const id = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
+            if (id) out.add(id);
+        }
+    }
+
+    return Array.from(out);
 }
 
 // --- constants/types ---
@@ -317,6 +338,8 @@ export default function CreateWIR() {
     const search = new URLSearchParams(loc.search);
     const editId = search.get("editId") || (loc.state as any)?.wir?.wirId || null;
     const isEdit = !!editId;
+    const isFollowupMode = search.get("mode") === "followup";
+
     console.log("[WIR] edit: flags", { isEdit, editId, search: loc.search });
 
     const navigate = useNavigate();
@@ -1116,7 +1139,14 @@ export default function CreateWIR() {
                         </button>
                     </div>
                 </div>
-
+                {isFollowupMode && (
+                    <div className="mt-2">
+                        <div className="inline-flex items-center gap-2 text-[12px] px-2.5 py-1 rounded-lg border dark:border-neutral-800 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-300" />
+                            Follow-up draft — prefilled from previous WIR
+                        </div>
+                    </div>
+                )}
                 {/* Body grid */}
                 <div className="mt-4 sm:mt-5 space-y-4 sm:space-y-5">
                     {/* ===== Section 1 — Project & Reference ===== */}

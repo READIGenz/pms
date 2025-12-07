@@ -944,7 +944,7 @@ export class WirService {
         : await this.nextWirCode(tx);
       const childCode = `${baseCode} v${nextVersion}`;
       // BEFORE creating the child row, derive safe snapshot id
-const snapshotId: string | undefined = (src.activitySnapshot as any)?.id;
+      const snapshotId: string | undefined = (src.activitySnapshot as any)?.id;
       // 1) create header (new WIR row)
       const nextWir = await tx.wir.create({
         data: {
@@ -966,6 +966,9 @@ const snapshotId: string | undefined = (src.activitySnapshot as any)?.id;
           activityRefId: src.activityRefId ?? snapshotId ?? undefined,
           activitySnapshot: src.activitySnapshot ?? undefined,
           activitySnapshotVersion: (src.activitySnapshotVersion ?? undefined),
+          // carry forward location
+          cityTown: src.cityTown ?? undefined,
+          stateName: src.stateName ?? undefined,
         },
       });
 
