@@ -1,6 +1,16 @@
 // src/views/home/modules/WIR/FollowupScheduleModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
+
+// ---- dev logging helper (keeps logs consistent) ----
+function flog(label: string, obj?: any) {
+  try {
+    console.info(`[Followup] ${label}:`, obj ?? "");
+  } catch {
+    console.info(`[Followup] ${label} (unserializable)`);
+  }
+}
 
 type WirItemLite = {
   id: string;
@@ -19,7 +29,6 @@ type WirDocLite = {
   version?: number | null;
   items?: WirItemLite[];
   seriesId?: string | null;           // Needed to pass parent series
-
 };
 
 export default function FollowupScheduleModal({
@@ -44,18 +53,7 @@ export default function FollowupScheduleModal({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
-  function buildFollowupBody() {
-    return {
-      forDate: dateISO,                       // "YYYY-MM-DD"
-      forTime: time,                          // "HH:mm"
-      includeItemIds: failedItemIds,          // controller maps -> itemIds
-      title:
-        nextVersionLabel && (wir?.title || "").trim()
-          ? `${wir.title} ${nextVersionLabel}`
-          : wir?.title || undefined,
-      description: note?.trim() || undefined, // controller reads description or note
-    };
-  }
+  const navigate = useNavigate();
 
   // Load authoritative WIR (with items + latest inspector/status mirrors)
   const [fullWir, setFullWir] = useState<any | null>(null);
@@ -87,9 +85,7 @@ export default function FollowupScheduleModal({
       }
     }
     load();
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, wir?.wirId]);
 
@@ -113,38 +109,95 @@ export default function FollowupScheduleModal({
       .filter(Boolean);
   }, [fullWir, wir]);
 
+  function buildFollowupBody() {
+    const body = {
+      // LEGACY payload (your BE tolerance accepts this)
+      forDate: dateISO,                       // "YYYY-MM-DD"
+      forTime: time,                          // "HH:mm"
+      includeItemIds: failedItemIds,          // controller maps -> itemIds
+      seriesId: wir?.seriesId || undefined,
+      title:
+        nextVersionLabel && (wir?.title || "").trim()
+          ? `${wir.title} ${nextVersionLabel}`
+          : wir?.title || undefined,
+      description: note?.trim() || undefined, // controller reads description or note
+    };
+    flog("buildFollowupBody()", {
+      parentWirId: wir?.wirId,
+      dateISO,
+      time,
+      failedCount: failedItemIds.length,
+      sampleFailed: failedItemIds.slice(0, 5),
+      body,
+    });
+    return body;
+  }
+
   async function createFollowup() {
     setSubmitting(true);
     setErr(null);
     try {
-      // series continuity: prefer freshly loaded WIR (authoritative), fallback to prop
-      const base = (fullWir || wir) as any;
-      const seriesId = base?.seriesId || undefined;
+      flog("create:start", {
+        projectId,
+        parentWirId: wir?.wirId,
+        locationBefore: window.location.pathname,
+      });
 
-      // // EXACT shape the controller expects for /followup
-      // const body = {
-      //   forDate: dateISO,                            // "YYYY-MM-DD"
-      //   forTime: time,                               // "HH:mm"
-      //   includeItemIds: failedItemIds,               // REQUIRED by controller
-      //   title:
-      //     nextVersionLabel && (wir?.title || "").trim()
-      //       ? `${wir.title} ${nextVersionLabel}`
-      //       : wir?.title || undefined,
-      //   description: note?.trim() || undefined,      // optional
-      //   seriesId,                                    // *Explicit series continuity
-
-      // };
       const body = buildFollowupBody();
 
+      flog("POST /followup ->", {
+        url: `/projects/${projectId}/wir/${wir.wirId}/followup`,
+        body,
+      });
       const { data } = await api.post(
         `/projects/${projectId}/wir/${wir.wirId}/followup`,
         body
       );
 
       // BE returns { wirId, version, ... }
-      onCreated?.(data?.wirId);
+      flog("POST success: raw data", data);
+      const newId = data?.wirId ?? data?.data?.wirId;
+      flog("derived newId", newId);
+
+      if (onCreated) onCreated(newId);
+      // // Always take user to the doc page with the /home prefix (prevents reload → auth guard → /login)
+      // if (newId) {
+      //   const target = `/home/projects/${projectId}/wir/${newId}/doc`;
+      //   flog("navigate()", { target });
+      //   navigate(target, { state: { project: { projectId } } });
+      // }
+      // Go to WIR LIST view (with /home prefix to avoid auth guard flicker)
+      // Tip: we also pass the freshly created WIR id in state so list view can highlight/scroll if desired.
+      {
+        const target = `/home/projects/${projectId}/wir`;
+        flog("navigate()", { target, focusWirId: newId });
+        navigate(target, {
+          state: { project: { projectId }, focusWirId: newId ?? null },
+          replace: true,
+        });
+      }
+      flog("closing modal");
       onClose();
+      setTimeout(() => {
+        flog("locationAfterSuccess", window.location.pathname);
+      }, 0);
     } catch (e: any) {
+      // Maximum visibility on why FE might treat this as auth loss
+      flog("ERROR", {
+        message: e?.message,
+        status: e?.response?.status,
+        data: e?.response?.data,
+        headers: e?.response?.headers,
+        axiosUrl: e?.config?.url,
+        axiosMethod: e?.config?.method,
+        responseURL: e?.request?.responseURL,
+        locationNow: window.location.pathname,
+      });
+      if (e?.response?.status === 400) {
+        console.warn(
+          "[Followup] 400 detected — if an axios interceptor treats 400/403 as auth loss, this would trigger a redirect to /login."
+        );
+      }
       setErr(
         e?.response?.data?.message ||
         e?.response?.data?.error ||
@@ -152,6 +205,10 @@ export default function FollowupScheduleModal({
         "Failed to create follow-up."
       );
     } finally {
+      flog("create:finally", {
+        submittingWas: true,
+        locationFinally: window.location.pathname,
+      });
       setSubmitting(false);
     }
   }
@@ -265,6 +322,7 @@ export default function FollowupScheduleModal({
             {submitting ? "Creating…" : "Create Follow-up"}
           </button>
         </div>
+
         {confirmOpen && (
           <div className="fixed inset-0 z-[114] flex items-center justify-center bg-black/50">
             <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-xl p-4">
@@ -305,7 +363,8 @@ export default function FollowupScheduleModal({
                 <div className="py-2">
                   <div className="text-gray-600 dark:text-gray-300 mb-1">Failed Item IDs (sample)</div>
                   <div className="text-[12px] font-mono break-all dark:text-white">
-                    {failedItemIds.slice(0, 5).join(", ")}{failedItemIds.length > 5 ? " …" : ""}
+                    {failedItemIds.slice(0, 5).join(", ")}
+                    {failedItemIds.length > 5 ? " …" : ""}
                   </div>
                 </div>
 
@@ -328,6 +387,7 @@ export default function FollowupScheduleModal({
                 <button
                   className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white disabled:opacity-60"
                   onClick={async () => {
+                    flog("confirmClick", { disabled, loadingWir, submitting, failedCount: failedItemIds.length });
                     setConfirmBusy(true);
                     try {
                       await createFollowup();
@@ -349,7 +409,6 @@ export default function FollowupScheduleModal({
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

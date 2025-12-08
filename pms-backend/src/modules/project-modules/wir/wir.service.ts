@@ -74,6 +74,29 @@ export class WirService {
 
   constructor(private prisma: PrismaService) { }
 
+  // BAD statuses considered as "failed" for follow-ups
+  private static readonly BAD_STATUSES = new Set(['NCR', 'FAIL', 'NOT_OK', 'REJECT', 'REWORK', 'PENDING']);
+
+  private isFailedItem(row: {
+    status?: string | null;
+    inspectorStatus?: string | null;
+    hodStatus?: string | null;
+    runs?: Array<{ status?: string | null }>;
+  }): boolean {
+    // S = inspectorStatus || hodStatus || status
+    const S = String(row.inspectorStatus ?? row.hodStatus ?? row.status ?? '')
+      .trim()
+      .toUpperCase();
+    if (WirService.BAD_STATUSES.has(S)) return true;
+
+    // RS = last run status (if any)
+    const lastRun = Array.isArray(row.runs) && row.runs.length ? row.runs[0] : null; // we load take:1 DESC
+    const RS = String(lastRun?.status ?? '').trim().toUpperCase();
+    if (WirService.BAD_STATUSES.has(RS)) return true;
+
+    return false;
+  }
+
   private buildWirContract(row: any, version: number): WirContract {
     // activityId fallback from histories
     const hist = Array.isArray(row.histories) ? row.histories : [];
@@ -307,11 +330,10 @@ export class WirService {
     });
     if (!wir) throw new NotFoundException('WIR not found');
 
-    const version = await this.computedVersion(wirId);
     if (opts?.contract) {
-      return this.buildWirContract(wir as any, version);
+      return this.buildWirContract(wir as any, (wir as any).version ?? 1);
     }
-    return { ...(wir as any), version };
+    return wir as any; // already includes version column
   }
 
   // --- Generate next WIR code inside a transaction (fixed-width so lexicographic sort works)
@@ -365,7 +387,8 @@ export class WirService {
           seriesId: randomUUID(),
           activityRefId: dto.activityId ?? undefined,
         },
-        select: { wirId: true, code: true, title: true, status: true },
+        // include version (will be NULL on fresh create)
+        select: { wirId: true, code: true, title: true, status: true, version: true },
       });
 
       // 3) Attach checklists (if any)
@@ -435,9 +458,14 @@ export class WirService {
         },
       });
 
-      // 6) Version (first row => 1)
-      const version = 1;
-      return { wirId: wir.wirId, code: wir.code, title: wir.title, version, status: wir.status };
+      // 6) No version yet — stays NULL until first submit/dispatch sets it to 1
+      return {
+        wirId: wir.wirId,
+        code: wir.code,
+        title: wir.title,
+        status: wir.status,
+        version: wir.version, // expected to be null here
+      };
     });
   }
 
@@ -447,7 +475,8 @@ export class WirService {
     dto: UpdateWirHeaderDto,
     actor?: { userId?: string | null; fullName?: string | null }
   ) {
-    const { createdById: _ignoreCreatedBy, ...safeDto } = (dto as any) || {};
+    // Never allow PATCH to mutate `version`
+    const { createdById: _ignoreCreatedBy, version: _ignoreVersion, ...safeDto } = (dto as any) || {};
     // Validate HOD outcome early so we surface a clean 400 (not a Prisma error)
     if (safeDto.hodOutcome !== undefined && toHodOutcomeEnum(safeDto.hodOutcome) === undefined) {
       throw new BadRequestException(
@@ -516,9 +545,7 @@ export class WirService {
         safeDto.inspectorRecommendation !== undefined
           ? (safeDto.inspectorRecommendation as any)
           : undefined,
-      version:
-        safeDto.version !== undefined ? safeDto.version : undefined,
-
+      // NOTE: version is intentionally ignored on PATCH
       //  (optional) keep audit parity timestamp when recommendation is set via PATCH
       inspectorReviewedAt:
         safeDto.inspectorRecommendation !== undefined ? new Date() : undefined,
@@ -642,9 +669,11 @@ export class WirService {
         { activityId: safeDto.activityId ?? undefined },
         actor
       );
-
-      const version = await this.computedVersion(wirId);
-      return { ...updated, version };
+      const current = await this.prisma.wir.findUnique({
+        where: { wirId },
+        select: { version: true },
+      });
+      return { ...updated, version: current?.version ?? null };
     }
 
     // ---------- Header + Checklist sync in a single transaction ----------
@@ -739,7 +768,7 @@ export class WirService {
       };
     }) as { added: number; removed: number; addedIds: string[]; removedIds: string[] };
 
-    // 5) History + version
+    // 5) History + return stored version
     await this.writeHistory(
       projectId,
       wirId,
@@ -753,9 +782,12 @@ export class WirService {
       actor
     );
 
-    const updatedHeader = await this.prisma.wir.findUnique({ where: { wirId } });
-    const version = await this.computedVersion(wirId);
-    return { ...updatedHeader, version };
+    const updatedHeader = await this.prisma.wir.findUnique({
+      where: { wirId },
+      select: { wirId: true, code: true, title: true, status: true, version: true, updatedAt: true },
+    });
+    return { ...updatedHeader, version: updatedHeader?.version ?? null };
+
   }
 
   async attachChecklists(projectId: string, wirId: string, dto: AttachChecklistsDto, actor?: { userId?: string | null; fullName?: string | null }) {
@@ -818,8 +850,8 @@ export class WirService {
     });
 
     await this.writeHistory(projectId, wirId, 'ItemsChanged', `Attached ${toAdd.length} checklist(s).`, { checklistIds: toAdd.map(r => r.id) }, actor);
-    const version = await this.computedVersion(wirId);
-    return { added: toAdd.length, materialized: dto.materializeItemsFromRef ? 'yes' : 'no', version };
+    const current = await this.prisma.wir.findUnique({ where: { wirId }, select: { version: true } });
+    return { added: toAdd.length, materialized: dto.materializeItemsFromRef ? 'yes' : 'no', version: current?.version ?? null };
   }
 
   async deleteWir(projectId: string, wirId: string) {
@@ -913,39 +945,72 @@ export class WirService {
       actor
     );
 
-    const version = await this.computedVersion(wirId);
-    return { added: toAdd.length, removed: toRemove.length, version };
+    const current = await this.prisma.wir.findUnique({ where: { wirId }, select: { version: true } });
+    return { added: toAdd.length, removed: toRemove.length, version: current?.version ?? null };
+
   }
 
   // Create a new WIR “version” with only failed/NCR items (true versioning via new row)
-  async rollForward(projectId: string, wirId: string, currentUserId: string | null, dto: RollForwardDto) {
-    // fetch parent row (scalars + relations)
+  // Create a new WIR “version” keeping only failed/NCR items (auto-select if dto.itemIds omitted)
+  async rollForward(
+    projectId: string,
+    wirId: string,
+    currentUserId: string | null,
+    dto: RollForwardDto
+  ) {
+    // Load source with minimal relations needed to evaluate failures
     const src = await this.prisma.wir.findFirst({
       where: { projectId, wirId },
-      include: { items: true, checklists: true },
+      include: {
+        checklists: true,
+        items: {
+          orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            runs: {
+              select: { status: true, createdAt: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
     });
     if (!src) throw new NotFoundException('WIR not found');
 
-    // choose items (STRICT: must be provided by caller; no auto fallback)
-    const itemIds = Array.isArray(dto.itemIds) ? dto.itemIds.filter(Boolean) : [];
-    if (itemIds.length === 0) {
-      throw new BadRequestException('No items provided to roll forward.');
+    // 1) Choose items
+    const explicitIds = Array.isArray(dto.itemIds) ? dto.itemIds.filter(Boolean) : [];
+
+    let chosen = [] as typeof src.items;
+    if (explicitIds.length > 0) {
+      // Back-compat: keep exactly what caller asked for (by snapshot item row id)
+      const explicitSet = new Set(explicitIds);
+      chosen = src.items.filter((it) => explicitSet.has(it.id));
+      if (!chosen.length) {
+        throw new BadRequestException('None of the provided items exist under this WIR.');
+      }
+    } else {
+      // Auto: derive failed items by predicate
+      chosen = src.items.filter((it) => this.isFailedItem(it));
+      if (!chosen.length) {
+        throw new BadRequestException('No failed items to roll forward from the source WIR.');
+      }
     }
 
     const { forDate, forTime } = splitDateTime(dto.plannedAt);
 
-    // Create the new WIR and clone items INSIDE the tx...
+    // 2) Create new WIR (child) + keep only needed checklists + copy only chosen items (reset outcomes)
     const next = await this.prisma.$transaction(async (tx) => {
-      // derive child version & code inside the same DB transaction
-      const parentVersion = (Number(src.version) || 1);
+      // version & code
+      const parentVersion = Number(src.version) || 1;
       const nextVersion = parentVersion + 1;
-      const baseCode = (src.code && src.code.trim().length)
-        ? src.code.trim()
-        : await this.nextWirCode(tx);
+      const baseCode =
+        src.code && src.code.trim().length ? src.code.trim() : await this.nextWirCode(tx);
       const childCode = `${baseCode} v${nextVersion}`;
-      // BEFORE creating the child row, derive safe snapshot id
+
+      // activity snapshot carry-forward (frozen definition)
       const snapshotId: string | undefined = (src.activitySnapshot as any)?.id;
-      // 1) create header (new WIR row)
+
+      // 2.1 Header
       const nextWir = await tx.wir.create({
         data: {
           projectId,
@@ -957,35 +1022,60 @@ export class WirService {
           forTime: forTime ?? undefined,
           createdById: currentUserId ?? undefined,
           seriesId: src.seriesId,
-          // Persist version and derived child code
           code: childCode,
           version: nextVersion,
-          // explicit parent linkage for follow-ups
           prevWirId: wirId,
-          // --- Activity link & snapshot inheritance (freeze definition if parent had it) ---
           activityRefId: src.activityRefId ?? snapshotId ?? undefined,
           activitySnapshot: src.activitySnapshot ?? undefined,
-          activitySnapshotVersion: (src.activitySnapshotVersion ?? undefined),
-          // carry forward location
+          activitySnapshotVersion: src.activitySnapshotVersion ?? undefined,
           cityTown: src.cityTown ?? undefined,
           stateName: src.stateName ?? undefined,
+          materialized: true,           // child is effectively a materialized follow-up
+          snapshotAt: new Date(),
         },
       });
 
-      // 3) clone the chosen items (provenance retained)
-      const chosen = src.items.filter(it => itemIds.includes(it.id));
+      // 2.2 Checklists: only those referenced by chosen items (dedup)
+      const keepChecklistIds = Array.from(
+        new Set(
+          chosen.map((it) => it.sourceChecklistId || it.checklistId).filter((x): x is string => !!x)
+        )
+      );
+
+      // Map from src.checklists for code/title/discipline/versionLabel
+      const byId = new Map(src.checklists.map((c) => [c.checklistId, c]));
+      if (keepChecklistIds.length) {
+        await tx.wirChecklist.createMany({
+          data: keepChecklistIds.map((cid, idx) => ({
+            wirId: nextWir.wirId,
+            checklistId: cid,
+            checklistCode: byId.get(cid)?.checklistCode ?? undefined,
+            checklistTitle: byId.get(cid)?.checklistTitle ?? undefined,
+            discipline: byId.get(cid)?.discipline as any,
+            versionLabel: byId.get(cid)?.versionLabel ?? undefined,
+            order: idx + 1,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // 2.3 Items: clone ONLY chosen; reset outcome fields and DO NOT copy runs
       if (chosen.length) {
         await tx.wirItem.createMany({
           data: chosen.map((it, idx) => ({
             wirId: nextWir.wirId,
             checklistId: it.checklistId ?? undefined,
             itemId: it.itemId ?? undefined,
-            seq: idx + 1,
+            seq: idx + 1,                         // fresh order within follow-up
             name: it.name,
             spec: it.spec ?? undefined,
-            required: it.required ?? undefined,
+            required: undefined,                  // keep DB clean (spec holds requirement)
             tolerance: it.tolerance ?? undefined,
-            status: 'Unknown',
+            status: 'Unknown',                    // reset outcome
+            inspectorStatus: null,
+            inspectorNote: null,
+            hodStatus: null,
+            hodNote: null,
             sourceChecklistId: it.sourceChecklistId ?? undefined,
             sourceChecklistItemId: it.sourceChecklistItemId ?? undefined,
             code: it.code ?? undefined,
@@ -997,15 +1087,15 @@ export class WirService {
             base: it.base ?? undefined,
             plus: it.plus ?? undefined,
             minus: it.minus ?? undefined,
+            createdAt: new Date(),
           })),
         });
       }
 
-      // IMPORTANT: do NOT write history here (still inside tx)
       return nextWir;
     });
 
-    // ...and write history AFTER the tx finishes using the root client
+    // 3) Histories (outside tx)
     await this.writeHistory(
       projectId,
       wirId,
@@ -1022,10 +1112,12 @@ export class WirService {
       { fromWirId: wirId }
     );
 
-    //const version = await this.computedVersion(next.wirId);
-    // keep return shape; version already set above, but we compute for parity with existing callers
-    const version = await this.computedVersion(next.wirId);
-    return { wirId: next.wirId, version, title: next.title, status: next.status };
+    return {
+      wirId: next.wirId,
+      version: next.version,
+      title: next.title,
+      status: next.status,
+    };
   }
 
   async dispatchWir(
@@ -1147,6 +1239,8 @@ export class WirService {
           status: 'Submitted',
           inspector: { connect: { userId: dto.inspectorId } },
           bic: { connect: { userId: dto.inspectorId } },
+          // set version = 1 only if not set yet
+          ...(wir.version == null ? { version: 1 } : {}),
           // only set createdBy if not already set
           ...(!wir.createdById && currentUserId
             ? { createdBy: { connect: { userId: currentUserId } } }
@@ -1277,8 +1371,9 @@ export class WirService {
       actor,
     );
 
-    const version = await this.computedVersion(wirId);
-    return { ...updated, version };
+    const current = await this.prisma.wir.findUnique({ where: { wirId }, select: { version: true } });
+    return { ...updated, version: current?.version ?? null };
+
   }
 
   // ---------- discussion helpers ----------

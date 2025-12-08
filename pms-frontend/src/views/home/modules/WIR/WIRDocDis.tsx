@@ -2219,7 +2219,7 @@ export default function WIRDocDis() {
                                 >
                                     Accept
                                 </button>
-                                <button
+                        {/*        <button
                                     type="button"
                                     onClick={() => setFinalizeOutcome("REJECT")}
                                     className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "REJECT"
@@ -2229,7 +2229,8 @@ export default function WIRDocDis() {
                                 >
                                     Reject
                                 </button>
-                            </div>
+                          */}
+                                </div>
 
                             <div>
                                 <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">

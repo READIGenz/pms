@@ -338,7 +338,12 @@ export default function CreateWIR() {
     const search = new URLSearchParams(loc.search);
     const editId = search.get("editId") || (loc.state as any)?.wir?.wirId || null;
     const isEdit = !!editId;
-    const isFollowupMode = search.get("mode") === "followup";
+
+    const initialFollowupFlag =
+        search.get("mode") === "followup" ||
+        !!(loc.state as any)?.followup ||
+        !!(loc.state as any)?.followupMode;
+    const [isFollowupMode, setIsFollowupMode] = useState<boolean>(initialFollowupFlag);
 
     console.log("[WIR] edit: flags", { isEdit, editId, search: loc.search });
 
@@ -511,6 +516,30 @@ export default function CreateWIR() {
     const ensureActivitiesRef = useRef(ensureActivities);
     useEffect(() => { ensureActivitiesRef.current = ensureActivities; }, [ensureActivities]);
 
+    // PATCH: follow-up viewer state (near other useState/useRef)
+    const editWirRef = useRef<any>(null);
+
+    type FailedUiItem = {
+        id: string;
+        text: string;
+        code: string | null;
+        refCode: string | null;   // checklist code
+        refTitle: string | null;  // checklist title
+        inspectorStatus: string | null;
+        status: string | null;
+        lastRunStatus: string | null;
+        units: string | null;
+        tolOp: string | null;
+        base: number | null;
+        plus: number | null;
+        minus: number | null;
+    };
+
+    const [fuOpen, setFuOpen] = useState(false);
+    const [fuLoading, setFuLoading] = useState(false);
+    const [fuErr, setFuErr] = useState<string | null>(null);
+    const [fuItems, setFuItems] = useState<FailedUiItem[]>([]);
+
     // Edit-loader effect
     useEffect(() => {
         if (!isEdit || !projectId || !editId) return;
@@ -525,6 +554,23 @@ export default function CreateWIR() {
                 logWir("edit:GET <- raw", res?.data);
                 logWir("edit:row (unwrapped)", row);
 
+                // ---- Infer follow-up from row ----
+                const inferredFollowup =
+                    String(row?.mode || row?.meta?.mode || "")
+                        .toLowerCase() === "followup" ||
+                    row?.meta?.followup === true ||
+                    row?.followup === true ||
+                    row?.isFollowup === true ||
+                    row?.is_followup === true ||
+                    !!(row?.prevWirId || row?.parentWirId || row?.sourceWirId || row?.followupOf || row?.revisionOf) ||
+                    // pattern: items exist (carried from prev), but checklists[] absent/empty
+                    (Array.isArray(row?.items) && row.items.length > 0 &&
+                        (!Array.isArray(row?.checklists) || row.checklists.length === 0));
+
+                if (inferredFollowup && !isFollowupMode) {
+                    setIsFollowupMode(true);
+                }
+                editWirRef.current = row;
                 // ---- Normalize plannedAt from (forDate, forTime) ----
                 const rawForDate = row.forDate ?? row.for_date ?? null;
 
@@ -641,9 +687,12 @@ export default function CreateWIR() {
                 });
 
                 // ---- Preselect attached reference checklists (trust header only) ----
+                // const refIds = pickSelectedChecklistIds(row);
+                // setSelectedRefIds(refIds);
                 const refIds = pickSelectedChecklistIds(row);
-                setSelectedRefIds(refIds);
-
+                const isFU = inferredFollowup || isFollowupMode;
+                // In follow-up, items already exist (only failed). Do NOT preselect checklists to avoid re-materialization.
+                setSelectedRefIds(isFU ? [] : refIds);
                 logWir("edit:checklists preselect", {
                     chosen: refIds,
                 });
@@ -658,6 +707,19 @@ export default function CreateWIR() {
 
         //}, [isEdit, projectId, editId, ensureActivities]);
     }, [isEdit, projectId, editId]);
+
+    const hasCarriedFailed = useMemo(() => {
+        const row = editWirRef.current;
+        return !!(row && Array.isArray(row.items) && row.items.length > 0);
+    }, [editWirRef.current]);
+
+    // Optional: if you want follow-up UI to toggle on when items are carried
+    useEffect(() => {
+        if (isEdit && !isFollowupMode && hasCarriedFailed) {
+            setIsFollowupMode(true);
+        }
+    }, [isEdit, isFollowupMode, hasCarriedFailed]);
+
     // Footer
     const [submitting, setSubmitting] = useState<boolean>(false);
     const [submitErr, setSubmitErr] = useState<string | null>(null);
@@ -903,12 +965,63 @@ export default function CreateWIR() {
             setViewLoading(false);
         }
     };
+
+    // PATCH: open Failed Items viewer for follow-up edit
+    const openViewFailed = async () => {
+        setFuErr(null);
+        setFuLoading(true);
+        setFuOpen(true);
+
+        try {
+            const row = editWirRef.current || {};
+            const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
+            const byChecklistId = new Map(
+                checklists.map((c: any) => [
+                    String(c?.checklistId ?? c?.id ?? ""),
+                    {
+                        code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+                        title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
+                    },
+                ])
+            );
+
+            const items: Array<any> = Array.isArray(row.items) ? row.items : [];
+            const list: FailedUiItem[] = items.map((it: any) => {
+                const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
+                const meta = byChecklistId.get(cid) || { code: null, title: null };
+                return {
+                    id: String(it?.id ?? crypto.randomUUID()),
+                    text: String(it?.name ?? it?.text ?? it?.title ?? "—"),
+                    code: (it?.code ?? null) as string | null,
+                    refCode: meta.code,
+                    refTitle: meta.title,
+                    inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
+                    status: (it?.status ?? null) as string | null,
+                    lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
+                    units: (it?.unit ?? null) as string | null,
+                    tolOp: (it?.tolerance ?? null) as string | null,
+                    base: (it?.base ?? null) as number | null,
+                    plus: (it?.plus ?? null) as number | null,
+                    minus: (it?.minus ?? null) as number | null,
+                };
+            });
+
+            setFuItems(list);
+        } catch (e: any) {
+            setFuErr(e?.response?.data?.error || e?.message || "Failed to load follow-up items.");
+        } finally {
+            setFuLoading(false);
+        }
+    };
+
     /* ---------------- validation ---------------- */
 
     const hasRequiredForSubmit = useMemo(() => {
         const hasDT = !!composeDateTimeISO(dateISO, hh, mm, ampm);
-        return Boolean(discipline && activityId && hasDT && selectedRefIds.length > 0);
-    }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds]);
+        const baseOk = Boolean(discipline && activityId && hasDT);
+        // In follow-up, we keep carried items; no need to pick new checklists.
+        return isFollowupMode ? baseOk : Boolean(baseOk && selectedRefIds.length > 0);
+    }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds, isFollowupMode]);
 
     // Build the exact draft payload (same keys you already send in saveDraft)
     function buildDraftPayload(isPatch = false) {
@@ -936,8 +1049,11 @@ export default function CreateWIR() {
             header: headerPatch,
             // plannedAt only for POST/create; omit on PATCH to avoid BE ignoring split fields
             plannedAt: isPatch ? undefined : dtISO,
-            refChecklistIds: selectedRefIds.length ? selectedRefIds : undefined,
-            materializeItemsFromRef: false,
+            // refChecklistIds: selectedRefIds.length ? selectedRefIds : undefined,
+            // materializeItemsFromRef: false,
+            // In follow-up: keep existing items only (failed). Do NOT re-materialize.
+            refChecklistIds: isFollowupMode ? undefined : (selectedRefIds.length ? selectedRefIds : undefined),
+            materializeItemsFromRef: isFollowupMode ? false : false,
             assignCode: false,
             clientHints: {
                 dateText,
@@ -1004,7 +1120,8 @@ export default function CreateWIR() {
             }
 
             // Keep checklist sync (non-blocking)
-            if (isPatch && selectedRefIds.length) {
+            //if (isPatch && selectedRefIds.length) {
+            if (isPatch && selectedRefIds.length && !isFollowupMode) {
                 try {
                     await api.post(
                         `/projects/${projectId}/wir/${editId}/sync-checklists`,
@@ -1048,8 +1165,11 @@ export default function CreateWIR() {
                 cityTown: locationText || undefined,        // <<< use cityTown
                 description: workInspection || undefined,   // <<< use description
 
-                refChecklistIds: selectedRefIds,
-                materializeItemsFromRef: true,
+                // refChecklistIds: selectedRefIds,
+                // materializeItemsFromRef: true,
+                // Follow-up: keep the existing (failed) items; no re-materialization
+                refChecklistIds: isFollowupMode ? undefined : selectedRefIds,
+                materializeItemsFromRef: isFollowupMode ? false : true,
             };
 
             if (currentUserId) {
@@ -1143,7 +1263,7 @@ export default function CreateWIR() {
                     <div className="mt-2">
                         <div className="inline-flex items-center gap-2 text-[12px] px-2.5 py-1 rounded-lg border dark:border-neutral-800 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
                             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-300" />
-                            Follow-up draft — prefilled from previous WIR
+                            Follow-up mode: existing failed items preserved; Library disabled.
                         </div>
                     </div>
                 )}
@@ -1371,12 +1491,21 @@ export default function CreateWIR() {
                             <div className="text-[13px] sm:text-sm dark:text-white">
                                 Selected: <b>{combinedSelectedCount}</b> checklists
                                 {combinedItemsCount ? <> · <b>{combinedItemsCount}</b> items</> : null}
+                                {isFollowupMode && (
+                                    <span className="ml-2 text-[12px] text-emerald-700 dark:text-emerald-300">
+                                        (Follow-up: library is disabled)
+                                    </span>
+                                )}
                             </div>
                             <button
-                                onClick={() => setLibOpen(true)}
-                                className="text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => !isFollowupMode && setLibOpen(true)}
+                                disabled={isFollowupMode}
+                                title={isFollowupMode ? "Disabled in follow-up: items already carried over" : "Add from Library"}
+                                className={`text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border
+       dark:border-neutral-800
+       ${isFollowupMode ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
                             >
-                                Add from Library
+                                {isFollowupMode ? "Add from Library (disabled)" : "Add from Library"}
                             </button>
                         </div>
                         {refErr && <div className="mt-2 text-sm text-rose-600">{refErr}</div>}
@@ -1384,28 +1513,45 @@ export default function CreateWIR() {
 
                     {/* Section 5 — Compliance Checklist */}
                     <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5 mb-24 sm:mb-0">
-                        <SectionTitle>Compliance Checklist</SectionTitle>
+                        <SectionTitle>{isFollowupMode ? "Follow-up Items (Failed from previous)" : "Compliance Checklist"}</SectionTitle>
+
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
-                                View the combined list of items from your selected checklists.
+                                {isFollowupMode
+                                    ? "View the carried failed/NCR items that will be included in this follow-up."
+                                    : "View the combined list of items from your selected checklists."}
                             </div>
-                            <button
-                                onClick={openViewCompliance}
-                                disabled={!selectedRefIds.length}
-                                className={`text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border ${selectedRefIds.length
-                                    ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                    : "opacity-60 cursor-not-allowed"
-                                    }`}
-                            >
-                                View
-                            </button>
+
+                            <div className="flex gap-2">
+                                {/* NEW: Dedicated Failed Items button when carried items exist */}
+                                {hasCarriedFailed && (
+                                    <button
+                                        onClick={openViewFailed}
+                                        className="text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    >
+                                        View Failed Items
+                                    </button>
+                                )}
+
+                                {/* Keep the existing Combined Items button logic */}
+                                <button
+                                    onClick={openViewCompliance}
+                                    disabled={!selectedRefIds.length || isFollowupMode} // disable in follow-up to avoid confusion
+                                    className={`text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border ${!isFollowupMode && selectedRefIds.length
+                                            ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                            : "opacity-60 cursor-not-allowed"
+                                        }`}
+                                    title={isFollowupMode ? "Disabled in follow-up mode" : ""}
+                                >
+                                    View Combined Items
+                                </button>
+                            </div>
                         </div>
-                        {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+
+                        {!isFollowupMode && viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
                     </div>
                 </div>
-
             </section>
-
             {/* Sticky Action Bar (mobile-first) */}
             <div className="sticky bottom-0 left-0 right-0 z-20 -mx-4 sm:mx-0">
                 <div className="px-4 sm:px-0 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-3 bg-white/95 dark:bg-neutral-900/95 backdrop-blur border-t dark:border-neutral-800">
@@ -1729,6 +1875,88 @@ export default function CreateWIR() {
                     </div>
                 </div>
             )}
+            {/* PATCH: Follow-up Failed Items Modal */}
+            {fuOpen && (
+                <div className="fixed inset-0 z-40 bg-black/40">
+                    <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+                        <div className="flex items-center justify-between">
+                            <div className="text-base font-semibold dark:text-white">Follow-up Items</div>
+                            <button onClick={() => setFuOpen(false)} className="text-sm px-3 py-2 rounded border dark:border-neutral-800">
+                                Close
+                            </button>
+                        </div>
+
+                        {fuLoading ? (
+                            <div className="mt-4 text-sm">Loading…</div>
+                        ) : fuItems.length === 0 ? (
+                            <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                                No items to display. This follow-up does not have carried failed items.
+                            </div>
+                        ) : (
+                            <div className="mt-3 h-[65vh] sm:max-h-[55vh] overflow-auto pr-1 divide-y">
+                                {fuItems.map((it) => {
+                                    const tolStr = formatTolerance(it.tolOp, it.base, it.plus, it.minus, it.units) || null;
+                                    const statusBadge = (label: string | null, tone: "rose" | "amber" | "gray" = "gray") =>
+                                        label ? (
+                                            <span
+                                                className={
+                                                    "text-[11px] px-2 py-1 rounded-full border " +
+                                                    (tone === "rose"
+                                                        ? "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
+                                                        : tone === "amber"
+                                                            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
+                                                            : "dark:border-neutral-800 text-gray-600 dark:text-gray-300")
+                                                }
+                                            >
+                                                {label}
+                                            </span>
+                                        ) : null;
+
+                                    return (
+                                        <div key={it.id} className="py-3">
+                                            <div className="text-[13px] sm:text-sm dark:text-white leading-snug">{it.text}</div>
+
+                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                {/* Checklist pill */}
+                                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
+                                                    {it.refCode ? `#${it.refCode}` : "Checklist"}
+                                                    {it.refTitle ? ` • ${it.refTitle}` : ""}
+                                                </span>
+
+                                                {it.code ? (
+                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
+                                                        Item: #{it.code}
+                                                    </span>
+                                                ) : null}
+
+                                                {/* Statuses */}
+                                                {statusBadge(it.inspectorStatus, it.inspectorStatus?.toUpperCase() === "FAIL" ? "rose" : "gray")}
+                                                {statusBadge(it.status, it.status?.toUpperCase() === "NCR" ? "rose" : "gray")}
+                                                {statusBadge(it.lastRunStatus, it.lastRunStatus?.toUpperCase() === "NCR" ? "rose" : "amber")}
+
+                                                {/* Tolerance / Units */}
+                                                {tolStr ? (
+                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
+                                                        Tol: {tolStr}
+                                                    </span>
+                                                ) : null}
+                                                {it.units ? (
+                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
+                                                        Units: {it.units}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
+                    </div>
+                </div>
+            )}
+
             <DispatchWIRModal
                 open={dispatchOpen}
                 onClose={() => setDispatchOpen(false)}
