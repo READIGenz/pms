@@ -775,6 +775,12 @@ export default function WIRDocDis() {
     const [notesOpen, setNotesOpen] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [actorNameMap, setActorNameMap] = useState<Record<string, string>>({});
+    // helper: get display name for a user id (fallback to id)
+    const nameOf = useCallback((id?: string | null) => {
+        if (!id) return "—";
+        const key = String(id);
+        return actorNameMap[key] || key;
+    }, [actorNameMap]);
 
     // runner no-edit permission dialog
     const [noEditPermOpen, setNoEditPermOpen] = useState(false);
@@ -1018,6 +1024,36 @@ export default function WIRDocDis() {
         return () => { ignore = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [row?.histories]);
+
+    // Hydrate names for ids shown in the "Review changes" dialog
+    useEffect(() => {
+        if (!hodReviewOpen || !hodPlannedPatch) return;
+        const ids = [hodPlannedPatch.hodId, hodPlannedPatch.bicUserId, hodPlannedPatch.contractorId, row?.inspectorId]
+            .filter(Boolean)
+            .map((x: any) => String(x));
+
+        const missing = ids.filter(id => !actorNameMap[id]);
+        if (missing.length === 0) return;
+
+        let ignore = false;
+        (async () => {
+            for (const id of missing) {
+                try {
+                    const { data } = await api.get(`/admin/users/${id}`);
+                    const u = (data?.user ?? data) || {};
+                    if (!ignore) setActorNameMap(prev => ({ ...prev, [id]: displayNameLite(u) }));
+                } catch {
+                    try {
+                        const { data } = await api.get(`/users/${id}`);
+                        const u = (data?.user ?? data) || {};
+                        if (!ignore) setActorNameMap(prev => ({ ...prev, [id]: displayNameLite(u) }));
+                    } catch {/* ignore */ }
+                }
+            }
+        })();
+
+        return () => { ignore = true; };
+    }, [hodReviewOpen, hodPlannedPatch, row?.inspectorId, actorNameMap]);
 
     return (
         <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -2067,14 +2103,13 @@ export default function WIRDocDis() {
                         <div className="text-base font-semibold dark:text-white">Review changes</div>
 
                         <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                            <div><b>hodId →</b> {hodPlannedPatch.hodId}</div>
-                            <div><b>bicUserId →</b> {hodPlannedPatch.bicUserId}</div>
-                            <div><b>inspectorRecommendation →</b> {hodPlannedPatch.inspectorRecommendation}</div>
-                            <div><b>status →</b> {hodPlannedPatch.status}</div>
-                            <div><b>version →</b> {hodPlannedPatch.version}</div>
+                            <div><b>Inspector Recommendation →</b> {hodPlannedPatch.inspectorRecommendation}</div>
                             {hodPlannedPatch.contractorId && (
-                                <div><b>contractorId →</b> {hodPlannedPatch.contractorId}</div>
+                                <div><b>Contractor →</b> {nameOf(hodPlannedPatch.contractorId)}</div>
                             )}
+                            <div><b>Inspector →</b> {nameOf(row?.inspectorId)}</div>
+                            <div><b>HOD →</b> {nameOf(hodPlannedPatch.hodId)}</div>
+                            <div><b>BIC →</b> {nameOf(hodPlannedPatch.bicUserId)}</div>
                         </div>
 
                         <div className="mt-4 flex justify-end gap-2">
