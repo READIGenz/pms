@@ -76,12 +76,14 @@ function SelectStrict({
     onChange,
     options,
     placeholder = "Select…",
+    disabled = false,
 }: {
     label: string;
     value: string;
     onChange: (v: string) => void;
     options: Array<{ value: string; label: string }>;
     placeholder?: string;
+    disabled?: boolean;
 }) {
     return (
         <label className="block">
@@ -92,6 +94,7 @@ function SelectStrict({
                 className="w-full px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
+                disabled={disabled}
             >
                 <option value="">{placeholder}</option>
                 {options.map((opt) => (
@@ -629,8 +632,10 @@ export default function CreateWIR() {
                 }
 
                 // Ensure activity options visible when discipline present
-                if (row.discipline) ensureActivitiesRef.current(true, String(row.discipline));
-
+                //  if (row.discipline) ensureActivitiesRef.current(true, String(row.discipline));
+                if (row.discipline && !isFollowupMode) {
+                    ensureActivitiesRef.current(true, String(row.discipline));
+                }
                 // ---- Location: prefer cityTown (drafts), then common aliases (snake + nests) ----
                 const locText =
                     row.cityTown ??
@@ -1287,12 +1292,13 @@ export default function CreateWIR() {
                             <SelectStrict
                                 label="Discipline"
                                 value={discipline}
+                                disabled={isFollowupMode}  // ← FREEZE when follow-up
                                 onChange={(v: string) => {
+                                    if (isFollowupMode) return;          // ← guard: immutable in follow-up
                                     setDiscipline(v as Discipline | "");
                                     setActivityId("");
                                     setActivityOpts([]);
                                     lastLoadedFor.current = null;
-
                                     // Immediately load for this discipline (mobile-safe)
                                     if (v) ensureActivities(true, v);
                                 }}
@@ -1311,16 +1317,15 @@ export default function CreateWIR() {
                                         ref={activitySelectRef}
                                         className="w-full px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
                                         value={activityId}
-                                        onChange={(e) => setActivityId(e.target.value)}
-                                        onPointerDownCapture={() => discipline && ensureActivities(false, discipline)}
-                                        //    onMouseDownCapture={() => discipline && ensureActivities(false, discipline)}
-                                        //    onTouchStartCapture={() => discipline && ensureActivities(false, discipline)}
-                                        //    onFocus={() => discipline && ensureActivities(false, discipline)}
-                                        //    onKeyDown={(e) => {
-                                        //        if (!discipline) return;
-                                        //        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") ensureActivities(false, discipline);
-                                        //    }}
-                                        disabled={!discipline}
+                                        onChange={(e) => {
+                                            if (isFollowupMode) return;        // ← guard: immutable in follow-up
+                                            setActivityId(e.target.value);
+                                        }}
+                                        onPointerDownCapture={() => {
+                                            if (!discipline || isFollowupMode) return;   // ← don't open/load in follow-up
+                                            ensureActivities(false, discipline);
+                                        }}
+                                        disabled={!discipline || isFollowupMode}       // ← FREEZE when follow-up
                                     >
                                         <option value="">
                                             {!discipline
@@ -1337,16 +1342,19 @@ export default function CreateWIR() {
                                             </option>
                                         ))}
                                     </select>
-
                                     <button
                                         type="button"
                                         className="text-xs px-2 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
-                                        disabled={!discipline || activityLoading}
-                                        onClick={() => ensureActivities(true, discipline)}
+                                        disabled={!discipline || activityLoading || isFollowupMode}  // ← disable in follow-up
+                                        onClick={() => {
+                                            if (isFollowupMode) return;         // ← guard
+                                            ensureActivities(true, discipline);
+                                        }}
                                         title="Reload activities"
                                     >
                                         {activityLoading ? "…" : "Reload"}
                                     </button>
+
                                 </div>
                                 {activityErr && (
                                     <div className="mt-1 text-xs text-red-600 dark:text-red-400">{activityErr}</div>
@@ -1518,7 +1526,7 @@ export default function CreateWIR() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
                                 {isFollowupMode
-                                    ? "View the carried failed/NCR items that will be included in this follow-up."
+                                    ? "View the carried failed items that will be included in this follow-up."
                                     : "View the combined list of items from your selected checklists."}
                             </div>
 
@@ -1538,8 +1546,8 @@ export default function CreateWIR() {
                                     onClick={openViewCompliance}
                                     disabled={!selectedRefIds.length || isFollowupMode} // disable in follow-up to avoid confusion
                                     className={`text-sm w-full sm:w-auto px-3 py-3 sm:py-2 rounded-lg border ${!isFollowupMode && selectedRefIds.length
-                                            ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                            : "opacity-60 cursor-not-allowed"
+                                        ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                        : "opacity-60 cursor-not-allowed"
                                         }`}
                                     title={isFollowupMode ? "Disabled in follow-up mode" : ""}
                                 >
