@@ -413,6 +413,19 @@ export default function WIR() {
     fetchList();
   }, [fetchList]);
 
+  /* -------- NEW: map {code -> max version} to detect follow-up existence -------- */
+  const maxVersionByCode = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const w of list) {
+      const code = (w.code || "").toString().trim();
+      if (!code) continue;
+      const v = typeof w.version === "number" ? w.version : -Infinity;
+      const prev = m.get(code);
+      if (prev == null || v > prev) m.set(code, v);
+    }
+    return m;
+  }, [list]);
+
   /* -------- NEW: fetch project-scoped WIR config once per project -------- */
   const fetchWirCfg = useCallback(async () => {
     if (!projectId) { setWirCfg(null); return; }
@@ -705,6 +718,9 @@ export default function WIR() {
             }`
             : "";
 
+            // Show only the base WIR code (strip everything after the first space)
+const shortCode = (code?: string | null) =>
+  code ? String(code).trim().split(/\s+/)[0] : "";
           return (
             <button
               key={w.wirId}
@@ -728,7 +744,7 @@ export default function WIR() {
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="text-sm sm:text-base font-semibold dark:text-white truncate">
                     {[
-                      w.code || undefined,
+                      shortCode(w.code) || undefined,
                       (w.title || w.wirId || undefined),
                       (typeof w.version === "number" ? `v${w.version}` : undefined),
                     ].filter(Boolean).join(" — ")}
@@ -800,6 +816,13 @@ export default function WIR() {
                   <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
                     BIC: {bicName || "—"}
                   </span>
+                            {(() => {
+                    const st = canonicalWirStatus(w.status);
+                    const isAwdC = (w.inspectorRecommendation || "").toUpperCase() === "APPROVE_WITH_COMMENTS";
+                    const hasChild = w.code && typeof w.version === "number" && (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
+                    return st === "HODApproved" && isAwdC && !hasChild ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">Follow-up Open</span>) : null;
+                  })()}
                 </div>
 
                 {/* Details line: forDate • forTime • items */}

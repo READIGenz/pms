@@ -158,7 +158,12 @@ export default function FollowupScheduleModal({
       flog("POST success: raw data", data);
       const newId = data?.wirId ?? data?.data?.wirId;
       flog("derived newId", newId);
-
+      try {
+        flog("parent: clear BIC on parent", { parentWirId: wir?.wirId });
+        await api.patch(`/projects/${projectId}/wir/${wir.wirId}`, { bicUserId: null });
+      } catch (e: any) {
+        flog("parent: clear BIC failed (non-fatal)", e?.response?.data || e?.message);
+      }
       if (onCreated) onCreated(newId);
       // // Always take user to the doc page with the /home prefix (prevents reload → auth guard → /login)
       // if (newId) {

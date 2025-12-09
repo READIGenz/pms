@@ -709,11 +709,41 @@ export default function WIRDocDis() {
         return isInspectorish && isBicSelf && isSubmitted;
     }, [actingRole, row?.bicUserId, currentUid, row?.status]);
 
+    const [hasNewerChild, setHasNewerChild] = useState(false);
+    //Check for newer versions after wir loads
+    useEffect(() => {
+        let ignore = false;
+        (async () => {
+            if (!row?.code) { if (!ignore) setHasNewerChild(false); return; }
+            try {
+                // fetch project WIR list and compute the max version for this code
+                const { data } = await api.get(`/projects/${projectId}/wir`);
+                const rows: any[] = Array.isArray(data) ? data : (data?.list || data?.wirs || []);
+                const siblings = rows.filter(r => (r.code ?? r.wirCode) === row.code);
+
+                const maxV = siblings.reduce((m, r) => {
+                    const v = Number(r.version ?? r.wirVersion ?? NaN);
+                    return Number.isFinite(v) ? Math.max(m, v) : m;
+                }, -Infinity);
+
+                const curV = Number(row.version ?? NaN);
+                const newer = Number.isFinite(curV) && maxV > curV;
+
+                if (!ignore) setHasNewerChild(newer);
+            } catch {
+                if (!ignore) setHasNewerChild(false);
+            }
+        })();
+        return () => { ignore = true; };
+    }, [projectId, row?.code, row?.version]);
+
+
     // SHOW "Schedule Followup" only when:
     // 1) Inspector recommended AWC,
     // 2) HOD accepted,
     // 3) WIR is finalized (Approved/Rejected/APPROVE_WITH_COMMENTS),
     // 4) Current user is the BIC (usually the contractor after ACCEPT+AWC)
+    //HIDE when a newer follow-up exists
     const showReschedCta = useMemo(() => {
         const accepted = row?.hodOutcome === "ACCEPT";
         const awc = row?.inspectorRecommendation === "APPROVE_WITH_COMMENTS";
@@ -723,8 +753,16 @@ export default function WIRDocDis() {
         })();
         const isBicSelf = !!row?.bicUserId && String(row.bicUserId) === currentUid;
 
-        return accepted && awc && isFinal && isBicSelf;
-    }, [row?.hodOutcome, row?.inspectorRecommendation, row?.status, row?.bicUserId, currentUid]);
+        // HIDE when a newer follow-up exists:
+        return accepted && awc && isFinal && isBicSelf && !hasNewerChild;
+    }, [
+        row?.hodOutcome,
+        row?.inspectorRecommendation,
+        row?.status,
+        row?.bicUserId,
+        currentUid,
+        hasNewerChild, // <-- keep in deps
+    ]);
 
     // HOD Finalize modal state
     const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -2219,7 +2257,7 @@ export default function WIRDocDis() {
                                 >
                                     Accept
                                 </button>
-                        {/*        <button
+                                {/*        <button
                                     type="button"
                                     onClick={() => setFinalizeOutcome("REJECT")}
                                     className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "REJECT"
@@ -2230,7 +2268,7 @@ export default function WIRDocDis() {
                                     Reject
                                 </button>
                           */}
-                                </div>
+                            </div>
 
                             <div>
                                 <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">
