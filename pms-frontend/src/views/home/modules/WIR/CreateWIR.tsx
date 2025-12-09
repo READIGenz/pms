@@ -1100,6 +1100,14 @@ export default function CreateWIR() {
         ];
     }
 
+    function tolPillOf(it: UiComplianceItem): string | null {
+        const op = (it.tolOp || "").toString().trim();          // e.g., "<=", "±", ">= "
+        const base = it.base != null ? String(it.base) : "";     // e.g., "20"
+        const u = (it.units || "").toString().trim();            // e.g., "mm"
+        const parts = [op, base, u].filter(Boolean);
+        return parts.length ? parts.join(" ") : null;            // "<= 20 mm"
+    }
+
     /* ---------------- submit handlers ---------------- */
 
     const saveDraft = async () => {
@@ -1803,82 +1811,84 @@ export default function CreateWIR() {
                         </div>
 
                         {viewLoading ? (
-                            <div className="mt-4 text-sm">Loading…</div>
-                        ) : combinedItems.length === 0 ? (
-                            <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">No items to display. Add checklists first.</div>
+                            <div className="text-sm">Loading…</div>
+                        ) : viewErr ? (
+                            <div className="text-sm text-rose-600">{viewErr}</div>
+                        ) : (combinedItems.length === 0) ? (
+                            <div className="text-sm">No checklist items.</div>
                         ) : (
-                            <div className="mt-3 h-[65vh] sm:max-h-[55vh] overflow-auto pr-1 divide-y">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {combinedItems.map((it) => {
-                                    const tolStr =
-                                        formatTolerance(it.tolOp, it.base, it.plus, it.minus, it.units) || null;
+                                    const tol = tolPillOf(it); // e.g., "<= 20 mm"
+                                    const codeLine = [it.refCode, it.code].filter(Boolean).join(" - "); // e.g., "STR - BM - 992"
+                                    const req = (it.requirement || "").toString().trim(); // "Mandatory" | "Optional" | ""
+                                    const isMandatory = it.required === true || /^mandatory$/i.test(req);
+                                    const isOptional = it.required === false || /^optional$/i.test(req);
 
                                     return (
-                                        <div key={it.id} className="py-3">
-                                            {/* Primary line */}
-                                            <div className="text-[13px] sm:text-sm dark:text-white leading-snug">
-                                                {it.text}
-                                            </div>
+                                        <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
+                                            {/* Title + tolerance (like Runner) */}
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold dark:text-white">
+                                                        {it.text || "Untitled"}{tol ? ` — ${tol}` : ""}
+                                                    </div>
 
-                                            {/* Meta row: checklist, code, requirement, critical, tolerance, units, tags */}
-                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                {/* Checklist pill (uses refCode/title if available, else shows id) */}
-                                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                                                    {it.refCode ? `#${it.refCode}` : `Checklist: ${it.refId}`}
-                                                    {it.refTitle ? ` • ${it.refTitle}` : ""}
-                                                </span>
+                                                    {/* Code line (checklist code + item code) */}
+                                                    {codeLine && (
+                                                        <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                            {codeLine}
+                                                        </div>
+                                                    )}
+                                                </div>
 
-                                                {it.code ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                                                        Item: #{it.code}
-                                                    </span>
-                                                ) : null}
-
-                                                {it.requirement ? (
-                                                    <span
-                                                        className={`text-[11px] px-2 py-1 rounded-full border ${String(it.requirement).toLowerCase() === "mandatory"
-                                                            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
-                                                            : "dark:border-neutral-800 text-gray-600 dark:text-gray-300"
-                                                            }`}
-                                                    >
-                                                        {String(it.requirement)}
-                                                    </span>
-                                                ) : null}
-
+                                                {/* Critical pill */}
                                                 {it.critical ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300">
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
                                                         Critical
                                                     </span>
                                                 ) : null}
+                                            </div>
 
-                                                {tolStr ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
-                                                        Tol: {tolStr}
+                                            {/* Pills row (Mandatory/Optional, Unit, Tolerance) */}
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                {isMandatory && (
+                                                    <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                        Mandatory
                                                     </span>
-                                                ) : null}
-
-                                                {it.units ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
-                                                        Units: {it.units}
+                                                )}
+                                                {isOptional && (
+                                                    <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                        Optional
                                                     </span>
-                                                ) : null}
+                                                )}
+                                                {it.units && (
+                                                    <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                        Unit: {it.units}
+                                                    </span>
+                                                )}
+                                                {tol && (
+                                                    <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                        Tolerance: {tol}
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                                {Array.isArray(it.tags) && it.tags.length > 0
-                                                    ? it.tags.slice(0, 4).map((t: string, idx: number) => (
-                                                        <span
-                                                            key={`${it.id}-tag-${idx}`}
-                                                            className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300"
-                                                        >
+                                            {/* Tags row (e.g., visual, measurement) */}
+                                            {(it.tags?.length || 0) > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                    {it.tags!.map((t, i) => (
+                                                        <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
                                                             {t}
                                                         </span>
-                                                    ))
-                                                    : null}
-                                            </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
                             </div>
                         )}
-
                         {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
                     </div>
                 </div>
