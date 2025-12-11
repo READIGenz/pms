@@ -58,6 +58,10 @@ const fmtTime12 = (t?: string | null) => {
   return `${String(h12).padStart(2, "0")}:${mm} ${ampm}`;
 };
 
+// Show only the base WIR code (strip everything after the first space)
+const shortCode = (code?: string | null) =>
+  code ? String(code).trim().split(/\s+/)[0] : "";
+
 type WirStatusCanonical =
   | "Draft"
   | "Submitted"
@@ -707,6 +711,19 @@ export default function WIR() {
           const itemsDisp =
             typeof w.itemsCount === "number" ? w.itemsCount : "—";
 
+          // Full heading (for tooltip) uses full code; display uses shortCode for layout
+          const headingDisplay = [
+            shortCode(w.code) || undefined,
+            (w.title || w.wirId || undefined),
+            (typeof w.version === "number" ? `v${w.version}` : undefined),
+          ].filter(Boolean).join(" — ");
+
+          const headingFull = [
+            (w.code || undefined), // full code in tooltip
+            (w.title || w.wirId || undefined),
+            (typeof w.version === "number" ? `v${w.version}` : undefined),
+          ].filter(Boolean).join(" — ");
+
           // --- Reschedule flags ---
           const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
           const reschedTimeRaw = w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
@@ -718,9 +735,6 @@ export default function WIR() {
             }`
             : "";
 
-            // Show only the base WIR code (strip everything after the first space)
-const shortCode = (code?: string | null) =>
-  code ? String(code).trim().split(/\s+/)[0] : "";
           return (
             <button
               key={w.wirId}
@@ -742,7 +756,14 @@ const shortCode = (code?: string | null) =>
               >
                 {/* Heading */}
                 <div className="min-w-0 flex items-center gap-2">
-                  <div className="text-sm sm:text-base font-semibold dark:text-white truncate">
+                  <div
+                    className="text-sm sm:text-base font-semibold dark:text-white truncate"
+                    title={[
+                      (w.code || undefined),
+                      (w.title || w.wirId || undefined),
+                      (typeof w.version === "number" ? `v${w.version}` : undefined),
+                    ].filter(Boolean).join(" — ")}
+                  >
                     {[
                       shortCode(w.code) || undefined,
                       (w.title || w.wirId || undefined),
@@ -816,12 +837,13 @@ const shortCode = (code?: string | null) =>
                   <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
                     BIC: {bicName || "—"}
                   </span>
-                            {(() => {
+                  {(() => {
                     const st = canonicalWirStatus(w.status);
                     const isAwdC = (w.inspectorRecommendation || "").toUpperCase() === "APPROVE_WITH_COMMENTS";
                     const hasChild = w.code && typeof w.version === "number" && (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
                     return st === "HODApproved" && isAwdC && !hasChild ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">Follow-up Open</span>) : null;
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                        Follow-up Open</span>) : null;
                   })()}
                 </div>
 

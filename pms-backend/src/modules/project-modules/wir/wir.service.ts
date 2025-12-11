@@ -2,9 +2,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
-import { Prisma, WirItemStatus, WirStatus, HodOutcome } from '@prisma/client';
+import { Prisma, WirItemStatus, WirStatus, HodOutcome, WirItemEvidenceKind } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
+import { FilesService } from '../../../common/storage/files.service';
 
 function toHodOutcomeEnum(v?: string | null): HodOutcome | undefined {
   if (v == null) return undefined;
@@ -72,7 +73,10 @@ type WirContract = {
 @Injectable()
 export class WirService {
 
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private files: FilesService,
+  ) { }
 
   // BAD statuses considered as "failed" for follow-ups
   private static readonly BAD_STATUSES = new Set(['NCR', 'FAIL', 'NOT_OK', 'REJECT', 'REWORK', 'PENDING']);
@@ -322,6 +326,20 @@ export class WirService {
               select: { valueNumber: true, unit: true, status: true, comment: true, createdAt: true },
               orderBy: { createdAt: 'desc' },
               take: 1,
+            },
+            evidences: {                                        // <-- add this block
+              select: {
+                id: true,
+                kind: true,            // 'Photo' | 'Video' | 'File'
+                url: true,
+                thumbUrl: true,
+                fileName: true,
+                fileSize: true,
+                mimeType: true,
+                capturedAt: true,
+                createdAt: true,
+              },
+              orderBy: { createdAt: 'desc' },
             },
           },
         },
@@ -1289,6 +1307,92 @@ export class WirService {
       return { ...updated, itemsCount };
     });
   }
+
+  /**
+   * Save uploaded files and create WirItemEvidence rows.
+   * Returns: [{ itemId, evidenceId, url, fileName, kind }]
+   */
+  async createRunnerAttachments(
+  projectId: string,
+  wirId: string,
+  files: Array<Express.Multer.File>,
+  meta: Array<{ idx: number; itemId: string; kind?: 'Photo'|'Video'|'File' }>,
+) {
+  const wir = await this.prisma.wir.findFirst({
+    where: { wirId, projectId },
+    select: { wirId: true },
+  });
+  if (!wir) throw new NotFoundException('WIR not found for project');
+
+  const metaByIdx = new Map<number, { itemId: string; kind?: 'Photo'|'Video'|'File' }>();
+  for (const m of meta || []) {
+    if (typeof m?.idx === 'number' && m?.itemId) metaByIdx.set(m.idx, { itemId: m.itemId, kind: m.kind });
+  }
+
+  const saved = await this.files.saveMany(files, {
+    subdir: `projects/${projectId}/wir/${wirId}`,
+    makeThumbs: true,
+  });
+
+  const results: Array<{ itemId: string; evidenceId: string; url: string; fileName?: string | null; kind: WirItemEvidenceKind }> = [];
+  const touchedItemIds = new Set<string>();
+
+  await this.prisma.$transaction(async (tx) => {
+    for (let i = 0; i < saved.length; i++) {
+      const s = saved[i];
+      const m = metaByIdx.get(i);
+      if (!m?.itemId) continue;
+
+      const exists = await tx.wirItem.findFirst({
+        where: { id: m.itemId, wirId },
+        select: { id: true },
+      });
+      if (!exists) continue;
+
+      const kind: WirItemEvidenceKind =
+        m.kind === 'Video' ? 'Video' :
+        m.kind === 'File'  ? 'File'  : 'Photo';
+
+      const row = await tx.wirItemEvidence.create({
+        data: {
+          wirId,
+          itemId: m.itemId,
+          kind,
+          url: s.url,
+          thumbUrl: s.thumbUrl || undefined,
+          fileName: s.fileName || undefined,
+          fileSize: s.size ?? undefined,
+          mimeType: s.mimeType || undefined,
+          capturedAt: new Date(),
+        },
+        select: { id: true, url: true, fileName: true, kind: true, itemId: true },
+      });
+
+      results.push({
+        itemId: row.itemId!,
+        evidenceId: row.id,
+        url: row.url,
+        fileName: row.fileName ?? null,
+        kind: row.kind,
+      });
+
+      touchedItemIds.add(m.itemId);
+    }
+
+    // Recompute photoCount for each touched item (exact count from DB)
+    for (const itemId of touchedItemIds) {
+      const photos = await tx.wirItemEvidence.count({
+        where: { wirId, itemId, kind: 'Photo' },
+      });
+      await tx.wirItem.update({
+        where: { id: itemId },
+        data: { photoCount: photos },
+      });
+    }
+  });
+
+  return results;
+}
 
   async inspectorSave(projectId: string, wirId: string, dto: InspectorSaveDto, user: any) {
     // (optional) verify the WIR belongs to projectId and user can act

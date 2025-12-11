@@ -16,6 +16,13 @@ type WirItemLite = {
   id: string;
   inspectorStatus?: "PASS" | "FAIL" | "NA" | null; // runner enum
   status?: string | null;                          // mirrored service status (OK/NCR/Pending)
+  name?: string | null;
+  code?: string | null;
+  unit?: string | null;
+  tolerance?: string | null;   // "<=", "=", "+-", etc.
+  base?: number | string | null;
+  plus?: number | string | null;
+  minus?: number | string | null;
 };
 
 type WirDocLite = {
@@ -30,6 +37,29 @@ type WirDocLite = {
   items?: WirItemLite[];
   seriesId?: string | null;           // Needed to pass parent series
 };
+
+// "20 (+3/-2)" style (if you need it later)
+function tolLine(base?: number | string | null, plus?: number | string | null, minus?: number | string | null) {
+  const b = base ?? null, p = plus ?? null, m = minus ?? null;
+  if (b == null && p == null && m == null) return null;
+  if (b != null && p != null && m != null) return `${b} (+${p}/-${m})`;
+  if (b != null && (p != null || m != null)) {
+    const pos = p != null ? `+${p}` : "";
+    const neg = m != null ? `/-${m}` : "";
+    return `${b} ${`${pos}${neg}`.trim()}`.trim();
+  }
+  if (b != null) return `${b}`;
+  return [p != null ? `+${p}` : null, m != null ? `-${m}` : null].filter(Boolean).join(" / ");
+}
+
+// Compact pill like "<= 20 mm" or "+- 20 cm"
+function tolPillFrom(it: Partial<WirItemLite>) {
+  const op = String(it.tolerance ?? "").trim();     // "<=", "=", "+-", etc.
+  const b = it.base != null ? String(it.base) : "";
+  const u = String(it.unit ?? "").trim();
+  const parts = [op, b, u].filter(Boolean);
+  return parts.length ? parts.join(" ") : null;
+}
 
 export default function FollowupScheduleModal({
   projectId,
@@ -107,6 +137,16 @@ export default function FollowupScheduleModal({
       })
       .map((it) => it.id)
       .filter(Boolean);
+  }, [fullWir, wir]);
+
+  const failedItemsDetailed = useMemo(() => {
+    const base = (fullWir || wir) as any;
+    const items: WirItemLite[] = Array.isArray(base?.items) ? base.items : [];
+    return items.filter(it => {
+      const insp = String(it?.inspectorStatus || "").toUpperCase();
+      const st = String(it?.status || "").toUpperCase();
+      return insp === "FAIL" || st === "NCR";
+    });
   }, [fullWir, wir]);
 
   function buildFollowupBody() {
@@ -366,11 +406,38 @@ export default function FollowupScheduleModal({
                 </div>
 
                 <div className="py-2">
-                  <div className="text-gray-600 dark:text-gray-300 mb-1">Failed Item IDs (sample)</div>
-                  <div className="text-[12px] font-mono break-all dark:text-white">
-                    {failedItemIds.slice(0, 5).join(", ")}
-                    {failedItemIds.length > 5 ? " …" : ""}
-                  </div>
+                  <div className="text-gray-600 dark:text-gray-300 mb-1">Failed Items (sample)</div>
+                  {failedItemsDetailed.length === 0 ? (
+                    <div className="text-[12px] dark:text-white">—</div>
+                  ) : (
+                    <ul className="space-y-1 max-h-48 overflow-auto">
+                      {failedItemsDetailed.slice(0, 10).map(it => {
+                        const tolPill = tolPillFrom(it);                 // e.g., "± 20 cm" / "<= 20 mm"
+                        const tolLong = tolLine(it.base, it.plus, it.minus); // e.g., "20 (+10/-10)"
+                        return (
+                          <li key={it.id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[12px] dark:text-white truncate">
+                                {it.name || it.code || it.id}
+                              </div>
+                              <div className="text-[11px] text-gray-600 dark:text-gray-300">
+                                {tolPill ? <>Tol: <b>{tolPill}</b></> : "Tol: —"}
+                                {tolLong ? <> &nbsp;•&nbsp; {tolLong}</> : null}
+                              </div>
+                            </div>
+                            {it.code ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                {it.code}
+                              </span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                      {failedItemsDetailed.length > 10 ? (
+                        <li className="text-[12px] text-gray-600 dark:text-gray-300">…and more</li>
+                      ) : null}
+                    </ul>
+                  )}
                 </div>
 
                 <div className="py-2">

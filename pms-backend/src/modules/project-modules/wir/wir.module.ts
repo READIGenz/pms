@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
 import { WirService } from './wir.service';
 import { WirController } from './wir.controller';
 import { ProjectRefChecklistsController } from './project-ref-checklists.controller';
+import { PrismaModule } from '../../../prisma/prisma.module';
+import { FilesModule } from '../../../common/storage/files.module';
 
 @Module({
-  controllers: [WirController,ProjectRefChecklistsController],
-  providers: [PrismaService, WirService],
+    imports: [
+    PrismaModule,     // provides PrismaService
+    FilesModule,      // provides & exports FilesService
+  ],
+  controllers: [WirController, ProjectRefChecklistsController],
+  providers: [WirService],
   exports: [WirService],
 })
-export class WirModule {}
+export class WirModule { }

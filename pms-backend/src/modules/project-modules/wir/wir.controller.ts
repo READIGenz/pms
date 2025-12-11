@@ -1,9 +1,11 @@
 //pms/pms-backend/src/modules/project-modules/wir/wir.controller.ts
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { WirService } from './wir.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
 import { JwtAuthGuard } from './../../../common/guards/jwt.guard';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
+import { UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 
 const getAuthUserId = (req: any): string | null =>
   req?.user?.userId ?? req?.user?.id ?? req?.user?.sub ?? null;
@@ -12,6 +14,7 @@ const getAuthUserId = (req: any): string | null =>
 @UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/wir')
 export class WirController {
+  wirService: any;
   constructor(private readonly service: WirService) { }
 
 
@@ -138,6 +141,28 @@ export class WirController {
 
     return this.service.inspectorRecommend(projectId, wirId, { action, comment: body?.comment ?? null }, actor);
   }
+
+  // ========= Runner file attachments (multipart) =========
+  // form-data:
+  //   files: (multiple) binary
+  //   meta:  JSON string -> [{ idx:number, itemId:string, kind?: "Photo"|"Video"|"File" }]
+  @Post(':wirId/runner/attachments')
+@UseInterceptors(FilesInterceptor('files')) // name="files"
+async uploadRunnerAttachments(
+  @Param('projectId') projectId: string,
+  @Param('wirId') wirId: string,
+  @UploadedFiles() files: Express.Multer.File[],
+  @Body('meta') metaJson: string,               // meta is sent as JSON string
+  @Req() req: any,
+) {
+  let meta: Array<{ idx: number; itemId: string; kind?: 'Photo'|'Video'|'File' }> = [];
+  try {
+    meta = JSON.parse(metaJson || '[]');
+  } catch {
+    throw new BadRequestException('Invalid meta JSON');
+  }
+  return this.wirService.createRunnerAttachments(projectId, wirId, files, meta);
+}
 
   @Post(':wirId/runner/inspector-save')
   async inspectorSave(

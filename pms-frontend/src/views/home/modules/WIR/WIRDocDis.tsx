@@ -446,21 +446,51 @@ export default function WIRDocDis() {
         setHodReviewOpen(true); // open review dialog
     }, [hodSelectedUserId, recLockedReject, pendingRec, row?.createdById]);
 
-    // require: every item must have measurement (numeric) AND status PASS/FAIL (remarks optional)
+    // REPLACE the entire validateAllRunnerFields definition with this:
     const validateAllRunnerFields = useCallback(() => {
         if (!row?.items?.length) return { ok: false, missing: [] as Array<{ id: string; name: string }> };
         const missing: Array<{ id: string; name: string }> = [];
+
         for (const it of row.items) {
             const buf = edits[it.id] || {};
-            const raw = (buf.value ?? "").toString().trim();
-            const val = raw === "" ? undefined : parseNum(raw);
+            const spec = (it.spec || "").trim();
+            const isMandatory = /^mandatory$/i.test(spec);
+
+            // Only enforce for Mandatory items
+            if (!isMandatory) continue;
+
+            const tags = (it.tags || []).map(t => t.trim().toLowerCase());
+            const needsMeasurement = tags.includes("measurement");
+            const needsEvidence = tags.includes("evidence") || tags.includes("document") || tags.includes("photo");
+
+            // Status required for all mandatory items
             const status = buf.status ?? null;
             const hasStatus = status === "PASS" || status === "FAIL";
-            const hasValue = val !== undefined && Number.isFinite(val);
-            if (!hasValue || !hasStatus) {
-                missing.push({ id: it.id, name: it.name || it.code || "Item" });
+            if (!hasStatus) {
+                missing.push({ id: it.id, name: it.name || it.code || "Item (status)" });
+                continue; // avoid double-pushing; status already missing
+            }
+
+            // Measurement required only if "measurement" tag present
+            if (needsMeasurement) {
+                const raw = (buf.value ?? "").toString().trim();
+                const val = raw === "" ? undefined : parseNum(raw);
+                const hasNumeric = val !== undefined && Number.isFinite(val);
+                if (!hasNumeric) {
+                    missing.push({ id: it.id, name: it.name || it.code || "Item (measurement)" });
+                    continue;
+                }
+            }
+
+            // Evidence/Document required only if tag present
+            if (needsEvidence) {
+                if (!buf.photo) {
+                    missing.push({ id: it.id, name: it.name || it.code || "Item (evidence/document)" });
+                    continue;
+                }
             }
         }
+
         return { ok: missing.length === 0, missing };
     }, [row?.items, edits]);
 
@@ -680,6 +710,29 @@ export default function WIRDocDis() {
 
     // input refs per item to focus when validation fails
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+    // NEW: file input refs per item (to clear input value on "Remove")
+    const fileRefs = useRef<Record<string, HTMLInputElement[]>>({});
+
+    // Register multiple file inputs (0 = camera, 1 = picker)
+    const registerFileRef = (itemId: string, index: number) => (el: HTMLInputElement | null) => {
+        if (!fileRefs.current[itemId]) fileRefs.current[itemId] = [];
+        if (el) fileRefs.current[itemId][index] = el;
+    };
+
+    // Clear both file inputs for an item
+    const clearFileInputs = (itemId: string) => {
+        (fileRefs.current[itemId] || []).forEach((el) => {
+            if (el) el.value = "";
+        });
+    };
+
+    // NEW: remove selected photo/document
+    const onRemovePhoto = (itemId: string) => {
+        setEdit(itemId, { photo: null });
+        clearFileInputs(itemId);
+    };
+
     // validation dialog state
     const [valErrItemId, setValErrItemId] = useState<string | null>(null);
 
@@ -1209,43 +1262,46 @@ export default function WIRDocDis() {
                                     </div>
                                 )}
 
-                                {/* HOD Tile (below Checklists) — visible only while InspectorRecommended */}
-                                {!isFinalized && canonicalWirStatus(row?.status) === "Recommended" && (
-                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
-                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                                            HOD
-                                        </div>
-                                        <div className="text-sm dark:text-white space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
-                                                    Recommendation
-                                                </span>
-                                                <span className="text-[12px] text-gray-700 dark:text-gray-200">
-                                                    Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
-                                                </span>
+                                {/* HOD Tile (below Checklists) — visible only while InspectorRecommended AND current user is BIC */}
+                                {!isFinalized &&
+                                    canonicalWirStatus(row?.status) === "Recommended" &&
+                                    !!row?.bicUserId &&
+                                    String(row.bicUserId) === currentUid && (
+                                        <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                                                HOD
                                             </div>
-                                            <div className="pt-1">
-                                                <button
-                                                    onClick={() => setFinalizeOpen(true)}
-                                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
-                                                    disabled={
-                                                        !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
-                                                        canonicalWirStatus(row.status) !== "Recommended"
-                                                    }
-                                                    title={
-                                                        canonicalWirStatus(row.status) === "Recommended"
-                                                            ? ((actingRole === "HOD" || actingRole === "Inspector+HOD")
-                                                                ? "Open HOD finalization"
-                                                                : "Only HOD can finalize")
-                                                            : "Visible after Inspector recommends"
-                                                    }
-                                                >
-                                                    Finalize Now
-                                                </button>
+                                            <div className="text-sm dark:text-white space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
+                                                        Recommendation
+                                                    </span>
+                                                    <span className="text-[12px] text-gray-700 dark:text-gray-200">
+                                                        Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
+                                                    </span>
+                                                </div>
+                                                <div className="pt-1">
+                                                    <button
+                                                        onClick={() => setFinalizeOpen(true)}
+                                                        className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+                                                        disabled={
+                                                            !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
+                                                            canonicalWirStatus(row.status) !== "Recommended"
+                                                        }
+                                                        title={
+                                                            canonicalWirStatus(row.status) === "Recommended"
+                                                                ? ((actingRole === "HOD" || actingRole === "Inspector+HOD")
+                                                                    ? "Open HOD finalization"
+                                                                    : "Only HOD can finalize")
+                                                                : "Visible after Inspector recommends"
+                                                        }
+                                                    >
+                                                        Finalize Now
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
 
                                 {/* HOFFinalizedOutcome (visible only after HOD finalizes) */}
                                 {isFinalized && (
@@ -1409,21 +1465,45 @@ export default function WIRDocDis() {
                                                             Inspector Observation
                                                         </div>
 
-                                                        {/* Button Add photo to take a picture from camera */}
-                                                        <div className="flex items-center gap-2">
+                                                        {/* Evidence: allow camera capture OR pick any photo/document */}
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            {/* Take Photo (opens camera on supported mobiles) */}
                                                             <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
-                                                                Add photo
+                                                                Take Photo
                                                                 <input
                                                                     type="file"
                                                                     accept="image/*"
                                                                     capture="environment"
                                                                     className="hidden"
+                                                                    ref={registerFileRef(it.id, 0)}
                                                                     onChange={(e) => onPickPhoto(it.id, e.target.files?.[0] || null)}
                                                                 />
                                                             </label>
+
+                                                            {/* Add Photo/Document (file picker for images & common docs) */}
+                                                            <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                                                Add Photo/Document
+                                                                <input
+                                                                    type="file"
+                                                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                                                    className="hidden"
+                                                                    ref={registerFileRef(it.id, 1)}
+                                                                    onChange={(e) => onPickPhoto(it.id, e.target.files?.[0] || null)}
+                                                                />
+                                                            </label>
+
+                                                            {/* Selected file name + Remove */}
                                                             {buf.photo ? (
-                                                                <span className="text-[12px] text-gray-600 dark:text-gray-300 truncate max-w-[180px]">
-                                                                    {buf.photo.name}
+                                                                <span className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                    <span className="truncate" title={buf.photo.name}>{buf.photo.name}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onRemovePhoto(it.id)}
+                                                                        className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                        title="Remove selected file"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
                                                                 </span>
                                                             ) : null}
                                                         </div>
@@ -2195,7 +2275,9 @@ export default function WIRDocDis() {
                     <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Missing required fields</div>
                         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                            Each runner item must have a numeric <b>Measurement</b> and a <b>Pass/Fail</b> status.
+                            All <b>Mandatory</b> items must have:
+                            <b>Pass/Fail</b> status, a numeric <b>Measurement</b> if tagged <i>measurement</i>,
+                            and an attached <b>Photo/Document</b> if tagged <i>evidence/document</i>.
                         </div>
                         {sendWarnList.length > 0 && (
                             <ul className="mt-3 text-sm list-disc pl-5 max-h-48 overflow-auto">

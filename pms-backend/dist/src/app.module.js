@@ -13,12 +13,19 @@ const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./modules/auth/auth.module");
 const admin_module_1 = require("./modules/admin/admin.module");
 const wir_module_1 = require("./modules/project-modules/wir/wir.module");
+const serve_static_1 = require("@nestjs/serve-static");
+const path = require("path");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, auth_module_1.AuthModule, admin_module_1.AdminModule, wir_module_1.WirModule],
+        imports: [prisma_module_1.PrismaModule, auth_module_1.AuthModule, admin_module_1.AdminModule, wir_module_1.WirModule,
+            serve_static_1.ServeStaticModule.forRoot({
+                rootPath: path.join(process.cwd(), 'uploads'),
+                serveRoot: '/uploads',
+            }),
+        ],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

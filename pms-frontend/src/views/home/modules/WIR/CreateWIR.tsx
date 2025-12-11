@@ -1911,65 +1911,67 @@ export default function CreateWIR() {
                                 No items to display. This follow-up does not have carried failed items.
                             </div>
                         ) : (
-                            <div className="mt-3 h-[65vh] sm:max-h-[55vh] overflow-auto pr-1 divide-y">
-                                {fuItems.map((it) => {
-                                    const tolStr = formatTolerance(it.tolOp, it.base, it.plus, it.minus, it.units) || null;
-                                    const statusBadge = (label: string | null, tone: "rose" | "amber" | "gray" = "gray") =>
-                                        label ? (
-                                            <span
-                                                className={
-                                                    "text-[11px] px-2 py-1 rounded-full border " +
-                                                    (tone === "rose"
-                                                        ? "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
-                                                        : tone === "amber"
-                                                            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
-                                                            : "dark:border-neutral-800 text-gray-600 dark:text-gray-300")
-                                                }
-                                            >
-                                                {label}
-                                            </span>
-                                        ) : null;
+                            <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {fuItems.map((it) => {
+                                        const op = it.tolOp === "+-" ? "±" : it.tolOp;
+                                        const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
+                                        const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
 
-                                    return (
-                                        <div key={it.id} className="py-3">
-                                            <div className="text-[13px] sm:text-sm dark:text-white leading-snug">{it.text}</div>
-
-                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                {/* Checklist pill */}
-                                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                                                    {it.refCode ? `#${it.refCode}` : "Checklist"}
-                                                    {it.refTitle ? ` • ${it.refTitle}` : ""}
+                                        const statusBadge = (label: string | null, tone: "rose" | "amber" | "gray" = "gray") =>
+                                            label ? (
+                                                <span
+                                                    className={
+                                                        "text-[11px] px-2 py-1 rounded-full border " +
+                                                        (tone === "rose"
+                                                            ? "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
+                                                            : tone === "amber"
+                                                                ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
+                                                                : "dark:border-neutral-800 text-gray-600 dark:text-gray-300")
+                                                    }
+                                                >
+                                                    {label}
                                                 </span>
+                                            ) : null;
 
-                                                {it.code ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                                                        Item: #{it.code}
-                                                    </span>
-                                                ) : null}
+                                        return (
+                                            <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
+                                                {/* Title + tolerance (exact like Compliance) */}
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-semibold dark:text-white">
+                                                            {it.text || "Untitled"}{tol ? ` — ${tol}` : ""}
+                                                        </div>
+                                                        {codeLine && (
+                                                            <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                                {codeLine}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {/* Compliance has a right-side Critical pill; Follow-up schema lacks it, so keep empty */}
+                                                </div>
 
-                                                {/* Statuses */}
-                                                {statusBadge(it.inspectorStatus, it.inspectorStatus?.toUpperCase() === "FAIL" ? "rose" : "gray")}
-                                                {statusBadge(it.status, it.status?.toUpperCase() === "NCR" ? "rose" : "gray")}
-                                                {statusBadge(it.lastRunStatus, it.lastRunStatus?.toUpperCase() === "NCR" ? "rose" : "amber")}
+                                                {/* Pills row (Mandatory/Optional omitted — not available in Follow-up); keep Unit/Tolerance like Compliance */}
+                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                    {it.units && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Unit: {it.units}
+                                                        </span>
+                                                    )}
+                                                    {tol && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Tolerance: {tol}
+                                                        </span>
+                                                    )}
+                                                </div>
 
-                                                {/* Tolerance / Units */}
-                                                {tolStr ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
-                                                        Tol: {tolStr}
-                                                    </span>
-                                                ) : null}
-                                                {it.units ? (
-                                                    <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-700 dark:text-gray-200">
-                                                        Units: {it.units}
-                                                    </span>
-                                                ) : null}
+                                                {/* Compliance shows tags row; Follow-up has no tags — omit for visual parity */}
                                             </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
+                                </div> {/* ← close the new grid wrapper */}
                             </div>
                         )}
-
                         {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
                     </div>
                 </div>
