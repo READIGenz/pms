@@ -156,10 +156,11 @@ export default function FollowupScheduleModal({
       forTime: time,                          // "HH:mm"
       includeItemIds: failedItemIds,          // controller maps -> itemIds
       seriesId: wir?.seriesId || undefined,
-      title:
-        nextVersionLabel && (wir?.title || "").trim()
-          ? `${wir.title} ${nextVersionLabel}`
-          : wir?.title || undefined,
+      // title:
+      //   nextVersionLabel && (wir?.title || "").trim()
+      //     ? `${wir.title} ${nextVersionLabel}`
+      //     : wir?.title || undefined,
+      title: (wir?.title || undefined),  // keep title as-is; no version string
       description: note?.trim() || undefined, // controller reads description or note
     };
     flog("buildFollowupBody()", {
