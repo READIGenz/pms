@@ -263,11 +263,11 @@ export default function FollowupScheduleModal({
 
   return (
     <div
-      className="fixed inset-0 z-[113] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[113] bg-black/40 pointer-events-none grid place-items-center"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
+      <div className="pointer-events-auto bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="text-base font-semibold dark:text-white">
@@ -369,9 +369,10 @@ export default function FollowupScheduleModal({
         </div>
 
         {confirmOpen && (
-          <div className="fixed inset-0 z-[114] flex items-center justify-center bg-black/50">
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-xl p-4">
-              <div className="flex items-center justify-between">
+          <div className="fixed inset-0 z-[114] bg-black/50 pointer-events-none grid place-items-center">
+            <div className="pointer-events-auto bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-xl p-0 sm:p-0 flex flex-col max-h-[85vh]">
+              {/* Header (fixed) */}
+              <div className="px-4 py-3 border-b dark:border-neutral-800 flex items-center justify-between shrink-0">
                 <div className="text-base font-semibold dark:text-white">Confirm Follow-up</div>
                 <button
                   className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
@@ -382,7 +383,8 @@ export default function FollowupScheduleModal({
                 </button>
               </div>
 
-              <div className="mt-3 text-sm divide-y">
+              {/* Scrollable content */}
+              <div className="px-4 py-3 text-sm divide-y overflow-y-auto flex-1">
                 <div className="py-2 flex justify-between gap-3">
                   <div className="text-gray-600 dark:text-gray-300">Parent</div>
                   <div className="text-right dark:text-white truncate">
@@ -410,10 +412,10 @@ export default function FollowupScheduleModal({
                   {failedItemsDetailed.length === 0 ? (
                     <div className="text-[12px] dark:text-white">—</div>
                   ) : (
-                    <ul className="space-y-1 max-h-48 overflow-auto">
+                    <ul className="space-y-1 max-h-48 overflow-auto pr-1">
                       {failedItemsDetailed.slice(0, 10).map(it => {
-                        const tolPill = tolPillFrom(it);                 // e.g., "± 20 cm" / "<= 20 mm"
-                        const tolLong = tolLine(it.base, it.plus, it.minus); // e.g., "20 (+10/-10)"
+                        const tolPill = tolPillFrom(it);
+                        const tolLong = tolLine(it.base, it.plus, it.minus);
                         return (
                           <li key={it.id} className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -442,13 +444,14 @@ export default function FollowupScheduleModal({
 
                 <div className="py-2">
                   <div className="text-gray-600 dark:text-gray-300 mb-1">JSON to be sent</div>
-                  <pre className="text-[12px] leading-snug whitespace-pre-wrap break-all font-mono p-2 rounded-lg border dark:border-neutral-800 dark:text-white bg-gray-50 dark:bg-neutral-800/50">
+                  <pre className="text-[12px] leading-snug whitespace-pre-wrap break-all font-mono p-2 rounded-lg border dark:border-neutral-800 dark:text-white bg-gray-50 dark:bg-neutral-800/50 overflow-auto max-h-56">
                     {JSON.stringify(buildFollowupBody(), null, 2)}
                   </pre>
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-end gap-2">
+              {/* Footer (fixed) */}
+              <div className="px-4 py-3 border-t dark:border-neutral-800 flex items-center justify-end gap-2 shrink-0">
                 <button
                   className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
                   onClick={() => setConfirmOpen(false)}
