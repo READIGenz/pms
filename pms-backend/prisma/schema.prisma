@@ -493,23 +493,42 @@ model Wir {
   hodOutcome              HodOutcome?
   hodRemarks              String?
   hodDecidedAt            DateTime?                @db.Timestamptz(6)
-  createdById             String?                  @db.Uuid
-  createdAt               DateTime                 @default(now()) @db.Timestamptz(6)
-  updatedAt               DateTime                 @updatedAt @db.Timestamptz(6)
-  bic                     User?                    @relation("WirBicUser", fields: [bicUserId], references: [userId])
-  contractor              User?                    @relation("WirContractorUser", fields: [contractorId], references: [userId])
-  createdBy               User?                    @relation("WirCreatedBy", fields: [createdById], references: [userId])
-  hod                     User?                    @relation("WirHodUser", fields: [hodId], references: [userId])
-  inspector               User?                    @relation("WirInspectorUser", fields: [inspectorId], references: [userId])
-  project                 Project                  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
-  rescheduledBy           User?                    @relation("WirRescheduledByUser", fields: [rescheduledById], references: [userId])
-  checklists              WirChecklist[]
-  WirDiscussion           WirDiscussion[]
-  histories               WirHistory[]             @relation("WirToHistory")
-  items                   WirItem[]
-  evidences               WirItemEvidence[]        @relation("WirToEvidence")
-  itemRuns                WirItemRun[]             @relation("WirToItemRuns")
 
+  // ---- NEW: versioning ----
+  seriesId  String? @db.Uuid
+  version   Int?    @default(1)
+  prevWirId String? @db.Uuid
+
+  // ---- NEW: Activity snapshot ----
+  activityRefId           String? @db.Uuid
+  activitySnapshot        Json?
+  activitySnapshotVersion Int?
+
+  // ---- NEW: materialization lifecycle ----
+  materialized Boolean?  @default(false)
+  snapshotAt   DateTime? @db.Timestamptz(6)
+
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  bic           User?   @relation("WirBicUser", fields: [bicUserId], references: [userId])
+  contractor    User?   @relation("WirContractorUser", fields: [contractorId], references: [userId])
+  createdBy     User?   @relation("WirCreatedBy", fields: [createdById], references: [userId])
+  hod           User?   @relation("WirHodUser", fields: [hodId], references: [userId])
+  inspector     User?   @relation("WirInspectorUser", fields: [inspectorId], references: [userId])
+  project       Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  rescheduledBy User?   @relation("WirRescheduledByUser", fields: [rescheduledById], references: [userId])
+
+  checklists    WirChecklist[]
+  WirDiscussion WirDiscussion[]
+  histories     WirHistory[]      @relation("WirToHistory")
+  items         WirItem[]
+  evidences     WirItemEvidence[] @relation("WirToEvidence")
+  itemRuns      WirItemRun[]      @relation("WirToItemRuns")
+
+  @@index([activityRefId])
+  @@index([seriesId, version])
   @@index([projectId])
   @@index([status])
   @@index([discipline, stage])
@@ -567,13 +586,15 @@ model WirItem {
   base                  Decimal?             @db.Decimal(18, 3)
   plus                  Decimal?             @db.Decimal(18, 3)
   minus                 Decimal?             @db.Decimal(18, 3)
-  checklist             RefChecklist?        @relation("WirItem_checklist", fields: [checklistId], references: [id], onDelete: Restrict)
-  item                  RefChecklistItem?    @relation("WirItem_item", fields: [itemId], references: [id], onDelete: Restrict)
-  sourceChecklist       RefChecklist?        @relation("WirItem_sourceChecklist", fields: [sourceChecklistId], references: [id])
-  sourceItem            RefChecklistItem?    @relation("WirItem_sourceItem", fields: [sourceChecklistItemId], references: [id])
-  wir                   Wir                  @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
-  evidences             WirItemEvidence[]    @relation("WirItemToEvidence")
-  runs                  WirItemRun[]         @relation("WirItemToRuns")
+
+  checklist       RefChecklist?     @relation("WirItem_checklist", fields: [checklistId], references: [id], onDelete: Restrict)
+  item            RefChecklistItem? @relation("WirItem_item", fields: [itemId], references: [id], onDelete: Restrict)
+  sourceChecklist RefChecklist?     @relation("WirItem_sourceChecklist", fields: [sourceChecklistId], references: [id])
+  sourceItem      RefChecklistItem? @relation("WirItem_sourceItem", fields: [sourceChecklistItemId], references: [id])
+  wir             Wir               @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  evidences WirItemEvidence[] @relation("WirItemToEvidence")
+  runs      WirItemRun[]      @relation("WirItemToRuns")
 
   @@index([wirId])
   @@index([checklistId])
@@ -605,20 +626,21 @@ model WirHistory {
 }
 
 model WirDiscussion {
-  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  wirId     String          @db.Uuid
-  authorId  String          @db.Uuid
-  parentId  String?         @db.Uuid
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId     String    @db.Uuid
+  authorId  String    @db.Uuid
+  parentId  String?   @db.Uuid
   body      String
   fileUrl   String?
   fileName  String?
-  createdAt DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime        @updatedAt @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime?
-  author    User            @relation(fields: [authorId], references: [userId], onDelete: Cascade)
-  parent    WirDiscussion?  @relation("WirDiscussionToParent", fields: [parentId], references: [id])
-  replies   WirDiscussion[] @relation("WirDiscussionToParent")
-  wir       Wir             @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  author  User            @relation(fields: [authorId], references: [userId], onDelete: Cascade)
+  parent  WirDiscussion?  @relation("WirDiscussionToParent", fields: [parentId], references: [id])
+  replies WirDiscussion[] @relation("WirDiscussionToParent")
+  wir     Wir             @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
 }
 
 model WirItemRun {
@@ -639,9 +661,10 @@ model WirItemRun {
   locationNote String?
   meta         Json?
   createdAt    DateTime            @default(now()) @db.Timestamptz(6)
-  evidences    WirItemEvidence[]   @relation("RunToEvidence")
-  item         WirItem             @relation("WirItemToRuns", fields: [itemId], references: [id], onDelete: Cascade)
-  wir          Wir                 @relation("WirToItemRuns", fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  evidences WirItemEvidence[] @relation("RunToEvidence")
+  item      WirItem           @relation("WirItemToRuns", fields: [itemId], references: [id], onDelete: Cascade)
+  wir       Wir               @relation("WirToItemRuns", fields: [wirId], references: [wirId], onDelete: Cascade)
 
   @@index([wirId])
   @@index([itemId])
@@ -666,9 +689,10 @@ model WirItemEvidence {
   accuracyM  Decimal?            @db.Decimal(6, 2)
   meta       Json?
   createdAt  DateTime            @default(now()) @db.Timestamptz(6)
-  item       WirItem?            @relation("WirItemToEvidence", fields: [itemId], references: [id])
-  run        WirItemRun?         @relation("RunToEvidence", fields: [runId], references: [id])
-  wir        Wir                 @relation("WirToEvidence", fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  item WirItem?    @relation("WirItemToEvidence", fields: [itemId], references: [id])
+  run  WirItemRun? @relation("RunToEvidence", fields: [runId], references: [id])
+  wir  Wir         @relation("WirToEvidence", fields: [wirId], references: [wirId], onDelete: Cascade)
 
   @@index([wirId])
   @@index([itemId])
