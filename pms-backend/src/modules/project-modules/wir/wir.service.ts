@@ -2,7 +2,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateWirDto, UpdateWirHeaderDto, AttachChecklistsDto, RollForwardDto, DispatchWirDto } from './dto';
-import { Prisma, WirItemStatus, WirStatus, HodOutcome, WirItemEvidenceKind } from '@prisma/client';
+import { Prisma, WirItemStatus, WirStatus, HodOutcome, WirItemEvidenceKind, WirAction } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
 import { FilesService } from '../../../common/storage/files.service';
@@ -18,20 +18,6 @@ function toHodOutcomeEnum(v?: string | null): HodOutcome | undefined {
 
   return undefined;
 }
-
-type WirActionLiteral =
-  | 'Created'
-  | 'Updated'
-  | 'Submitted'
-  | 'Recommended'
-  | 'Approved'
-  | 'Rejected'
-  | 'Returned'
-  | 'Deleted'
-  | 'BicChanged'
-  | 'ItemsChanged'
-  | 'Rescheduled'
-  | 'NoteAdded';
 
 function splitDateTime(iso?: string | null): { forDate?: Date; forTime?: string } {
   if (!iso) return {};
@@ -198,6 +184,46 @@ export class WirService {
     return rows;
   }
 
+  private async snapshotItemOutcomes(wirId: string) {
+    const items = await this.prisma.wirItem.findMany({
+      where: { wirId },
+      select: {
+        id: true, code: true, name: true,
+        status: true, inspectorStatus: true, hodStatus: true,
+      },
+      orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const ok: any[] = [];
+    const ncr: any[] = [];
+    const pending: any[] = [];
+    const unknown: any[] = [];
+
+    for (const it of items) {
+      const S = String(it.status ?? '').trim().toUpperCase();
+      const row = { id: it.id, code: it.code ?? null, name: it.name ?? null };
+
+      if (S === 'OK') ok.push(row);
+      else if (S === 'NCR' || S === 'NOT_OK' || S === 'REJECT') ncr.push(row);
+      else if (S === 'PENDING') pending.push(row);
+      else unknown.push(row);
+    }
+
+    return {
+      totals: {
+        ok: ok.length,
+        ncr: ncr.length,
+        pending: pending.length,
+        unknown: unknown.length,
+        all: items.length,
+      },
+      ok: ok.map(x => x.id),
+      ncr: ncr.map(x => x.id),
+      pending: pending.map(x => x.id),
+      unknown: unknown.map(x => x.id),
+    };
+  }
+
   private async materializeItemsFromRef(wirId: string, refChecklistIds: string[]) {
     if (!refChecklistIds?.length) return { created: 0 };
     const items = await this.prisma.refChecklistItem.findMany({
@@ -241,7 +267,7 @@ export class WirService {
   private async writeHistory(
     projectId: string,
     wirId: string,
-    action: WirActionLiteral,
+    action: WirAction,
     notes?: string,
     meta?: Prisma.InputJsonValue,
     actor?: { userId?: string | null; fullName?: string | null }
@@ -643,7 +669,18 @@ export class WirService {
           actor
         );
       }
-
+      if (safeDto.status === 'APPROVE_WITH_COMMENTS') {
+        // 1) snapshot at approve-with-comments
+        const snap = await this.snapshotItemOutcomes(wirId);
+        await this.writeHistory(
+          projectId,
+          wirId,
+          'ItemsSnapshot',
+          'Snapshot at approval with comments',
+          { by: 'HOD', at: new Date().toISOString(), ...snap },
+          actor
+        );
+      }
       // History when HOD outcome is set via PATCH (use enum mapping)
       if (safeDto.hodOutcome !== undefined) {
         const mapped = toHodOutcomeEnum(safeDto.hodOutcome);
@@ -658,6 +695,16 @@ export class WirService {
                 : 'Returned',
             safeDto.hodRemarks || undefined,
             { via: 'PATCH' } as any,
+            actor
+          );
+          // 2) snapshot at HOD finalization (Accept/Reject/Return)
+          const snap = await this.snapshotItemOutcomes(wirId);
+          await this.writeHistory(
+            projectId,
+            wirId,
+            'ItemsSnapshot',
+            'Snapshot at HOD finalization',
+            { by: 'HOD', at: new Date().toISOString(), ...snap },
             actor
           );
         }
@@ -1313,86 +1360,86 @@ export class WirService {
    * Returns: [{ itemId, evidenceId, url, fileName, kind }]
    */
   async createRunnerAttachments(
-  projectId: string,
-  wirId: string,
-  files: Array<Express.Multer.File>,
-  meta: Array<{ idx: number; itemId: string; kind?: 'Photo'|'Video'|'File' }>,
-) {
-  const wir = await this.prisma.wir.findFirst({
-    where: { wirId, projectId },
-    select: { wirId: true },
-  });
-  if (!wir) throw new NotFoundException('WIR not found for project');
+    projectId: string,
+    wirId: string,
+    files: Array<Express.Multer.File>,
+    meta: Array<{ idx: number; itemId: string; kind?: 'Photo' | 'Video' | 'File' }>,
+  ) {
+    const wir = await this.prisma.wir.findFirst({
+      where: { wirId, projectId },
+      select: { wirId: true },
+    });
+    if (!wir) throw new NotFoundException('WIR not found for project');
 
-  const metaByIdx = new Map<number, { itemId: string; kind?: 'Photo'|'Video'|'File' }>();
-  for (const m of meta || []) {
-    if (typeof m?.idx === 'number' && m?.itemId) metaByIdx.set(m.idx, { itemId: m.itemId, kind: m.kind });
+    const metaByIdx = new Map<number, { itemId: string; kind?: 'Photo' | 'Video' | 'File' }>();
+    for (const m of meta || []) {
+      if (typeof m?.idx === 'number' && m?.itemId) metaByIdx.set(m.idx, { itemId: m.itemId, kind: m.kind });
+    }
+
+    const saved = await this.files.saveMany(files, {
+      subdir: `projects/${projectId}/wir/${wirId}`,
+      makeThumbs: true,
+    });
+
+    const results: Array<{ itemId: string; evidenceId: string; url: string; fileName?: string | null; kind: WirItemEvidenceKind }> = [];
+    const touchedItemIds = new Set<string>();
+
+    await this.prisma.$transaction(async (tx) => {
+      for (let i = 0; i < saved.length; i++) {
+        const s = saved[i];
+        const m = metaByIdx.get(i);
+        if (!m?.itemId) continue;
+
+        const exists = await tx.wirItem.findFirst({
+          where: { id: m.itemId, wirId },
+          select: { id: true },
+        });
+        if (!exists) continue;
+
+        const kind: WirItemEvidenceKind =
+          m.kind === 'Video' ? 'Video' :
+            m.kind === 'File' ? 'File' : 'Photo';
+
+        const row = await tx.wirItemEvidence.create({
+          data: {
+            wirId,
+            itemId: m.itemId,
+            kind,
+            url: s.url,
+            thumbUrl: s.thumbUrl || undefined,
+            fileName: s.fileName || undefined,
+            fileSize: s.size ?? undefined,
+            mimeType: s.mimeType || undefined,
+            capturedAt: new Date(),
+          },
+          select: { id: true, url: true, fileName: true, kind: true, itemId: true },
+        });
+
+        results.push({
+          itemId: row.itemId!,
+          evidenceId: row.id,
+          url: row.url,
+          fileName: row.fileName ?? null,
+          kind: row.kind,
+        });
+
+        touchedItemIds.add(m.itemId);
+      }
+
+      // Recompute photoCount for each touched item (exact count from DB)
+      for (const itemId of touchedItemIds) {
+        const photos = await tx.wirItemEvidence.count({
+          where: { wirId, itemId, kind: 'Photo' },
+        });
+        await tx.wirItem.update({
+          where: { id: itemId },
+          data: { photoCount: photos },
+        });
+      }
+    });
+
+    return results;
   }
-
-  const saved = await this.files.saveMany(files, {
-    subdir: `projects/${projectId}/wir/${wirId}`,
-    makeThumbs: true,
-  });
-
-  const results: Array<{ itemId: string; evidenceId: string; url: string; fileName?: string | null; kind: WirItemEvidenceKind }> = [];
-  const touchedItemIds = new Set<string>();
-
-  await this.prisma.$transaction(async (tx) => {
-    for (let i = 0; i < saved.length; i++) {
-      const s = saved[i];
-      const m = metaByIdx.get(i);
-      if (!m?.itemId) continue;
-
-      const exists = await tx.wirItem.findFirst({
-        where: { id: m.itemId, wirId },
-        select: { id: true },
-      });
-      if (!exists) continue;
-
-      const kind: WirItemEvidenceKind =
-        m.kind === 'Video' ? 'Video' :
-        m.kind === 'File'  ? 'File'  : 'Photo';
-
-      const row = await tx.wirItemEvidence.create({
-        data: {
-          wirId,
-          itemId: m.itemId,
-          kind,
-          url: s.url,
-          thumbUrl: s.thumbUrl || undefined,
-          fileName: s.fileName || undefined,
-          fileSize: s.size ?? undefined,
-          mimeType: s.mimeType || undefined,
-          capturedAt: new Date(),
-        },
-        select: { id: true, url: true, fileName: true, kind: true, itemId: true },
-      });
-
-      results.push({
-        itemId: row.itemId!,
-        evidenceId: row.id,
-        url: row.url,
-        fileName: row.fileName ?? null,
-        kind: row.kind,
-      });
-
-      touchedItemIds.add(m.itemId);
-    }
-
-    // Recompute photoCount for each touched item (exact count from DB)
-    for (const itemId of touchedItemIds) {
-      const photos = await tx.wirItemEvidence.count({
-        where: { wirId, itemId, kind: 'Photo' },
-      });
-      await tx.wirItem.update({
-        where: { id: itemId },
-        data: { photoCount: photos },
-      });
-    }
-  });
-
-  return results;
-}
 
   async inspectorSave(projectId: string, wirId: string, dto: InspectorSaveDto, user: any) {
     // (optional) verify the WIR belongs to projectId and user can act

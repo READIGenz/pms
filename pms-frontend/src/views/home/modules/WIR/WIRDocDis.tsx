@@ -149,7 +149,10 @@ type EditBuf = {
     value?: string;                        // raw text → parse to number on save
     remark?: string;
     status?: "PASS" | "FAIL" | "NA";
-    photo?: File | null;                   // camera capture (optional)
+    photo?: File | null;                   // local selection (pre-upload)
+    evidenceUrl?: string | null;           // uploaded file URL (server)
+    evidenceName?: string | null;          // uploaded file name (display)
+    uploading?: boolean;                   // per-item upload spinner
 };
 
 function TabButton({
@@ -169,6 +172,20 @@ function TabButton({
         </button>
     );
 }
+
+// Map file to BE "kind"
+const detectKind = (file: File): "Photo" | "Video" | "File" => {
+    const t = (file.type || "").toLowerCase();
+    if (t.startsWith("image/")) return "Photo";
+    if (t.startsWith("video/")) return "Video";
+    return "File";
+};
+
+// Pretty (fallback) name from URL
+const baseName = (s?: string | null) => {
+    if (!s) return "";
+    try { return decodeURIComponent(s.split("/").pop() || s); } catch { return s; }
+};
 
 export default function WIRDocDis() {
     const { user, claims } = useAuth();
@@ -311,8 +328,12 @@ export default function WIRDocDis() {
     const setEdit = (itemId: string, patch: Partial<EditBuf>) =>
         setEdits((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), ...patch } }));
 
-    const onPickPhoto = (itemId: string, file?: File | null) =>
-        setEdit(itemId, { photo: file || null });
+    const onPickPhoto = (itemId: string, file?: File | null) => {
+        if (!file) { setEdit(itemId, { photo: null }); return; }
+        // keep the local file briefly (optional), then upload
+        setEdit(itemId, { photo: file });
+        uploadEvidence(itemId, file);
+    };
 
     const parseNum = (s?: string) => {
         if (!s) return undefined;
@@ -484,7 +505,7 @@ export default function WIRDocDis() {
 
             // Evidence/Document required only if tag present
             if (needsEvidence) {
-                if (!buf.photo) {
+                if (!(buf.evidenceUrl || buf.photo)) { // URL after upload OR pending local file
                     missing.push({ id: it.id, name: it.name || it.code || "Item (evidence/document)" });
                     continue;
                 }
@@ -683,6 +704,10 @@ export default function WIRDocDis() {
     };
 
     const items = row?.items ?? [];
+    const totalRunnerRuns = useMemo(
+        () => (row?.items ?? []).reduce((s, it) => s + ((it.runs?.length) || 0), 0),
+        [row?.items]
+    );
     const rec = recLockedReject ? "REJECT" : ((pendingRec ?? row?.inspectorRecommendation) ?? null);
     const itemsCount = items.length;
 
@@ -729,7 +754,7 @@ export default function WIRDocDis() {
 
     // NEW: remove selected photo/document
     const onRemovePhoto = (itemId: string) => {
-        setEdit(itemId, { photo: null });
+        setEdit(itemId, { photo: null, evidenceUrl: null, evidenceName: null });
         clearFileInputs(itemId);
     };
 
@@ -827,6 +852,7 @@ export default function WIRDocDis() {
     // Notes modal state
     const [notesOpen, setNotesOpen] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
+    const [runnerHistoryOpen, setRunnerHistoryOpen] = useState(false);
     const [actorNameMap, setActorNameMap] = useState<Record<string, string>>({});
     // helper: get display name for a user id (fallback to id)
     const nameOf = useCallback((id?: string | null) => {
@@ -1018,6 +1044,42 @@ export default function WIRDocDis() {
         }
     }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir
         , row?.inspectorRecommendation]);
+
+    const uploadEvidence = useCallback(async (itemId: string, file: File) => {
+        // mark uploading
+        setEdit(itemId, { uploading: true, evidenceUrl: null, evidenceName: null });
+        try {
+            const fd = new FormData();
+            fd.append("files", file);
+            const meta = [{ idx: 0, itemId, kind: detectKind(file) }];
+            fd.append("meta", JSON.stringify(meta));
+            const { data } = await api.post(
+                `/projects/${projectId}/wir/${wirId}/runner/attachments`,
+                fd,
+                { headers: { "Content-Type": "multipart/form-data" } }
+            );
+            // normalize response
+            const list: any[] =
+                Array.isArray(data) ? data :
+                    Array.isArray((data || {}).attachments) ? data.attachments :
+                        Array.isArray((data || {}).created) ? data.created : [];
+            const first = list[0] || {};
+            const url = first.url || first.fileUrl || first.link || null;
+            const name = first.fileName || file.name || baseName(url) || null;
+
+            setEdit(itemId, {
+                photo: null,                     // consumed
+                evidenceUrl: url,
+                evidenceName: name,
+                uploading: false
+            });
+        } catch (e: any) {
+            setErr(e?.response?.data?.error || e?.message || "Upload failed.");
+            setEdit(itemId, { uploading: false });
+            // clear inputs so user can retry
+            clearFileInputs(itemId);
+        }
+    }, [projectId, wirId]);
 
     // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
@@ -1216,7 +1278,7 @@ export default function WIRDocDis() {
                                         <div><b>Inspector of Record:</b> {inspName || "—"}</div>
                                         <div><b>Ball in Court:</b> {bicName || "—"}</div>                                    </div>
                                     {/* WIR History link */}
-                                    <div className="pt-2">
+                                    <div className="pt-2 flex items-center gap-2 flex-wrap">
                                         <button
                                             type="button"
                                             onClick={() => setHistoryOpen(true)}
@@ -1225,7 +1287,19 @@ export default function WIRDocDis() {
                                         >
                                             View WIR History{typeof row.histories?.length === "number" ? ` (${row.histories.length})` : ""}
                                         </button>
+
+                                        <span className="text-gray-400">•</span>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setRunnerHistoryOpen(true)}
+                                            className="text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                            title="View item-wise runner entries history"
+                                        >
+                                            View Runner History{totalRunnerRuns ? ` (${totalRunnerRuns})` : ""}
+                                        </button>
                                     </div>
+
                                 </div>
 
                                 <div className="rounded-xl border dark:border-neutral-800 p-3">
@@ -1493,18 +1567,35 @@ export default function WIRDocDis() {
                                                             </label>
 
                                                             {/* Selected file name + Remove */}
-                                                            {buf.photo ? (
-                                                                <span className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
-                                                                    <span className="truncate" title={buf.photo.name}>{buf.photo.name}</span>
+                                                            {buf.uploading ? (
+                                                                <span className="inline-flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                    Uploading…
+                                                                </span>
+                                                            ) : buf.evidenceUrl ? (
+                                                                <span className="inline-flex items-center gap-2 max-w-[320px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                    <a href={buf.evidenceUrl} target="_blank" rel="noreferrer" className="underline truncate">
+                                                                        {buf.evidenceName || baseName(buf.evidenceUrl) || "Attachment"}
+                                                                    </a>
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => onRemovePhoto(it.id)}
                                                                         className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
-                                                                        title="Remove selected file"
+                                                                        title="Remove attached file"
                                                                     >
                                                                         ✕
                                                                     </button>
                                                                 </span>
+                                                            ) : buf.photo ? (<span className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                <span className="truncate" title={buf.photo.name}>{buf.photo.name}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onRemovePhoto(it.id)}
+                                                                    className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                    title="Remove selected file"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </span>
                                                             ) : null}
                                                         </div>
 
@@ -1960,6 +2051,90 @@ export default function WIRDocDis() {
                     </div>
                 </div>
             )}
+            {runnerHistoryOpen && row && (
+                <div
+                    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-4xl max-h-[85vh] overflow-auto">
+                        {/* Header */}
+                        <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
+                            <div className="text-base sm:text-lg font-semibold dark:text-white">
+                                Runner Items History — {row.code || row.wirId}
+                            </div>
+                            <button
+                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                onClick={() => setRunnerHistoryOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-4">
+                            {((row.items?.some(it => (it.runs?.length || 0) > 0)) ? false : true) ? (
+                                <div className="text-sm text-gray-600 dark:text-gray-300">No runner history recorded.</div>
+                            ) : (
+                                <ul className="space-y-4">
+                                    {(row.items ?? [])
+                                        .filter(it => (it.runs?.length || 0) > 0)
+                                        .map((it) => (
+                                            <li key={it.id} className="rounded-xl border dark:border-neutral-800 p-3">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-semibold dark:text-white">
+                                                            {it.name || "Untitled Item"} {it.code ? `— ${it.code}` : ""}
+                                                        </div>
+                                                        {(it.unit || it.tolerance) ? (
+                                                            <div className="text-[12px] text-gray-600 dark:text-gray-300 mt-0.5">
+                                                                {it.unit ? `Unit: ${it.unit}` : ""}{it.unit && it.tolerance ? " • " : ""}
+                                                                {it.tolerance ? `Tolerance: ${it.tolerance}` : ""}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                    {it.critical ? (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                                            Critical
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+
+                                                <div className="mt-2">
+                                                    <ul className="space-y-2">
+                                                        {[...(it.runs || [])]
+                                                            .slice()
+                                                            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                                            .map((r, idx) => (
+                                                                <li key={idx} className="rounded-lg border dark:border-neutral-800 p-2">
+                                                                    <div className="flex items-center justify-between gap-2">
+                                                                        <div className="text-[12px] text-gray-700 dark:text-gray-300">
+                                                                            <b>When:</b> {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
+                                                                        </div>
+                                                                        <div className="text-[11px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                                                            {r.status || "—"}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px] text-gray-700 dark:text-gray-300">
+                                                                        <div>
+                                                                            <b>Value:</b> {r.valueNumber != null ? r.valueNumber : "—"}{r.unit ? ` ${r.unit}` : ""}
+                                                                        </div>
+                                                                        <div className="sm:col-span-2">
+                                                                            <b>Comment:</b> {r.comment?.toString().trim() ? r.comment : "—"}
+                                                                        </div>
+                                                                    </div>
+                                                                </li>
+                                                            ))}
+                                                    </ul>
+                                                </div>
+                                            </li>
+                                        ))}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {previewOpen && (
                 <div
@@ -2089,8 +2264,9 @@ export default function WIRDocDis() {
                                                     </div>
 
                                                     <div className="text-sm">
-                                                        <b>Photo:</b>{" "}
-                                                        {buf.photo?.name ? buf.photo.name : "—"}
+                                                        <b>Attachment:</b>{" "}
+                                                        {buf.evidenceUrl ? (buf.evidenceName || baseName(buf.evidenceUrl)) :
+                                                            (buf.photo?.name ? buf.photo.name : "—")}
                                                     </div>
                                                 </div>
                                             </div>

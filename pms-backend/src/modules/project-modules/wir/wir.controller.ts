@@ -14,7 +14,7 @@ const getAuthUserId = (req: any): string | null =>
 @UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/wir')
 export class WirController {
-  wirService: any;
+  //  wirService: any;
   constructor(private readonly service: WirService) { }
 
 
@@ -147,22 +147,31 @@ export class WirController {
   //   files: (multiple) binary
   //   meta:  JSON string -> [{ idx:number, itemId:string, kind?: "Photo"|"Video"|"File" }]
   @Post(':wirId/runner/attachments')
-@UseInterceptors(FilesInterceptor('files')) // name="files"
-async uploadRunnerAttachments(
-  @Param('projectId') projectId: string,
-  @Param('wirId') wirId: string,
-  @UploadedFiles() files: Express.Multer.File[],
-  @Body('meta') metaJson: string,               // meta is sent as JSON string
-  @Req() req: any,
-) {
-  let meta: Array<{ idx: number; itemId: string; kind?: 'Photo'|'Video'|'File' }> = [];
-  try {
-    meta = JSON.parse(metaJson || '[]');
-  } catch {
-    throw new BadRequestException('Invalid meta JSON');
+  //  @UseInterceptors(FilesInterceptor('files')) // name="files"
+  @UseInterceptors(FilesInterceptor('files', 20, {
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB each
+    fileFilter: (_req, file, cb) => {
+      const ok = /^(image\/(jpeg|png|webp)|video\/mp4|application\/pdf)$/.test(file.mimetype);
+      cb(ok ? null : new BadRequestException('Unsupported file type'), ok);
+    },
+  }))
+  async uploadRunnerAttachments(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('meta') metaJson: string,               // meta is sent as JSON string
+    @Req() req: any,
+  ) {
+    let meta: Array<{ idx: number; itemId: string; kind?: 'Photo' | 'Video' | 'File' }> = [];
+    try {
+      meta = JSON.parse(metaJson || '[]');
+    } catch {
+      throw new BadRequestException('Invalid meta JSON');
+    }
+    //  return this.wirService.createRunnerAttachments(projectId, wirId, files, meta);
+    return this.service.createRunnerAttachments(projectId, wirId, files, meta);
+
   }
-  return this.wirService.createRunnerAttachments(projectId, wirId, files, meta);
-}
 
   @Post(':wirId/runner/inspector-save')
   async inspectorSave(
