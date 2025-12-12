@@ -964,7 +964,7 @@ enum WirAction {
   ItemsChanged
   NoteAdded
   Rescheduled
-
+  ItemsSnapshot   
   @@map("WirAction")
 }
 
