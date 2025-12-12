@@ -18,8 +18,10 @@ function decodeJwtPayload(token: string): any | null {
 
 const isIsoLike = (v: any) =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
-const fmtBool = (v: any) => (v === null || v === undefined ? "" : v ? "✓" : "✗");
-const fmtDate = (v: any) => (isIsoLike(v) ? new Date(v).toLocaleString() : (v ?? ""));
+const fmtBool = (v: any) =>
+  v === null || v === undefined ? "" : v ? "✓" : "✗";
+const fmtDate = (v: any) =>
+  isIsoLike(v) ? new Date(v).toLocaleString() : v ?? "";
 
 // --- Photo helpers ---
 function resolvePhotoUrl(path?: string | null): string | null {
@@ -29,8 +31,12 @@ function resolvePhotoUrl(path?: string | null): string | null {
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 function initialsFrom(first?: string, middle?: string, last?: string) {
-  const parts = [first, middle, last].filter(Boolean).map(s => String(s).trim());
-  const letters = parts.map(p => p[0]?.toUpperCase()).filter(Boolean);
+  const parts = [first, middle, last]
+    .filter(Boolean)
+    .map((s) => String(s).trim());
+  const letters = parts
+    .map((p) => p[0]?.toUpperCase())
+    .filter(Boolean) as string[];
   return (letters[0] || "") + (letters[1] || "");
 }
 
@@ -70,23 +76,28 @@ type RawUser = any;
 // ----- Ref types -----
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
-type CompanyRef = { companyId: string; name: string; companyRole: string; status: string };
+type CompanyRef = {
+  companyId: string;
+  name: string;
+  companyRole: string;
+  status: string;
+};
 
 // ----- Column definition (order) -----
 const headings: { key: keyof DisplayRow; label: string }[] = [
-  { key: "action",            label: "Action" },
-  { key: "code",              label: "Code" },
-  { key: "name",              label: "Name" },
-  { key: "isClient",          label: "Client?" },
-  { key: "projects",          label: "Project(s)" },
+  { key: "action", label: "Action" },
+  { key: "code", label: "Code" },
+  { key: "name", label: "Name" },
+  { key: "isClient", label: "Client?" },
+  { key: "projects", label: "Project(s)" },
   { key: "isServiceProvider", label: "ServiceProvider?" },
-  { key: "companies",         label: "Company(ies)" },
-  { key: "email",             label: "Email" },
-  { key: "mobile",            label: "Mobile" },
-  { key: "state",             label: "State" },
-  { key: "zone",              label: "Zone" },
-  { key: "status",            label: "Status" },
-  { key: "updated",           label: "Updated" },
+  { key: "companies", label: "Company(ies)" },
+  { key: "email", label: "Email" },
+  { key: "mobile", label: "Mobile" },
+  { key: "state", label: "State" },
+  { key: "zone", label: "Zone" },
+  { key: "status", label: "Status" },
+  { key: "updated", label: "Updated" },
 ];
 
 export default function Users() {
@@ -108,24 +119,43 @@ export default function Users() {
   const [refsErr, setRefsErr] = useState<string | null>(null);
 
   // ---- Filters (role/state/zone) ----
-  const [isClientFilter, setIsClientFilter] = useState<"all" | "yes" | "no">("all");
-  const [isServiceProviderFilter, setIsServiceProviderFilter] = useState<"all" | "yes" | "no">("all");
+  const [isClientFilter, setIsClientFilter] = useState<"all" | "yes" | "no">(
+    "all"
+  );
+  const [isServiceProviderFilter, setIsServiceProviderFilter] = useState<
+    "all" | "yes" | "no"
+  >("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [zoneFilter, setZoneFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
 
   // --- derive options from refs/data ---
   const stateOptions = useMemo(() => {
-    const names = statesRef.map(s => s.name).filter(Boolean);
-    if (names.length > 0) return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
+    const names = statesRef.map((s) => s.name).filter(Boolean);
+    if (names.length > 0)
+      return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
     const fallback = new Set<string>();
-    rows.forEach(r => { if (r.state?.trim()) fallback.add(r.state.trim()); });
-    return Array.from(fallback).sort((a,b)=>a.localeCompare(b));
+    rows.forEach((r) => {
+      if (r.state?.trim()) fallback.add(r.state.trim());
+    });
+    return Array.from(fallback).sort((a, b) => a.localeCompare(b));
   }, [statesRef, rows]);
 
   const zoneOptions = useMemo(() => {
     const z = new Set<string>();
-    rows.forEach(r => { if (r.zone?.trim()) z.add(r.zone.trim()); });
-    return Array.from(z).sort((a,b)=>a.localeCompare(b));
+    rows.forEach((r) => {
+      if (r.zone?.trim()) z.add(r.zone.trim());
+    });
+    return Array.from(z).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const statusOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => {
+      const v = (r.status ?? "").toString().trim();
+      if (v) s.add(v);
+    });
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
   // --- debounced search ---
@@ -145,9 +175,17 @@ export default function Users() {
   // --- Auth gate ---
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) { nav("/login", { replace: true }); return; }
+    if (!token) {
+      nav("/login", { replace: true });
+      return;
+    }
     const payload = decodeJwtPayload(token);
-    const isAdmin = !!(payload && (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin"));
+    const isAdmin = !!(
+      payload &&
+      (payload.isSuperAdmin ||
+        payload.role === "Admin" ||
+        payload.userRole === "Admin")
+    );
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
 
@@ -162,25 +200,27 @@ export default function Users() {
     // states
     if (results[0].status === "fulfilled") {
       const sdata: any = results[0].value.data;
-      setStatesRef(Array.isArray(sdata) ? sdata : (sdata?.states || []));
+      setStatesRef(Array.isArray(sdata) ? sdata : sdata?.states || []);
     } else {
       const status = (results[0] as any)?.reason?.response?.status;
       setStatesRef([]);
       setRefsErr(
         status === 404
           ? "Not Found (showing discovered state names instead)"
-          : ((results[0] as any)?.reason?.response?.data?.error || "Failed to load reference data.")
+          : (results[0] as any)?.reason?.response?.data?.error ||
+              "Failed to load reference data."
       );
     }
 
     // companies
     if (results[1].status === "fulfilled") {
       const cdata: any = results[1].value.data;
-      setCompaniesRef(Array.isArray(cdata) ? cdata : (cdata?.companies || []));
+      setCompaniesRef(Array.isArray(cdata) ? cdata : cdata?.companies || []);
     } else {
       if (!refsErr) {
         setRefsErr(
-          (results[1] as any)?.reason?.response?.data?.error || "Failed to load reference data."
+          (results[1] as any)?.reason?.response?.data?.error ||
+            "Failed to load reference data."
         );
       }
     }
@@ -189,11 +229,15 @@ export default function Users() {
     try {
       let stateId: string | undefined;
       if (districtsForStateName && statesRef.length > 0) {
-        const match = statesRef.find(s => s.name?.trim() === districtsForStateName.trim());
+        const match = statesRef.find(
+          (s) => s.name?.trim() === districtsForStateName.trim()
+        );
         stateId = match?.stateId;
       }
-      const { data: dResp } = await api.get("/admin/districts", { params: stateId ? { stateId } : undefined });
-      const dlist = Array.isArray(dResp) ? dResp : (dResp?.districts || []);
+      const { data: dResp } = await api.get("/admin/districts", {
+        params: stateId ? { stateId } : undefined,
+      });
+      const dlist = Array.isArray(dResp) ? dResp : dResp?.districts || [];
       setDistrictsRef(dlist);
     } catch {
       setDistrictsRef([]);
@@ -205,22 +249,44 @@ export default function Users() {
     setErr(null);
     setLoading(true);
     try {
-      const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" }});
-      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.users) ? data.users : []);
+      const { data } = await api.get("/admin/users", {
+        params: { includeMemberships: "1" },
+      });
+      const list: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.users)
+        ? data.users
+        : [];
 
       const rawMap: Record<string, RawUser> = {};
       const normalized: DisplayRow[] = list.map((u) => {
         rawMap[u.userId] = u;
 
-        const name = [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
-        const mobile = [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+        const name = [u.firstName, u.middleName, u.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        const mobile = [u.countryCode, u.phone]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-        const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+        const memberships: any[] = Array.isArray(u.userRoleMemberships)
+          ? u.userRoleMemberships
+          : [];
         const projectTitles = Array.from(
-          new Set(memberships.map(m => m?.project?.title).filter((s:any)=>typeof s==="string" && s.trim()))
+          new Set(
+            memberships
+              .map((m) => m?.project?.title)
+              .filter((s: any) => typeof s === "string" && s.trim())
+          )
         );
         const companyNames = Array.from(
-          new Set(memberships.map(m => m?.company?.name).filter((s:any)=>typeof s==="string" && s.trim()))
+          new Set(
+            memberships
+              .map((m) => m?.company?.name)
+              .filter((s: any) => typeof s === "string" && s.trim())
+          )
         );
 
         const row: DisplayRow = {
@@ -229,7 +295,10 @@ export default function Users() {
           name,
           isClient: typeof u.isClient === "boolean" ? u.isClient : null,
           projects: projectTitles.join(", "),
-          isServiceProvider: typeof u.isServiceProvider === "boolean" ? u.isServiceProvider : null,
+          isServiceProvider:
+            typeof u.isServiceProvider === "boolean"
+              ? u.isServiceProvider
+              : null,
           companies: companyNames.join(", "),
           email: u.email ?? "",
           mobile,
@@ -247,9 +316,10 @@ export default function Users() {
       setPage(1);
     } catch (e: any) {
       const s = e?.response?.status;
-      const msg = s === 401
-        ? "Unauthorized (401). Please sign in again."
-        : e?.response?.data?.error || e?.message || "Failed to load users.";
+      const msg =
+        s === 401
+          ? "Unauthorized (401). Please sign in again."
+          : e?.response?.data?.error || e?.message || "Failed to load users.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -261,10 +331,16 @@ export default function Users() {
   };
 
   // initial loads
-  useEffect(() => { loadRefs(); /* eslint-disable-next-line */ }, []);
-  useEffect(() => { loadUsers(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    loadRefs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // If state filter changes and we have refs, refresh districts for that state name (safe no-op on failure)
+  // If state filter changes and we have refs, refresh districts for that state name
   useEffect(() => {
     if (statesRef.length === 0) return;
     loadRefs(stateFilter || undefined);
@@ -275,28 +351,41 @@ export default function Users() {
   const filteredByControls = useMemo(() => {
     return rows.filter((r) => {
       if (isClientFilter !== "all") {
-        const v = r.isClient === true ? "yes" : r.isClient === false ? "no" : "no";
+        const v =
+          r.isClient === true ? "yes" : r.isClient === false ? "no" : "no";
         if (v !== isClientFilter) return false;
       }
       if (isServiceProviderFilter !== "all") {
-        const v = r.isServiceProvider === true ? "yes" : r.isServiceProvider === false ? "no" : "no";
+        const v =
+          r.isServiceProvider === true
+            ? "yes"
+            : r.isServiceProvider === false
+            ? "no"
+            : "no";
         if (v !== isServiceProviderFilter) return false;
       }
       if (stateFilter && r.state.trim() !== stateFilter.trim()) return false;
       if (zoneFilter && r.zone.trim() !== zoneFilter.trim()) return false;
+      if (statusFilter && r.status.trim() !== statusFilter.trim()) return false;
       return true;
     });
   }, [rows, isClientFilter, isServiceProviderFilter, stateFilter, zoneFilter]);
 
   // client-side text search on top of filters
-  const [sortKeyState, setSortKeyState] = useState<keyof DisplayRow | null>(null);
+  const [sortKeyState, setSortKeyState] = useState<keyof DisplayRow | null>(
+    null
+  );
   const [qState, setQState] = useState("");
   useEffect(() => setQState(qDebounced), [qDebounced]);
   const filtered = useMemo(() => {
     const needle = qState.trim().toLowerCase();
     if (!needle) return filteredByControls;
     return filteredByControls.filter((r) =>
-      Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(needle))
+      Object.values(r).some((v) =>
+        String(v ?? "")
+          .toLowerCase()
+          .includes(needle)
+      )
     );
   }, [filteredByControls, qState]);
 
@@ -305,11 +394,15 @@ export default function Users() {
     if (a === b) return 0;
     if (a === null || a === undefined) return -1;
     if (b === null || b === undefined) return 1;
-    const aTime = (typeof a === "string" && isIsoLike(a)) ? new Date(a).getTime() : NaN;
-    const bTime = (typeof b === "string" && isIsoLike(b)) ? new Date(b).getTime() : NaN;
+    const aTime =
+      typeof a === "string" && isIsoLike(a) ? new Date(a).getTime() : NaN;
+    const bTime =
+      typeof b === "string" && isIsoLike(b) ? new Date(b).getTime() : NaN;
     if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-    if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
-    const an = Number(a); const bn = Number(b);
+    if (typeof a === "boolean" && typeof b === "boolean")
+      return (a ? 1 : 0) - (b ? 1 : 0);
+    const an = Number(a);
+    const bn = Number(b);
     if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
     return String(a).localeCompare(String(b));
   };
@@ -334,7 +427,10 @@ export default function Users() {
     return sorted.slice(start, start + pageSize);
   }, [sorted, pageSafe, pageSize]);
 
-  useEffect(() => { if (page > totalPages) setPage(totalPages); /* eslint-disable-next-line */ }, [totalPages]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalPages]);
 
   // actions
   const onView = (id: string) => nav(`/admin/users/${id}`);
@@ -342,30 +438,57 @@ export default function Users() {
 
   // export CSV
   const exportCsv = () => {
-    const cols = headings.map(h => h.label);
+    const cols = headings.map((h) => h.label);
     const lines = [
       cols.join(","),
       ...sorted.map((r) =>
-        headings.map(h => JSON.stringify(h.key === "action" ? "" : (r as any)[h.key] ?? "")).join(",")
+        headings
+          .map((h) =>
+            JSON.stringify(h.key === "action" ? "" : (r as any)[h.key] ?? "")
+          )
+          .join(",")
       ),
     ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "users.csv"; a.click();
+    a.href = url;
+    a.download = "users.csv";
+    a.click();
     URL.revokeObjectURL(url);
   };
 
   // ------------- Modal -------------
-  const selectedRaw: RawUser | null = modalUserId ? rawById[modalUserId] ?? null : null;
+  const selectedRaw: RawUser | null = modalUserId
+    ? rawById[modalUserId] ?? null
+    : null;
   const modalData = (() => {
     if (!selectedRaw) return null;
     const u = selectedRaw;
-    const name = [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
+    const name = [u.firstName, u.middleName, u.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
     const mobile = [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
-    const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-    const projectTitles = Array.from(new Set(memberships.map((m) => m?.project?.title).filter((s:any)=>typeof s==="string" && s.trim())));
-    const companyNames = Array.from(new Set(memberships.map((m) => m?.company?.name).filter((s:any)=>typeof s==="string" && s.trim())));
+    const memberships: any[] = Array.isArray(u.userRoleMemberships)
+      ? u.userRoleMemberships
+      : [];
+    const projectTitles = Array.from(
+      new Set(
+        memberships
+          .map((m) => m?.project?.title)
+          .filter((s: any) => typeof s === "string" && s.trim())
+      )
+    );
+    const companyNames = Array.from(
+      new Set(
+        memberships
+          .map((m) => m?.company?.name)
+          .filter((s: any) => typeof s === "string" && s.trim())
+      )
+    );
     return {
       code: u.code ?? "",
       name,
@@ -396,13 +519,15 @@ export default function Users() {
     isClientFilter === "all" &&
     isServiceProviderFilter === "all" &&
     !stateFilter &&
-    !zoneFilter;
+    !zoneFilter &&
+    !statusFilter;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-5 space-y-4">
+          {/* Line 1: Title + subtitle */}
           <div>
             <h1 className="text-2xl font-semibold dark:text-white">Users</h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -414,60 +539,101 @@ export default function Users() {
               </p>
             )}
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            {/* role/state/zone filters */}
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter: Client?"
-              value={isClientFilter}
-              onChange={(e) => { setIsClientFilter(e.target.value as any); setPage(1); }}
-            >
-              <option value="all">Client: All</option>
-              <option value="yes">Client: Yes</option>
-              <option value="no">Client: No</option>
-            </select>
 
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter: Service Provider?"
-              value={isServiceProviderFilter}
-              onChange={(e) => { setIsServiceProviderFilter(e.target.value as any); setPage(1); }}
-            >
-              <option value="all">ServiceProv: All</option>
-              <option value="yes">ServiceProv: Yes</option>
-              <option value="no">ServiceProv: No</option>
-            </select>
-
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              title="Filter by State"
-              value={stateFilter}
-              onChange={(e) => { setStateFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">State: All</option>
-              {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-
-            <div className="flex items-center gap-2">
+          {/* Line 2: Left = filters, Right = page size + Refresh + New User */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            {/* Left: filters */}
+            <div className="flex flex-wrap items-center gap-2 md:basis-3/5">
               <select
-                className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                title="Filter: Client?"
+                value={isClientFilter}
+                onChange={(e) => {
+                  setIsClientFilter(e.target.value as any);
+                  setPage(1);
+                }}
+              >
+                <option value="all">Client: All</option>
+                <option value="yes">Client: Yes</option>
+                <option value="no">Client: No</option>
+              </select>
+
+              <select
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                title="Filter: Service Provider?"
+                value={isServiceProviderFilter}
+                onChange={(e) => {
+                  setIsServiceProviderFilter(e.target.value as any);
+                  setPage(1);
+                }}
+              >
+                <option value="all">ServiceProv: All</option>
+                <option value="yes">ServiceProv: Yes</option>
+                <option value="no">ServiceProv: No</option>
+              </select>
+
+              <select
+                className="h-9 w-28 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                title="Filter by State"
+                value={stateFilter}
+                onChange={(e) => {
+                  setStateFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">State: All</option>
+                {stateOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
                 title="Filter by Zone"
                 value={zoneFilter}
-                onChange={(e) => { setZoneFilter(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setZoneFilter(e.target.value);
+                  setPage(1);
+                }}
               >
                 <option value="">Zone: All</option>
-                {zoneOptions.map(z => <option key={z} value={z}>{z}</option>)}
+                {zoneOptions.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </select>
+
+              {/* NEW: Status filter in same line */}
+              <select
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                title="Filter by Status"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">Status: All</option>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
               </select>
 
               <button
                 type="button"
-                className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm"
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
                 title="Clear all filters"
                 onClick={() => {
                   setIsClientFilter("all");
                   setIsServiceProviderFilter("all");
                   setStateFilter("");
                   setZoneFilter("");
+                  setStatusFilter("");
                   setPage(1);
                 }}
                 disabled={filtersAreDefault}
@@ -476,61 +642,95 @@ export default function Users() {
               </button>
             </div>
 
-            <input
-              className="border rounded px-3 py-2 w-56 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              placeholder="Search…"
-              value={q}
-              onChange={(e) => { setQ(e.target.value); setPage(1); }}
-            />
-            <select
-              className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              title="Rows per page"
-            >
-              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
-            </select>
-            <button
-              onClick={() => { loadRefs(stateFilter || undefined); loadUsers(); }}
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-              disabled={loading}
-              title="Reload"
-            >
-              {loading ? "Loading…" : "Refresh"}
-            </button>
-            <button
-              onClick={() => nav("/admin/users/new")}
-              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white"
-              title="Create a new user"
-            >
-              + New User
-            </button>
-            <button
-              onClick={exportCsv}
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 dark:text-white"
-              title="Export filtered result as CSV"
-            >
-              Export CSV
-            </button>
+            {/* Right: page size + Refresh + New User */}
+            <div className="flex flex-wrap items-center justify-end gap-2 md:basis-2/5">
+              <select
+                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                title="Rows per page"
+              >
+                {[10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => {
+                  loadRefs(stateFilter || undefined);
+                  loadUsers();
+                }}
+                className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                disabled={loading}
+                title="Reload"
+              >
+                {loading ? "Loading…" : "Refresh"}
+              </button>
+
+              <button
+                onClick={() => nav("/admin/users/new")}
+                className="h-9 rounded-full bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-700"
+                title="Create a new user"
+              >
+                + New User
+              </button>
+            </div>
+          </div>
+
+          {/* Line 3: Search (left) + Export CSV (right) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="w-full sm:w-72">
+              <input
+                className="h-9 w-full rounded-full border border-slate-200 bg-white px-4 text-xs text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                placeholder="Search users…"
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+
+            <div className="flex justify-start sm:justify-end">
+              <button
+                onClick={exportCsv}
+                className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                title="Export filtered result as CSV"
+              >
+                Export CSV
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Table */}
         <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 overflow-hidden">
           {err && (
-            <div className="p-4 text-red-700 dark:text-red-400 text-sm border-b dark:border-neutral-800">
+            <div className="p-4 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
               {err}
             </div>
           )}
 
-          <div className="overflow-auto" style={{ maxHeight: "65vh" }}>
+          <div
+            className="overflow-auto thin-scrollbar"
+            style={{ maxHeight: "65vh" }}
+          >
             {loading ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">Fetching users…</div>
+              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+                Fetching users…
+              </div>
             ) : rows.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">No users found.</div>
+              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+                No users found.
+              </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
                   <tr>
                     {headings.map(({ key, label }) => {
                       const active = (sortKey ?? null) === key;
@@ -539,21 +739,34 @@ export default function Users() {
                       return (
                         <th
                           key={String(key)}
-                          className={"text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
+                          className={
+                            "text-left font-semibold text-xs uppercase tracking-wide text-slate-600 dark:text-slate-200 px-3 py-2.5 border-b border-slate-200 dark:border-neutral-700 whitespace-nowrap select-none " +
                             (sortable ? "cursor-pointer" : "")
                           }
                           title={sortable ? `Sort by ${label}` : undefined}
                           onClick={() => {
                             if (!sortable) return;
-                            if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
-                            else { setSortDir(d => d === "asc" ? "desc" : "asc"); }
+                            if (sortKey !== key) {
+                              setSortKey(key);
+                              setSortDir("asc");
+                            } else {
+                              setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                            }
                           }}
-                          aria-sort={sortable ? (active ? (dir === "asc" ? "ascending" : "descending") : "none") : undefined}
+                          aria-sort={
+                            sortable
+                              ? active
+                                ? dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
                             {label}
                             {sortable && (
-                              <span className="text-xs opacity-70">
+                              <span className="text-[10px] opacity-70">
                                 {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
@@ -567,40 +780,120 @@ export default function Users() {
                   {paged.map((row, idx) => (
                     <tr
                       key={row._id ?? idx}
-                      className={idx % 2 ? "bg-white dark:bg-neutral-900" : "bg-gray-50/40 dark:bg-neutral-900/60"}
+                      className="border-b border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
                     >
-                      {/* Action */}
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex gap-2">
+                      {/* Action icons */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-1.5">
                           <button
-                            className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
+                            type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/70 dark:hover:bg-emerald-900/40"
                             onClick={() => onView(row._id)}
-                            title="View"
+                            title="View user"
                           >
-                            View
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+                              <circle cx="12" cy="12" r="3.25" />
+                            </svg>
                           </button>
                           <button
-                            className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
+                            type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40"
                             onClick={() => onEdit(row._id)}
-                            title="Edit"
+                            title="Edit user"
                           >
-                            Edit
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
+                              <path d="M14.5 5.5l4 4" />
+                            </svg>
                           </button>
                         </div>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.code}>{row.code}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.name}>{row.name}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtBool(row.isClient)}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.projects}>{row.projects}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtBool(row.isServiceProvider)}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.companies}>{row.companies}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.email}>{row.email}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.mobile}>{row.mobile}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.state}>{row.state}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.zone}>{row.zone}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={row.status}>{row.status}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={fmtDate(row.updated)}>{fmtDate(row.updated)}</td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
+                        title={row.code}
+                      >
+                        {row.code}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
+                        title={row.name}
+                      >
+                        {row.name}
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {fmtBool(row.isClient)}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.projects}
+                      >
+                        {row.projects}
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {fmtBool(row.isServiceProvider)}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.companies}
+                      >
+                        {row.companies}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.email}
+                      >
+                        {row.email}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.mobile}
+                      >
+                        {row.mobile}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.state}
+                      >
+                        {row.state}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.zone}
+                      >
+                        {row.zone}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={row.status}
+                      >
+                        {row.status}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={fmtDate(row.updated)}
+                      >
+                        {fmtDate(row.updated)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -609,20 +902,44 @@ export default function Users() {
           </div>
 
           {/* Pagination footer */}
-          <div className="flex items-center justify-between px-3 py-2 text-sm border-t dark:border-neutral-800">
+          <div className="flex items-center justify-between px-3 py-2 text-sm border-t border-slate-200 dark:border-neutral-800">
             <div className="text-gray-600 dark:text-gray-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{paged.length}</b> of <b>{total}</b> records
             </div>
             <div className="flex items-center gap-1">
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(1)} disabled={pageSafe <= 1} title="First">« First</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} title="Previous">‹ Prev</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} title="Next">Next ›</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(totalPages)} disabled={pageSafe >= totalPages} title="Last">Last »</button>
+              <button
+                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage(1)}
+                disabled={pageSafe <= 1}
+                title="First"
+              >
+                « First
+              </button>
+              <button
+                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                title="Previous"
+              >
+                ‹ Prev
+              </button>
+              <button
+                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={pageSafe >= totalPages}
+                title="Next"
+              >
+                Next ›
+              </button>
+              <button
+                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage(totalPages)}
+                disabled={pageSafe >= totalPages}
+                title="Last"
+              >
+                Last »
+              </button>
             </div>
           </div>
         </div>
@@ -630,15 +947,26 @@ export default function Users() {
         {/* -------- Modal -------- */}
         {modalData && (
           <div className="fixed inset-0 z-40">
-            <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={closeModal}
+              aria-hidden="true"
+            />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
                 {/* Header with PHOTO + Name + Code + Status */}
                 <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
                   <div className="flex items-center gap-3">
                     {(() => {
-                      const url = resolvePhotoUrl((selectedRaw && selectedRaw.profilePhoto) || null);
-                      const initials = initialsFrom(selectedRaw?.firstName, selectedRaw?.middleName, selectedRaw?.lastName) || "U";
+                      const url = resolvePhotoUrl(
+                        (selectedRaw && selectedRaw.profilePhoto) || null
+                      );
+                      const initials =
+                        initialsFrom(
+                          selectedRaw?.firstName,
+                          selectedRaw?.middleName,
+                          selectedRaw?.lastName
+                        ) || "U";
                       return url ? (
                         <img
                           src={url}
@@ -646,8 +974,13 @@ export default function Users() {
                           className="h-14 w-14 rounded-full object-cover border dark:border-neutral-800"
                         />
                       ) : (
-                        <div className="h-14 w-14 rounded-full grid place-items-center text-white font-semibold"
-                             style={{ background: "linear-gradient(135deg,#22c55e,#facc15)" }}>
+                        <div
+                          className="h-14 w-14 rounded-full grid place-items-center text-white font-semibold"
+                          style={{
+                            background:
+                              "linear-gradient(135deg,#22c55e,#facc15)",
+                          }}
+                        >
                           {initials}
                         </div>
                       );
@@ -670,7 +1003,10 @@ export default function Users() {
 
                         {modalData.status ? (
                           <span
-                            className={"text-xs px-2 py-0.5 rounded border " + statusBadgeClass(modalData.status)}
+                            className={
+                              "text-xs px-2 py-0.5 rounded border " +
+                              statusBadgeClass(modalData.status)
+                            }
                             title="User Status"
                           >
                             {modalData.status}
@@ -690,19 +1026,22 @@ export default function Users() {
 
                 {/* Body */}
                 <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <Field label="Code"         value={modalData.code} />
-                  <Field label="Name"         value={modalData.name} />
-                  <Field label="Client?"      value={fmtBool(modalData.isClient)} />
-                  <Field label="Project(s)"   value={modalData.projects} />
-                  <Field label="ServiceProvider?" value={fmtBool(modalData.isServiceProvider)} />
+                  <Field label="Code" value={modalData.code} />
+                  <Field label="Name" value={modalData.name} />
+                  <Field label="Client?" value={fmtBool(modalData.isClient)} />
+                  <Field label="Project(s)" value={modalData.projects} />
+                  <Field
+                    label="ServiceProvider?"
+                    value={fmtBool(modalData.isServiceProvider)}
+                  />
                   <Field label="Company(ies)" value={modalData.companies} />
-                  <Field label="Email"        value={modalData.email} />
-                  <Field label="Mobile"       value={modalData.mobile} />
-                  <Field label="State"        value={modalData.state} />
-                  <Field label="Zone"         value={modalData.zone} />
-                  <Field label="Status"       value={modalData.status} />
-                  <Field label="Created"      value={fmtDate(modalData.created)} />
-                  <Field label="Updated"      value={fmtDate(modalData.updated)} />
+                  <Field label="Email" value={modalData.email} />
+                  <Field label="Mobile" value={modalData.mobile} />
+                  <Field label="State" value={modalData.state} />
+                  <Field label="Zone" value={modalData.zone} />
+                  <Field label="Status" value={modalData.status} />
+                  <Field label="Created" value={fmtDate(modalData.created)} />
+                  <Field label="Updated" value={fmtDate(modalData.updated)} />
                 </div>
 
                 <div className="px-4 py-3 border-t dark:border-neutral-800 text-right">
@@ -718,6 +1057,26 @@ export default function Users() {
           </div>
         )}
         {/* -------- /Modal -------- */}
+
+        {/* Thin scrollbar styling for this page */}
+        <style>
+          {`
+            .thin-scrollbar::-webkit-scrollbar {
+              height: 6px;
+              width: 6px;
+            }
+            .thin-scrollbar::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .thin-scrollbar::-webkit-scrollbar-thumb {
+              background-color: rgba(148, 163, 184, 0.7);
+              border-radius: 999px;
+            }
+            .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+              background-color: rgba(100, 116, 139, 0.9);
+            }
+          `}
+        </style>
       </div>
     </div>
   );
@@ -727,8 +1086,12 @@ export default function Users() {
 function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
-      <div className="mt-0.5 font-medium dark:text-white break-words">{value || ""}</div>
+      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </div>
+      <div className="mt-0.5 font-medium dark:text-white break-words">
+        {value || ""}
+      </div>
     </div>
   );
 }

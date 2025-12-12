@@ -1,15 +1,680 @@
-//pms-backend/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model State {
+  stateId   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String     @unique
+  name      String     @unique
+  type      StateType
+  createdAt DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(6)
+  companies Company[]
+  districts District[]
+  projects  Project[]
+  users     User[]
+
+  @@map("State")
 }
 
-// ============================= Enums ============================= */
+model District {
+  districtId String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  stateId    String    @db.Uuid
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(6)
+  companies  Company[]
+  state      State     @relation(fields: [stateId], references: [stateId], onDelete: Cascade)
+  projects   Project[]
+  users      User[]
+
+  @@unique([stateId, name])
+  @@map("District")
+}
+
+model User {
+  userId                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                       String?              @unique
+  firstName                  String
+  middleName                 String?
+  lastName                   String?
+  countryCode                String
+  phone                      String
+  email                      String?              @unique
+  preferredLanguage          PreferredLanguage?
+  profilePhoto               String?
+  stateId                    String?              @db.Uuid
+  districtId                 String?              @db.Uuid
+  cityTown                   String?
+  pin                        String?
+  operatingZone              OperatingZone?
+  address                    String?
+  isClient                   Boolean?             @default(false)
+  isServiceProvider          Boolean?             @default(false)
+  userStatus                 UserStatus           @default(Active)
+  passwordHash               String?
+  isSuperAdmin               Boolean?             @default(false)
+  createdAt                  DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime             @updatedAt @db.Timestamptz(6)
+  userRole                   UserRole?
+  companiesAsServiceProvider Company[]            @relation("CompanyServiceProviderUser")
+  projectsAsClient           Project[]            @relation("ProjectClientUser")
+  district                   District?            @relation(fields: [districtId], references: [districtId])
+  state                      State?               @relation(fields: [stateId], references: [stateId])
+  userCompanies              UserCompany[]
+  userProjects               UserProject[]
+  userRoleMemberships        UserRoleMembership[]
+  wirsBic                    Wir[]                @relation("WirBicUser")
+  wirAsContractor            Wir[]                @relation("WirContractorUser")
+  wirsCreated                Wir[]                @relation("WirCreatedBy")
+  wirAsHod                   Wir[]                @relation("WirHodUser")
+  wirAsInspector             Wir[]                @relation("WirInspectorUser")
+  wirsRescheduled            Wir[]                @relation("WirRescheduledByUser")
+  WirDiscussion              WirDiscussion[]
+
+  @@unique([countryCode, phone], map: "User_cc_phone_unique")
+  @@map("User")
+}
+
+model Company {
+  companyId           String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String
+  status              CompanyStatus        @default(Active)
+  website             String?
+  companyRole         CompanyRole?
+  gstin               String?              @unique
+  pan                 String?              @unique
+  cin                 String?              @unique
+  primaryContact      String?
+  contactMobile       String?
+  contactEmail        String?
+  stateId             String?              @db.Uuid
+  districtId          String?              @db.Uuid
+  address             String?
+  pin                 String?
+  notes               String?
+  userId              String?              @db.Uuid
+  companyCode         String?              @unique
+  createdAt           DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(6)
+  district            District?            @relation(fields: [districtId], references: [districtId])
+  state               State?               @relation(fields: [stateId], references: [stateId])
+  serviceProvider     User?                @relation("CompanyServiceProviderUser", fields: [userId], references: [userId], onDelete: Cascade)
+  projects            Project[]            @relation("ProjectClientCompany")
+  userCompanies       UserCompany[]
+  userRoleMemberships UserRoleMembership[]
+
+  @@map("Company")
+}
+
+model Project {
+  projectId                 String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                     String
+  code                      String?                     @unique
+  status                    ProjectStatus               @default(Draft)
+  stage                     ProjectStage?
+  projectType               ProjectType?
+  structureType             StructureType?
+  constructionType          ConstructionType?
+  contractType              ContractType?
+  health                    ProjectHealth               @default(Unknown)
+  clientUserId              String?                     @db.Uuid
+  clientCompanyId           String?                     @db.Uuid
+  address                   String?
+  cityTown                  String?
+  stateId                   String?                     @db.Uuid
+  districtId                String?                     @db.Uuid
+  pin                       String?
+  latitude                  Decimal?                    @db.Decimal(9, 6)
+  longitude                 Decimal?                    @db.Decimal(9, 6)
+  startDate                 DateTime?
+  plannedCompletionDate     DateTime?
+  currency                  CurrencyCode?               @default(INR)
+  contractValue             Decimal?                    @db.Decimal(18, 2)
+  areaUnit                  AreaUnit?
+  plotArea                  Decimal?                    @db.Decimal(14, 2)
+  builtUpArea               Decimal?                    @db.Decimal(14, 2)
+  floors                    Int?
+  description               String?
+  createdAt                 DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                    @updatedAt @db.Timestamptz(6)
+  PermissionProjectOverride PermissionProjectOverride[]
+  clientCompany             Company?                    @relation("ProjectClientCompany", fields: [clientCompanyId], references: [companyId])
+  clientUser                User?                       @relation("ProjectClientUser", fields: [clientUserId], references: [userId])
+  district                  District?                   @relation(fields: [districtId], references: [districtId])
+  state                     State?                      @relation(fields: [stateId], references: [stateId])
+  moduleSettings            ProjectModuleSetting[]
+  projectTags               ProjectTag[]
+  userProjects              UserProject[]
+  userRoleMemberships       UserRoleMembership[]
+  wirs                      Wir[]
+
+  @@map("Project")
+}
+
+model RefProjectTag {
+  tagCode String       @id
+  label   String
+  tags    ProjectTag[]
+
+  @@map("ref_project_tag")
+}
+
+model ProjectTag {
+  projectId String        @db.Uuid
+  tagCode   String
+  project   Project       @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  tag       RefProjectTag @relation(fields: [tagCode], references: [tagCode])
+
+  @@id([projectId, tagCode])
+  @@map("ProjectTag")
+}
+
+model UserProject {
+  userId    String   @db.Uuid
+  projectId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@index([userId])
+  @@index([projectId])
+  @@map("UserProject")
+}
+
+model UserCompany {
+  userId    String   @db.Uuid
+  companyId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  company   Company  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@id([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+  @@map("UserCompany")
+}
+
+model UserRoleMembership {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @db.Uuid
+  role       UserRole
+  scopeType  RoleScope
+  companyId  String?   @db.Uuid
+  projectId  String?   @db.Uuid
+  isDefault  Boolean   @default(false)
+  canApprove Boolean   @default(false)
+  validFrom  DateTime? @db.Timestamptz(6)
+  validTo    DateTime? @db.Timestamptz(6)
+  createdBy  String?   @db.Uuid
+  notes      String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(6)
+  company    Company?  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  project    Project?  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
+  @@index([userId, role])
+  @@index([companyId])
+  @@index([projectId])
+  @@index([projectId, role, validFrom, validTo], map: "urm_project_role_window_idx")
+  @@index([userId, role, validFrom, validTo], map: "urm_user_role_window_idx")
+  @@map("UserRoleMembership")
+}
+
+model PermissionTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role      UserRole @unique
+  matrix    Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("PermissionTemplate")
+}
+
+model PermissionProjectOverride {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String   @db.Uuid
+  role      UserRole
+  matrix    Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@unique([projectId, role], map: "ppo_project_role_unique")
+  @@map("PermissionProjectOverride")
+}
+
+model PermissionUserOverride {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String
+  userId    String
+  matrix    Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([projectId, userId], map: "puo_project_user")
+  @@map("PermissionUserOverride")
+}
+
+model RefChecklist {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String?            @unique
+  title             String
+  discipline        Discipline
+  stageLabel        String?
+  tags              String[]           @default([])
+  status            String             @default("Active")
+  version           Int                @default(1)
+  versionLabel      String?
+  versionMajor      Int                @default(1)
+  versionMinor      Int                @default(0)
+  versionPatch      Int                @default(0)
+  aiDefault         Boolean            @default(false)
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(6)
+  items             RefChecklistItem[]
+  WirChecklist      WirChecklist[]
+  checklistWirItems WirItem[]          @relation("WirItem_checklist")
+  sourceWirItems    WirItem[]          @relation("WirItem_sourceChecklist")
+
+  @@index([discipline, stageLabel])
+  @@map("RefChecklist")
+}
+
+model RefChecklistItem {
+  id                  String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checklistId         String                         @db.Uuid
+  seq                 Int
+  text                String
+  requirement         String?
+  method              String[]
+  risk                String?
+  tags                String[]
+  itemCode            String?
+  critical            Boolean?
+  aiEnabled           Boolean?
+  aiConfidence        Decimal?
+  units               String?
+  tolerance           String?
+  base                Decimal?
+  plus                Decimal?
+  minus               Decimal?
+  checklist           RefChecklist                   @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  suggestedActivities RefChecklistItemActivityLink[]
+  suggestedMaterials  RefChecklistItemMaterialLink[]
+  itemWirItems        WirItem[]                      @relation("WirItem_item")
+  sourceWirItems      WirItem[]                      @relation("WirItem_sourceItem")
+
+  @@index([checklistId])
+  @@map("RefChecklistItem")
+}
+
+model RefChecklistItemActivityLink {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId     String           @db.Uuid
+  activityId String?          @db.Uuid
+  label      String
+  tags       String[]
+  activity   RefActivity?     @relation(fields: [activityId], references: [id])
+  item       RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([activityId])
+  @@map("RefChecklistItemActivityLink")
+}
+
+model RefChecklistItemMaterialLink {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId     String           @db.Uuid
+  materialId String?          @db.Uuid
+  name       String
+  category   String?
+  properties Json?
+  item       RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  material   RefMaterial?     @relation(fields: [materialId], references: [id])
+
+  @@index([itemId])
+  @@index([materialId])
+  @@map("RefChecklistItemMaterialLink")
+}
+
+model RefActivity {
+  id                           String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                         String?                        @unique
+  title                        String
+  discipline                   Discipline
+  stageLabel                   String?
+  phase                        String[]                       @default([])
+  element                      String[]                       @default([])
+  system                       String[]
+  nature                       String[]
+  method                       String[]
+  status                       String                         @default("Active")
+  version                      Int                            @default(1)
+  versionLabel                 String?
+  versionMajor                 Int                            @default(1)
+  versionMinor                 Int                            @default(0)
+  versionPatch                 Int                            @default(0)
+  notes                        String?
+  createdAt                    DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime                       @updatedAt @db.Timestamptz(6)
+  materials                    RefActivityMaterial[]
+  RefChecklistItemActivityLink RefChecklistItemActivityLink[]
+
+  @@unique([discipline, stageLabel, title], map: "refactivity_uq_disc_stage_title")
+  @@map("RefActivity")
+}
+
+model RefMaterial {
+  id                           String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                         String?                        @unique
+  name                         String
+  discipline                   MaterialDiscipline?
+  category                     String?
+  manufacturer                 String?
+  model                        String?
+  standards                    String[]                       @default([])
+  fireRating                   String?
+  keyProps                     String[]                       @default([])
+  aliases                      String[]                       @default([])
+  properties                   Json?
+  version                      Int                            @default(1)
+  versionLabel                 String?
+  versionMajor                 Int                            @default(1)
+  versionMinor                 Int                            @default(0)
+  versionPatch                 Int                            @default(0)
+  notes                        String?
+  status                       String                         @default("Active")
+  createdAt                    DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime                       @updatedAt @db.Timestamptz(6)
+  activityUses                 RefActivityMaterial[]
+  RefChecklistItemMaterialLink RefChecklistItemMaterialLink[]
+
+  @@index([name, category])
+  @@index([discipline, category, manufacturer])
+  @@map("RefMaterial")
+}
+
+model RefActivityMaterial {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId String      @db.Uuid
+  materialId String      @db.Uuid
+  note       String?
+  activity   RefActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  material   RefMaterial @relation(fields: [materialId], references: [id])
+
+  @@unique([activityId, materialId], map: "refactmat_activity_material_uq")
+  @@index([activityId])
+  @@index([materialId])
+  @@map("RefActivityMaterial")
+}
+
+model ProjectModuleSetting {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String     @db.Uuid
+  module    ModuleCode
+  extra     Json
+  createdAt DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(6)
+  project   Project    @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@unique([projectId, module], map: "pms_project_module_unique")
+  @@index([projectId])
+  @@map("ProjectModuleSetting")
+}
+
+model AdminAuditSetting {
+  id                 Int      @id @default(1)
+  assignmentsEnabled Boolean  @default(true)
+  updatedByUserId    String?  @db.Uuid
+  updatedByName      String?
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("AdminAuditSetting")
+}
+
+model AdminAuditLog {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId  String      @db.Uuid
+  actorName    String
+  action       AuditAction
+  module       String      @default("Assignments")
+  targetUserId String      @db.Uuid
+  role         UserRole?
+  scopeType    RoleScope?
+  companyId    String?     @db.Uuid
+  projectId    String?     @db.Uuid
+  ip           String?
+  userAgent    String?
+  before       Json?
+  after        Json?
+  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
+
+  @@index([targetUserId, createdAt])
+  @@index([companyId])
+  @@index([projectId])
+  @@index([action])
+  @@map("AdminAuditLog")
+}
+
+model Wir {
+  wirId                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                    String?                  @unique
+  title                   String
+  projectId               String                   @db.Uuid
+  status                  WirStatus                @default(Draft)
+  health                  ProjectHealth            @default(Unknown)
+  discipline              Discipline?
+  stage                   String?
+  forDate                 DateTime?                @db.Timestamptz(6)
+  forTime                 String?
+  rescheduleForDate       DateTime?                @db.Timestamptz(6)
+  rescheduleForTime       String?
+  rescheduleReason        String?
+  rescheduledById         String?                  @db.Uuid
+  cityTown                String?
+  stateName               String?
+  contractorId            String?                  @db.Uuid
+  inspectorId             String?                  @db.Uuid
+  hodId                   String?                  @db.Uuid
+  bicUserId               String?                  @db.Uuid
+  description             String?
+  inspectorRecommendation InspectorRecommendation?
+  inspectorRemarks        String?
+  inspectorReviewedAt     DateTime?                @db.Timestamptz(6)
+  hodOutcome              HodOutcome?
+  hodRemarks              String?
+  hodDecidedAt            DateTime?                @db.Timestamptz(6)
+  createdById             String?                  @db.Uuid
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(6)
+  bic                     User?                    @relation("WirBicUser", fields: [bicUserId], references: [userId])
+  contractor              User?                    @relation("WirContractorUser", fields: [contractorId], references: [userId])
+  createdBy               User?                    @relation("WirCreatedBy", fields: [createdById], references: [userId])
+  hod                     User?                    @relation("WirHodUser", fields: [hodId], references: [userId])
+  inspector               User?                    @relation("WirInspectorUser", fields: [inspectorId], references: [userId])
+  project                 Project                  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  rescheduledBy           User?                    @relation("WirRescheduledByUser", fields: [rescheduledById], references: [userId])
+  checklists              WirChecklist[]
+  WirDiscussion           WirDiscussion[]
+  histories               WirHistory[]             @relation("WirToHistory")
+  items                   WirItem[]
+  evidences               WirItemEvidence[]        @relation("WirToEvidence")
+  itemRuns                WirItemRun[]             @relation("WirToItemRuns")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([discipline, stage])
+  @@index([bicUserId])
+  @@map("Wir")
+}
+
+model WirChecklist {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId          String       @db.Uuid
+  checklistId    String       @db.Uuid
+  checklistCode  String?
+  checklistTitle String?
+  discipline     Discipline?
+  versionLabel   String?
+  itemsTotal     Int          @default(0)
+  itemIds        String[]     @default([])
+  itemsCount     Int?
+  order          Int          @default(0)
+  checklist      RefChecklist @relation(fields: [checklistId], references: [id])
+  wir            Wir          @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  @@unique([wirId, checklistId], map: "wir_checklist_unique")
+  @@index([wirId])
+  @@index([checklistId])
+  @@map("WirChecklist")
+}
+
+model WirItem {
+  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId                 String               @db.Uuid
+  checklistId           String?              @db.Uuid
+  itemId                String?              @db.Uuid
+  seq                   Int?
+  name                  String
+  spec                  String?
+  required              String?
+  tolerance             String?
+  photoCount            Int?
+  status                WirItemStatus        @default(Unknown)
+  createdAt             DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime             @updatedAt @db.Timestamptz(6)
+  inspectorStatus       InspectorItemStatus?
+  inspectorNote         String?
+  hodStatus             InspectorItemStatus?
+  hodNote               String?
+  sourceChecklistId     String?              @db.Uuid
+  sourceChecklistItemId String?              @db.Uuid
+  code                  String?
+  unit                  String?
+  tags                  String[]             @default([])
+  critical              Boolean?
+  aiEnabled             Boolean?
+  aiConfidence          Decimal?             @db.Decimal(8, 3)
+  base                  Decimal?             @db.Decimal(18, 3)
+  plus                  Decimal?             @db.Decimal(18, 3)
+  minus                 Decimal?             @db.Decimal(18, 3)
+  checklist             RefChecklist?        @relation("WirItem_checklist", fields: [checklistId], references: [id], onDelete: Restrict)
+  item                  RefChecklistItem?    @relation("WirItem_item", fields: [itemId], references: [id], onDelete: Restrict)
+  sourceChecklist       RefChecklist?        @relation("WirItem_sourceChecklist", fields: [sourceChecklistId], references: [id])
+  sourceItem            RefChecklistItem?    @relation("WirItem_sourceItem", fields: [sourceChecklistItemId], references: [id])
+  wir                   Wir                  @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
+  evidences             WirItemEvidence[]    @relation("WirItemToEvidence")
+  runs                  WirItemRun[]         @relation("WirItemToRuns")
+
+  @@index([wirId])
+  @@index([checklistId])
+  @@index([itemId])
+  @@index([sourceChecklistId])
+  @@index([sourceChecklistItemId])
+  @@map("WirItem")
+}
+
+model WirHistory {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId     String     @db.Uuid
+  wirId         String     @db.Uuid
+  action        WirAction
+  actorUserId   String?    @db.Uuid
+  actorName     String?
+  fromStatus    WirStatus?
+  toStatus      WirStatus?
+  fromBicUserId String?    @db.Uuid
+  toBicUserId   String?    @db.Uuid
+  notes         String?
+  meta          Json?
+  createdAt     DateTime   @default(now()) @db.Timestamptz(6)
+  wir           Wir        @relation("WirToHistory", fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  @@index([wirId, createdAt], map: "wirhist_wir_created_idx")
+  @@index([projectId, createdAt], map: "wirhist_project_created_idx")
+  @@map("WirHistory")
+}
+
+model WirDiscussion {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId     String          @db.Uuid
+  authorId  String          @db.Uuid
+  parentId  String?         @db.Uuid
+  body      String
+  fileUrl   String?
+  fileName  String?
+  createdAt DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime        @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime?
+  author    User            @relation(fields: [authorId], references: [userId], onDelete: Cascade)
+  parent    WirDiscussion?  @relation("WirDiscussionToParent", fields: [parentId], references: [id])
+  replies   WirDiscussion[] @relation("WirDiscussionToParent")
+  wir       Wir             @relation(fields: [wirId], references: [wirId], onDelete: Cascade)
+}
+
+model WirItemRun {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId        String              @db.Uuid
+  itemId       String              @db.Uuid
+  actorUserId  String?             @db.Uuid
+  actorRole    WirRunnerActorRole?
+  actorName    String?
+  valueText    String?
+  valueNumber  Decimal?            @db.Decimal(18, 3)
+  unit         String?
+  status       WirItemStatus?
+  comment      String?
+  lat          Decimal?            @db.Decimal(9, 6)
+  lng          Decimal?            @db.Decimal(9, 6)
+  accuracyM    Decimal?            @db.Decimal(6, 2)
+  locationNote String?
+  meta         Json?
+  createdAt    DateTime            @default(now()) @db.Timestamptz(6)
+  evidences    WirItemEvidence[]   @relation("RunToEvidence")
+  item         WirItem             @relation("WirItemToRuns", fields: [itemId], references: [id], onDelete: Cascade)
+  wir          Wir                 @relation("WirToItemRuns", fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  @@index([wirId])
+  @@index([itemId])
+  @@index([actorUserId])
+  @@map("WirItemRun")
+}
+
+model WirItemEvidence {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  wirId      String              @db.Uuid
+  itemId     String?             @db.Uuid
+  runId      String?             @db.Uuid
+  kind       WirItemEvidenceKind @default(Photo)
+  url        String
+  thumbUrl   String?
+  fileName   String?
+  fileSize   Int?
+  mimeType   String?
+  capturedAt DateTime?           @db.Timestamptz(6)
+  lat        Decimal?            @db.Decimal(9, 6)
+  lng        Decimal?            @db.Decimal(9, 6)
+  accuracyM  Decimal?            @db.Decimal(6, 2)
+  meta       Json?
+  createdAt  DateTime            @default(now()) @db.Timestamptz(6)
+  item       WirItem?            @relation("WirItemToEvidence", fields: [itemId], references: [id])
+  run        WirItemRun?         @relation("RunToEvidence", fields: [runId], references: [id])
+  wir        Wir                 @relation("WirToEvidence", fields: [wirId], references: [wirId], onDelete: Cascade)
+
+  @@index([wirId])
+  @@index([itemId])
+  @@index([runId])
+  @@map("WirItemEvidence")
+}
 
 enum PreferredLanguage {
   en
@@ -182,7 +847,6 @@ enum AreaUnit {
   @@map("area_unit")
 }
 
-// Scope of a role (for multi-role users) */
 enum RoleScope {
   Global
   Company
@@ -194,7 +858,7 @@ enum RoleScope {
 enum AuditAction {
   AssignAdded
   AssignRemoved
-  AssignReplaced // keep for future atomic replace ops, safe to leave
+  AssignReplaced
 
   @@map("AuditAction")
 }
@@ -205,8 +869,6 @@ enum ModuleCode {
   @@map("ModuleCode")
 }
 
-// ============================= WIR Enums =============================
-
 enum WirStatus {
   Draft
   Submitted
@@ -215,6 +877,7 @@ enum WirStatus {
   Rejected
   Returned
   APPROVE_WITH_COMMENTS
+
   @@map("WirStatus")
 }
 
@@ -245,305 +908,6 @@ enum InspectorItemStatus {
   NA
 }
 
-// ============================ Models ============================ */
-
-model State {
-  stateId   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String    @unique
-  name      String    @unique
-  type      StateType
-  createdAt DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
-
-  districts District[]
-  users     User[]
-  companies Company[]
-  projects  Project[]
-
-  @@map("State")
-}
-
-model District {
-  districtId String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String
-  stateId    String   @db.Uuid
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
-
-  state State @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: Cascade)
-
-  users     User[]
-  companies Company[]
-  projects  Project[]
-
-  @@unique([stateId, name])
-  @@map("District")
-}
-
-model User {
-  userId            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code              String?            @unique
-  firstName         String
-  middleName        String?
-  lastName          String?
-  countryCode       String
-  phone             String
-  email             String?            @unique
-  preferredLanguage PreferredLanguage?
-  profilePhoto      String?
-  stateId           String?            @db.Uuid
-  districtId        String?            @db.Uuid
-  cityTown          String?
-  pin               String?
-  operatingZone     OperatingZone?
-  address           String?
-  isClient          Boolean?           @default(false)
-  isServiceProvider Boolean?           @default(false)
-  userStatus        UserStatus         @default(Active)
-  passwordHash      String?
-  isSuperAdmin      Boolean?           @default(false)
-  createdAt         DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime           @updatedAt @db.Timestamptz(6)
-
-  // Optional legacy "primary role"
-  userRole UserRole?
-
-  state    State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
-  district District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
-
-  wirAsContractor Wir[] @relation("WirContractorUser")
-  wirAsInspector  Wir[] @relation("WirInspectorUser")
-  wirAsHod        Wir[] @relation("WirHodUser")
-  wirsCreated     Wir[] @relation("WirCreatedBy")
-  wirsBic         Wir[] @relation("WirBicUser")
-  wirsRescheduled Wir[] @relation("WirRescheduledByUser")
-
-  // 1:M shortcuts
-  projectsAsClient           Project[] @relation("ProjectClientUser")
-  companiesAsServiceProvider Company[] @relation("CompanyServiceProviderUser")
-
-  // Explicit M:N junctions
-  userProjects  UserProject[]
-  userCompanies UserCompany[]
-
-  // Multi-role memberships
-  userRoleMemberships UserRoleMembership[]
-  WirDiscussion       WirDiscussion[]
-
-  @@unique([countryCode, phone], map: "User_cc_phone_unique")
-  @@map("User")
-}
-
-model Company {
-  companyId      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String
-  status         CompanyStatus @default(Active)
-  website        String?
-  companyRole    CompanyRole?
-  gstin          String?       @unique
-  pan            String?       @unique
-  cin            String?       @unique
-  primaryContact String?
-  contactMobile  String?
-  contactEmail   String?
-  stateId        String?       @db.Uuid
-  districtId     String?       @db.Uuid
-  address        String?
-  pin            String?
-  notes          String?
-  userId         String?       @db.Uuid
-
-  // NEW
-  companyCode String? @unique
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  state           State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
-  district        District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
-  serviceProvider User?     @relation("CompanyServiceProviderUser", fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
-
-  projects            Project[]            @relation("ProjectClientCompany")
-  userCompanies       UserCompany[]
-  userRoleMemberships UserRoleMembership[]
-
-  @@map("Company")
-}
-
-model Project {
-  projectId             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title                 String
-  code                  String?           @unique
-  status                ProjectStatus     @default(Draft)
-  stage                 ProjectStage?
-  projectType           ProjectType?
-  structureType         StructureType?
-  constructionType      ConstructionType?
-  contractType          ContractType?
-  health                ProjectHealth     @default(Unknown)
-  clientUserId          String?           @db.Uuid
-  clientCompanyId       String?           @db.Uuid
-  address               String?
-  cityTown              String?
-  stateId               String?           @db.Uuid
-  districtId            String?           @db.Uuid
-  pin                   String?
-  latitude              Decimal?          @db.Decimal(9, 6)
-  longitude             Decimal?          @db.Decimal(9, 6)
-  startDate             DateTime?
-  plannedCompletionDate DateTime?
-  currency              CurrencyCode?     @default(INR)
-  contractValue         Decimal?          @db.Decimal(18, 2)
-  areaUnit              AreaUnit?
-  plotArea              Decimal?          @db.Decimal(14, 2)
-  builtUpArea           Decimal?          @db.Decimal(14, 2)
-  floors                Int?
-  description           String?
-  createdAt             DateTime          @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime          @updatedAt @db.Timestamptz(6)
-
-  clientUser    User?     @relation("ProjectClientUser", fields: [clientUserId], references: [userId], onDelete: SetNull)
-  clientCompany Company?  @relation("ProjectClientCompany", fields: [clientCompanyId], references: [companyId], onDelete: SetNull)
-  state         State?    @relation(fields: [stateId], references: [stateId], onUpdate: Cascade, onDelete: SetNull)
-  district      District? @relation(fields: [districtId], references: [districtId], onUpdate: Cascade, onDelete: SetNull)
-
-  projectTags               ProjectTag[]
-  userProjects              UserProject[] // junction backref
-  userRoleMemberships       UserRoleMembership[] // role memberships scoped to this project
-  PermissionProjectOverride PermissionProjectOverride[]
-  moduleSettings            ProjectModuleSetting[]
-  wirs                      Wir[]
-
-  @@map("Project")
-}
-
-model RefProjectTag {
-  tagCode String @id
-  label   String
-
-  tags ProjectTag[]
-
-  @@map("ref_project_tag")
-}
-
-model ProjectTag {
-  projectId String @db.Uuid
-  tagCode   String
-
-  project Project       @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
-  tag     RefProjectTag @relation(fields: [tagCode], references: [tagCode], onDelete: Restrict)
-
-  @@id([projectId, tagCode])
-  @@map("ProjectTag")
-}
-
-// ===================== Junction tables (explicit M:N) ===================== */
-
-model UserProject {
-  userId    String   @db.Uuid
-  projectId String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: Cascade)
-  project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@id([userId, projectId])
-  @@index([userId])
-  @@index([projectId])
-  @@map("UserProject")
-}
-
-model UserCompany {
-  userId    String   @db.Uuid
-  companyId String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: Cascade)
-  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@id([userId, companyId])
-  @@index([userId])
-  @@index([companyId])
-  @@map("UserCompany")
-}
-
-// ================== Multi-role membership (with validity window) ================== */
-
-model UserRoleMembership {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String    @db.Uuid
-  role       UserRole
-  scopeType  RoleScope
-  companyId  String?   @db.Uuid
-  projectId  String?   @db.Uuid
-  isDefault  Boolean   @default(false)
-  /// NEW — matches the Explorer’s concept of “Authorised to Approve”
-  canApprove Boolean   @default(false)
-
-  validFrom DateTime? @db.Timestamptz(6) // <- nullable
-  validTo   DateTime? @db.Timestamptz(6) // <- nullable
-
-  createdBy String? @db.Uuid
-  notes     String?
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6) // <-- NEW
-
-  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: Cascade)
-  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade, onUpdate: Cascade)
-  project Project? @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@unique([userId, projectId, role, validFrom, validTo], map: "urm_unique_user_project_role_window")
-  @@index([userId, role])
-  @@index([companyId])
-  @@index([projectId])
-  @@index([projectId, role, validFrom, validTo], map: "urm_project_role_window_idx")
-  @@index([userId, role, validFrom, validTo], map: "urm_user_role_window_idx")
-  @@map("UserRoleMembership")
-}
-
-// --- Stores entire permission matrix (by module→actions) as JSON ---
-model PermissionTemplate {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  role      UserRole @unique
-  matrix    Json // { [moduleCode: string]: { view, raise, review, approve, close } }
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  @@map("PermissionTemplate")
-}
-
-model PermissionProjectOverride {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String   @db.Uuid
-  role      UserRole
-  matrix    Json
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@unique([projectId, role], map: "ppo_project_role_unique")
-  @@map("PermissionProjectOverride")
-}
-
-/// Deny-only overrides at User level for a specific Project.
-/// Null/absent means "inherit".
-model PermissionUserOverride {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String
-  userId    String
-  /// shape: { [moduleCode]: { view?: "inherit"|"deny", raise?:..., review?:..., approve?:..., close?:... } }
-  matrix    Json
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  @@unique([projectId, userId], map: "puo_project_user")
-  @@map("PermissionUserOverride")
-}
-
-// ============================= Ref Libraries =============================
 enum Discipline {
   Civil
   MEP
@@ -552,7 +916,6 @@ enum Discipline {
   @@map("Discipline")
 }
 
-// New enum just for materials
 enum MaterialDiscipline {
   Civil
   Architecture
@@ -561,445 +924,8 @@ enum MaterialDiscipline {
   MEP_HVC      @map("MEP.HVC")
   Finishes
 
-  @@map("MaterialDiscipline") // DB name (optional but nice)
+  @@map("MaterialDiscipline")
 }
-
-model RefChecklist {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String?    @unique
-  title        String
-  discipline   Discipline
-  stageLabel   String?
-  tags         String[]   @default([])
-  status       String     @default("Active")
-  version      Int        @default(1)
-  versionLabel String?
-  versionMajor Int        @default(1)
-  versionMinor Int        @default(0)
-  versionPatch Int        @default(0)
-  aiDefault    Boolean    @default(false)
-  createdAt    DateTime   @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime   @updatedAt @db.Timestamptz(6)
-
-  items        RefChecklistItem[]
-  WirChecklist WirChecklist[]
-
-  // Back-refs for WirItem (M:1 from WirItem to RefChecklist)
-  checklistWirItems WirItem[] @relation("WirItem_checklist") // attached checklist on WirItem.checklist
-  sourceWirItems    WirItem[] @relation("WirItem_sourceChecklist") // provenance on WirItem.sourceChecklist
-
-  @@index([discipline, stageLabel])
-  @@map("RefChecklist")
-}
-
-model RefChecklistItem {
-  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  checklistId String @db.Uuid
-  seq         Int
-
-  text        String
-  requirement String?
-  method      String[]
-  risk        String?
-  tags        String[]
-
-  itemCode     String?
-  critical     Boolean?
-  aiEnabled    Boolean?
-  aiConfidence Decimal?
-  units        String?
-  tolerance    String?
-  base         Decimal?
-  plus         Decimal?
-  minus        Decimal?
-
-  checklist           RefChecklist                   @relation(fields: [checklistId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  suggestedActivities RefChecklistItemActivityLink[]
-  suggestedMaterials  RefChecklistItemMaterialLink[]
-
-  // Back-refs for WirItem (M:1 from WirItem to RefChecklistItem)
-  itemWirItems   WirItem[] @relation("WirItem_item") // attached item on WirItem.item
-  sourceWirItems WirItem[] @relation("WirItem_sourceItem") // provenance on WirItem.sourceItem
-
-  @@index([checklistId])
-  @@map("RefChecklistItem")
-}
-
-model RefChecklistItemActivityLink {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId     String   @db.Uuid
-  activityId String?  @db.Uuid // null until approved/matched
-  label      String
-  tags       String[]
-
-  item     RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  activity RefActivity?     @relation(fields: [activityId], references: [id], onDelete: SetNull)
-
-  @@index([itemId])
-  @@index([activityId])
-  @@map("RefChecklistItemActivityLink")
-}
-
-model RefChecklistItemMaterialLink {
-  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId     String  @db.Uuid
-  materialId String? @db.Uuid // null until approved/matched
-  name       String
-  category   String?
-  properties Json? // { key:value, uom?:string } or array
-
-  item     RefChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  material RefMaterial?     @relation(fields: [materialId], references: [id], onDelete: SetNull)
-
-  @@index([itemId])
-  @@index([materialId])
-  @@map("RefChecklistItemMaterialLink")
-}
-
-model RefActivity {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String?    @unique
-  title        String
-  discipline   Discipline
-  stageLabel   String?
-  phase        String[]   @default([]) // e.g., ["Execution", "Handover"]
-  element      String[]   @default([]) // e.g., ["Slab", "Beam"]
-  system       String[] // array tags
-  nature       String[] // array tags
-  method       String[] // array tags
-  status       String     @default("Active")
-  version      Int        @default(1)
-  // --- NEW: human label + sortable parts ---
-  versionLabel String? // e.g. "1.2.3"
-  versionMajor Int        @default(1)
-  versionMinor Int        @default(0)
-  versionPatch Int        @default(0)
-  // -----------------------------------------
-
-  notes     String?
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  materials                    RefActivityMaterial[]
-  RefChecklistItemActivityLink RefChecklistItemActivityLink[]
-
-  @@unique([discipline, stageLabel, title], map: "refactivity_uq_disc_stage_title")
-  @@map("RefActivity")
-}
-
-model RefMaterial {
-  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String?             @unique
-  name         String
-  discipline   MaterialDiscipline? // <— use the new enum here
-  category     String?
-  manufacturer String?
-  model        String?
-  standards    String[]            @default([])
-  fireRating   String?
-  keyProps     String[]            @default([])
-  aliases      String[]            @default([])
-  properties   Json?
-  version      Int                 @default(1)
-
-  // --- human label + sortable parts ---
-  versionLabel String? // e.g. "1.2.3"
-  versionMajor Int     @default(1)
-  versionMinor Int     @default(0)
-  versionPatch Int     @default(0)
-  // ----------------------------------------
-
-  notes     String?
-  status    String   @default("Active")
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  activityUses                 RefActivityMaterial[]
-  RefChecklistItemMaterialLink RefChecklistItemMaterialLink[]
-
-  @@index([name, category])
-  @@index([discipline, category, manufacturer])
-  @@map("RefMaterial")
-}
-
-model RefActivityMaterial {
-  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  activityId String  @db.Uuid
-  materialId String  @db.Uuid
-  note       String?
-
-  activity RefActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  material RefMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
-
-  @@unique([activityId, materialId], map: "refactmat_activity_material_uq")
-  @@index([activityId])
-  @@index([materialId])
-  @@map("RefActivityMaterial")
-}
-
-model ProjectModuleSetting {
-  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String     @db.Uuid
-  module    ModuleCode
-  /// Stores only the WIR settings used in the UI:
-  /// { transmissionType: "Public"|"Private"|"UserSet", redirectAllowed: boolean, exportPdfAllowed: boolean }
-  extra     Json
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  project Project @relation(fields: [projectId], references: [projectId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@unique([projectId, module], map: "pms_project_module_unique")
-  @@index([projectId])
-  @@map("ProjectModuleSetting")
-}
-
-model AdminAuditSetting {
-  id                 Int     @id @default(1)
-  /// When false, no assignment audit rows are written.
-  assignmentsEnabled Boolean @default(true)
-
-  // Who flipped the switch last (denormalized for history)
-  updatedByUserId String?  @db.Uuid
-  updatedByName   String?
-  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
-
-  @@map("AdminAuditSetting")
-}
-
-model AdminAuditLog {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  // Who performed the change
-  actorUserId String @db.Uuid
-  actorName   String // full name at time of action (denormalized)
-
-  // What happened
-  action AuditAction
-  module String      @default("Assignments")
-
-  // Whose assignments were changed
-  targetUserId String @db.Uuid
-
-  // Context of the membership affected
-  role      UserRole?
-  scopeType RoleScope?
-  companyId String?    @db.Uuid
-  projectId String?    @db.Uuid
-
-  // Optional request context
-  ip        String?
-  userAgent String?
-
-  // Snapshots
-  /// e.g. { id, role, scopeType, companyId, projectId }
-  before Json?
-  after  Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([targetUserId, createdAt])
-  @@index([companyId])
-  @@index([projectId])
-  @@index([action])
-  @@map("AdminAuditLog")
-}
-
-// ============================== WIR Models ==============================
-
-model Wir {
-  wirId String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code  String? @unique
-  title String
-
-  projectId String  @db.Uuid
-  project   Project @relation(fields: [projectId], references: [projectId], onUpdate: Cascade, onDelete: Cascade)
-
-  // status / health (reuse your ProjectHealth palette)
-  status WirStatus     @default(Draft)
-  health ProjectHealth @default(Unknown)
-
-  // meta
-  discipline Discipline?
-  stage      String?
-
-  // schedule
-  forDate DateTime? @db.Timestamptz(6)
-  forTime String?
-
-  // reschedule when inspection is moved
-  rescheduleForDate DateTime? @db.Timestamptz(6)
-  rescheduleForTime String?
-  rescheduleReason  String?
-  rescheduledById   String?   @db.Uuid
-  rescheduledBy     User?     @relation("WirRescheduledByUser", fields: [rescheduledById], references: [userId], onUpdate: Cascade, onDelete: SetNull)
-
-  // location (denormalized for quick display)
-  cityTown  String?
-  stateName String?
-
-  // participants (denormalized display names are resolved by service)
-  contractorId String? @db.Uuid
-  inspectorId  String? @db.Uuid
-  hodId        String? @db.Uuid
-
-  contractor User? @relation("WirContractorUser", fields: [contractorId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
-  inspector  User? @relation("WirInspectorUser", fields: [inspectorId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
-  hod        User? @relation("WirHodUser", fields: [hodId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
-
-  //current Ball-In-Court
-  bicUserId String? @db.Uuid
-  bic       User?   @relation("WirBicUser", fields: [bicUserId], references: [userId], onUpdate: Cascade, onDelete: SetNull)
-
-  description String?
-
-  // ================= NEW: header-level review / decision ================
-  inspectorRecommendation InspectorRecommendation? // APPROVE / APPROVE_WITH_COMMENTS / REJECT
-  inspectorRemarks        String?
-  inspectorReviewedAt     DateTime?                @db.Timestamptz(6)
-
-  hodOutcome   HodOutcome? // ACCEPT / RETURN / REJECT
-  hodRemarks   String?
-  hodDecidedAt DateTime?   @db.Timestamptz(6)
-
- // ================= NEW: versioning ================================
-  seriesId String   @db.Uuid                      // NEW: lineage id (v1 = self.wirId)
-  version  Int      @default(1)                   // NEW: 1,2,3,...
-  prevWirId String? @db.Uuid                      // NEW: immediate parent (v2+)
-
-  checklists WirChecklist[]
-
-  items WirItem[]
-
-  createdById String? @db.Uuid
-  createdBy   User?   @relation("WirCreatedBy", fields: [createdById], references: [userId], onDelete: SetNull, onUpdate: Cascade)
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  histories     WirHistory[]    @relation("WirToHistory")
-  WirDiscussion WirDiscussion[]
-
-  itemRuns  WirItemRun[]      @relation("WirToItemRuns")
-  evidences WirItemEvidence[] @relation("WirToEvidence")
-
-/// ——— Activity library provenance + frozen copy ———
-  activityRefId           String?   @db.Uuid     // points to RefActivity.id (library)
-  activitySnapshot        Json?                    // frozen activity JSON used by Inspector
-  activitySnapshotVersion Int?                     // version from the library when snapped
-
-  /// ——— Checklist materialization lifecycle ———
-  materialized  Boolean   @default(false)         // have runner rows been created?
-  snapshotAt    DateTime? @db.Timestamptz(6)      // when the copy-on-dispatch happened
-
-  // ...relations/indexes below...
-  @@index([activityRefId])
-
-  @@index([projectId])
-  @@index([status])
-  @@index([discipline, stage])
-  @@index([bicUserId])
-// NEW: allow quick fetch of a WIR series and specific version
-  @@index([seriesId, version])
-
-  @@map("Wir")
-}
-
-model WirChecklist {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  wirId       String @db.Uuid
-  checklistId String @db.Uuid
-
-  // Optional snapshots for stable display & sorting (no joins needed at runtime)
-  checklistCode  String?
-  checklistTitle String?
-  discipline     Discipline?
-  versionLabel   String?
-
-  itemsTotal Int      @default(0)
-  itemIds    String[] @default([])
-  // Cached count of items from RefChecklist at the time of attach (for fast list totals)
-  itemsCount Int?
-
-  // Preserve user-picked order, if any
-  order Int @default(0)
-
-  wir       Wir          @relation(fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
-  checklist RefChecklist @relation(fields: [checklistId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@unique([wirId, checklistId], map: "wir_checklist_unique")
-  @@index([wirId])
-  @@index([checklistId])
-  @@map("WirChecklist")
-}
-
-model WirItem {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  wirId String @db.Uuid
-  wir   Wir    @relation(fields: [wirId], references: [wirId], onUpdate: Cascade, onDelete: Cascade)
-
-  // ATTACHED (actual) checklist + item used in this WIR run
-  checklistId String?       @db.Uuid
-  checklist   RefChecklist? @relation("WirItem_checklist", fields: [checklistId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  itemId String?           @db.Uuid
-  item   RefChecklistItem? @relation("WirItem_item", fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  seq Int?
-
-  // UI / runner fields
-  name       String
-  spec       String?
-  required   String?
-  tolerance  String?
-  photoCount Int?
-  status     WirItemStatus @default(Unknown)
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-
-  // ================= NEW: per-role item status ==========================
-  inspectorStatus InspectorItemStatus?
-  inspectorNote   String?
-
-  hodStatus InspectorItemStatus?
-  hodNote   String?
-
-  // PROVENANCE (source snapshot at time of creation)
-  sourceChecklistId String?       @db.Uuid
-  sourceChecklist   RefChecklist? @relation("WirItem_sourceChecklist", fields: [sourceChecklistId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-
-  sourceChecklistItemId String?           @db.Uuid
-  sourceItem            RefChecklistItem? @relation("WirItem_sourceItem", fields: [sourceChecklistItemId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-
-  // Quick denorms from RefChecklistItem
-  code String?
-  unit String?
-  tags String[] @default([])
-  critical     Boolean?
-  aiEnabled    Boolean?
-  aiConfidence Decimal? @db.Decimal(8, 3)
-
-  base         Decimal? @db.Decimal(18, 3)
-  plus         Decimal? @db.Decimal(18, 3)
-  minus        Decimal? @db.Decimal(18, 3)
-
-  // NEW: runner entries & evidences for this item
-  runs      WirItemRun[]      @relation("WirItemToRuns")
-  evidences WirItemEvidence[] @relation("WirItemToEvidence")
-
-  @@index([wirId])
-  @@index([checklistId])
-  @@index([itemId])
-  @@index([sourceChecklistId])
-  @@index([sourceChecklistItemId])
-  @@map("WirItem")
-}
-
-// =============================WIR History =============================
 
 enum WirAction {
   Created
@@ -1018,59 +944,6 @@ enum WirAction {
   @@map("WirAction")
 }
 
-model WirHistory {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String @db.Uuid
-  wirId     String @db.Uuid
-
-  action      WirAction
-  // who did it
-  actorUserId String?   @db.Uuid
-  actorName   String?
-
-  // status/bic deltas (optional)
-  fromStatus    WirStatus?
-  toStatus      WirStatus?
-  fromBicUserId String?    @db.Uuid
-  toBicUserId   String?    @db.Uuid
-
-  // free-form note; also allow small payloads in meta if needed
-  notes String?
-  meta  Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  wir Wir @relation("WirToHistory", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
-
-  @@index([wirId, createdAt], map: "wirhist_wir_created_idx")
-  @@index([projectId, createdAt], map: "wirhist_project_created_idx")
-  @@map("WirHistory")
-}
-
-//----------------WIR Discussion -------------
-model WirDiscussion {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  wirId    String  @db.Uuid
-  authorId String  @db.Uuid
-  parentId String? @db.Uuid
-
-  body     String
-  fileUrl  String? // NEW
-  fileName String? // NEW
-
-  createdAt DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
-  deletedAt DateTime?
-
-  wir    Wir  @relation(fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
-  author User @relation(fields: [authorId], references: [userId], onDelete: Cascade, onUpdate: Cascade)
-
-  parent  WirDiscussion?  @relation("WirDiscussionToParent", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  replies WirDiscussion[] @relation("WirDiscussionToParent")
-}
-
-//------------- Runner Items Enums ----------------
 enum WirRunnerActorRole {
   Contractor
   Inspector
@@ -1087,86 +960,4 @@ enum WirItemEvidenceKind {
   Other
 
   @@map("WirItemEvidenceKind")
-}
-
-//------------ models for Runner items & evidence --------------
-model WirItemRun {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  // Header + item
-  wirId  String @db.Uuid
-  itemId String @db.Uuid
-
-  wir  Wir     @relation("WirToItemRuns", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
-  item WirItem @relation("WirItemToRuns", fields: [itemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
-  // Who filled this entry in Runner
-  actorUserId String?             @db.Uuid
-  actorRole   WirRunnerActorRole?
-  actorName   String? // denorm full name at time of entry
-
-  // Measured / observed values
-  valueText   String? // free text like "Level OK", "Hairline cracks"
-  valueNumber Decimal?       @db.Decimal(18, 3) // numeric reading if any
-  unit        String? // can override default unit
-  status      WirItemStatus? // OK / NCR / Pending / Unknown at time of entry
-  comment     String? // runner comment
-
-  // Geo + device context (for "submit requires evidence with geo")
-  lat          Decimal? @db.Decimal(9, 6)
-  lng          Decimal? @db.Decimal(9, 6)
-  accuracyM    Decimal? @db.Decimal(6, 2)
-  locationNote String? // e.g. "Tower A – 7th floor lobby"
-
-  // Free-form device / app metadata: { deviceId, appVersion, ... }
-  meta Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  evidences WirItemEvidence[] @relation("RunToEvidence")
-
-  @@index([wirId])
-  @@index([itemId])
-  @@index([actorUserId])
-  @@map("WirItemRun")
-}
-
-model WirItemEvidence {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  // Always tied to a WIR header
-  wirId String @db.Uuid
-  wir   Wir    @relation("WirToEvidence", fields: [wirId], references: [wirId], onDelete: Cascade, onUpdate: Cascade)
-
-  // Optional links for finer granularity
-  itemId String? @db.Uuid
-  runId  String? @db.Uuid
-
-  item WirItem?    @relation("WirItemToEvidence", fields: [itemId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  run  WirItemRun? @relation("RunToEvidence", fields: [runId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-
-  kind WirItemEvidenceKind @default(Photo)
-
-  // File info (S3, GCS, local, etc.)
-  url      String
-  thumbUrl String?
-  fileName String?
-  fileSize Int?
-  mimeType String?
-
-  // Capture context
-  capturedAt DateTime? @db.Timestamptz(6)
-  lat        Decimal?  @db.Decimal(9, 6)
-  lng        Decimal?  @db.Decimal(9, 6)
-  accuracyM  Decimal?  @db.Decimal(6, 2)
-
-  // Extra: { orientation, exif, source:"mobile/web" ... }
-  meta Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([wirId])
-  @@index([itemId])
-  @@index([runId])
-  @@map("WirItemEvidence")
 }

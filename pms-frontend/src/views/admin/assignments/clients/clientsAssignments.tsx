@@ -43,7 +43,9 @@ function formatLocalYMD(d: Date) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`; // local YYYY-MM-DD
 }
-function todayLocalISO() { return formatLocalYMD(new Date()); }
+function todayLocalISO() {
+  return formatLocalYMD(new Date());
+}
 /** Add days to a local YYYY-MM-DD and return local YYYY-MM-DD */
 function addDaysISO(dateISO: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
@@ -66,7 +68,9 @@ function fmtLocalDateOnly(v: any) {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
 }
-function isYmd(s?: string) { return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+function isYmd(s?: string) {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
 function maxYMD(a?: string, b?: string) {
   const A = isYmd(a) ? a! : "";
   const B = isYmd(b) ? b! : "";
@@ -78,12 +82,15 @@ function maxYMD(a?: string, b?: string) {
 function floorForEditFrom(existingFrom: string): string {
   const today = todayLocalISO();
   // lock to existing date only if it's already in the past
-  return (existingFrom && existingFrom < today) ? existingFrom : "";
+  return existingFrom && existingFrom < today ? existingFrom : "";
 }
 
 // ---------- Small utils ----------
 function displayName(u: UserLite) {
-  return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
+  return [u.firstName, u.middleName, u.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 }
 function phoneDisplay(u: UserLite) {
   return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
@@ -92,7 +99,7 @@ function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   const set = new Set(
     mem
-      .filter((m) => String(m?.role || '').toLowerCase() === 'client')
+      .filter((m) => String(m?.role || "").toLowerCase() === "client")
       .map((m) => m?.project?.title)
       .filter(Boolean) as string[]
   );
@@ -108,8 +115,8 @@ function isClientUser(u: UserLite): boolean {
 function pickMembershipDate(m: any, primary: "validFrom" | "validTo"): string {
   if (!m) return "";
   const candidates = [
-    primary,                          // validFrom / validTo
-    `${primary}Date`,                 // validFromDate / validToDate
+    primary, // validFrom / validTo
+    `${primary}Date`, // validFromDate / validToDate
     primary === "validFrom" ? "from" : "to",
     primary === "validFrom" ? "startDate" : "endDate",
     primary === "validFrom" ? "start" : "end",
@@ -124,12 +131,18 @@ function pickMembershipDate(m: any, primary: "validFrom" | "validTo"): string {
 }
 
 // prevent duplicate assignment to selected project
-function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boolean {
+function alreadyAssignedToSelectedProject(
+  u: UserLite,
+  projectId: string
+): boolean {
   if (!projectId) return false;
-  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  return mems.some(m =>
-    String(m?.role || "").toLowerCase() === "client" &&
-    m?.project?.projectId === projectId
+  const mems = Array.isArray(u.userRoleMemberships)
+    ? u.userRoleMemberships
+    : [];
+  return mems.some(
+    (m) =>
+      String(m?.role || "").toLowerCase() === "client" &&
+      m?.project?.projectId === projectId
   );
 }
 
@@ -144,12 +157,60 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   return "Valid";
 }
 
-const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
+const TileHeader = ({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) => (
   <div className="mb-3">
     <div className="text-sm font-semibold dark:text-white">{title}</div>
-    {subtitle ? <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div> : null}
+    {subtitle ? (
+      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+    ) : null}
   </div>
 );
+
+function ValidityBadge({ value }: { value: string }) {
+  const v = (value || "").toLowerCase();
+  let cls =
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-slate-200 dark:border-neutral-700";
+
+  if (v === "valid") {
+    cls =
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800";
+  } else if (v === "yet to start") {
+    cls =
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800";
+  } else if (v === "expired") {
+    cls =
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800";
+  }
+
+  return (
+    <span
+      className={
+        "inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium " +
+        cls
+      }
+    >
+      {value || "—"}
+    </span>
+  );
+}
+
+const SOFT_SELECT =
+  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
+  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 pr-8 text-xs sm:text-sm " +
+  "text-slate-800 dark:text-neutral-100 placeholder:text-gray-400 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70 appearance-none";
+
+const SOFT_DATE =
+  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
+  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 text-xs sm:text-sm " +
+  "text-slate-800 dark:text-neutral-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70";
 
 export default function ClientsAssignments() {
   const nav = useNavigate();
@@ -167,7 +228,9 @@ export default function ClientsAssignments() {
 
   // Tile 2 (client assignment)
   const [clients, setClients] = useState<UserLite[]>([]);
-  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(
+    new Set()
+  );
   const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
   const [validTo, setValidTo] = useState<string>("");
 
@@ -181,20 +244,25 @@ export default function ClientsAssignments() {
       try {
         setErr(null);
         const { data } = await api.get("/admin/projects");
-        const list: any[] = Array.isArray(data) ? data : (data?.projects ?? []);
+        const list: any[] = Array.isArray(data) ? data : data?.projects ?? [];
         const minimal: ProjectLite[] = list
-          .map((p: any) => ({ projectId: p.projectId || p.id || p.uuid, title: p.title || p.name }))
+          .map((p: any) => ({
+            projectId: p.projectId || p.id || p.uuid,
+            title: p.title || p.name,
+          }))
           .filter((p: ProjectLite) => p.projectId && p.title);
         if (!alive) return;
         setProjects(minimal);
-        //      if (minimal.length > 0 && !selectedProjectId) setSelectedProjectId(minimal[0].projectId);
       } catch (e: any) {
         if (!alive) return;
-        setErr(e?.response?.data?.error || e?.message || "Failed to load projects.");
+        setErr(
+          e?.response?.data?.error || e?.message || "Failed to load projects."
+        );
       }
     })();
-    return () => { alive = false; };
-    //}, [selectedProjectId]);
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Tile 3 (browse clients) data + refs
@@ -206,11 +274,23 @@ export default function ClientsAssignments() {
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
 
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "Active" | "Inactive"
+  >("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
 
-  const [sortKey, setSortKey] = useState<"code" | "name" | "projects" | "mobile" | "email" | "state" | "zone" | "status" | "updated">("name");
+  const [sortKey, setSortKey] = useState<
+    | "code"
+    | "name"
+    | "projects"
+    | "mobile"
+    | "email"
+    | "state"
+    | "zone"
+    | "status"
+    | "updated"
+  >("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -225,18 +305,26 @@ export default function ClientsAssignments() {
       try {
         setUsersLoading(true);
         setUsersErr(null);
-        const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-        const list = (Array.isArray(data) ? data : (data?.users ?? [])) as UserLite[];
+        const { data } = await api.get("/admin/users", {
+          params: { includeMemberships: "1" },
+        });
+        const list = (
+          Array.isArray(data) ? data : data?.users ?? []
+        ) as UserLite[];
         if (!alive) return;
         setAllUsers(list);
       } catch (e: any) {
         if (!alive) return;
-        setUsersErr(e?.response?.data?.error || e?.message || "Failed to load users.");
+        setUsersErr(
+          e?.response?.data?.error || e?.message || "Failed to load users."
+        );
       } finally {
         if (alive) setUsersLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -244,32 +332,43 @@ export default function ClientsAssignments() {
     (async () => {
       try {
         const { data } = await api.get("/admin/states");
-        const s = (Array.isArray(data) ? data : (data?.states ?? [])) as StateRef[];
+        const s = (
+          Array.isArray(data) ? data : data?.states ?? []
+        ) as StateRef[];
         if (!alive) return;
         setStatesRef(s);
       } catch {
         setStatesRef([]);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        if (!stateFilter) { setDistrictsRef([]); return; }
-        const st = statesRef.find(s => s.name === stateFilter);
+        if (!stateFilter) {
+          setDistrictsRef([]);
+          return;
+        }
+        const st = statesRef.find((s) => s.name === stateFilter);
         const params = st?.stateId ? { stateId: st.stateId } : undefined;
         const { data } = await api.get("/admin/districts", { params });
-        const d = (Array.isArray(data) ? data : (data?.districts ?? [])) as DistrictRef[];
+        const d = (
+          Array.isArray(data) ? data : data?.districts ?? []
+        ) as DistrictRef[];
         if (!alive) return;
         setDistrictsRef(d);
       } catch {
         setDistrictsRef([]);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [stateFilter, statesRef]);
 
   type Row = {
@@ -312,20 +411,22 @@ export default function ClientsAssignments() {
     const needle = q.trim().toLowerCase();
     const searched = needle
       ? filtered.filter((u) => {
-        const hay = [
-          u.code || "",
-          displayName(u),
-          projectsLabel(u),
-          phoneDisplay(u),
-          u.email || "",
-          u?.state?.name || "",
-          u?.district?.name || "",
-          u.operatingZone || "",
-          u.userStatus || "",
-          fmtLocalDateTime(u.updatedAt),
-        ].join(" ").toLowerCase();
-        return hay.includes(needle);
-      })
+          const hay = [
+            u.code || "",
+            displayName(u),
+            projectsLabel(u),
+            phoneDisplay(u),
+            u.email || "",
+            u?.state?.name || "",
+            u?.district?.name || "",
+            u.operatingZone || "",
+            u.userStatus || "",
+            fmtLocalDateTime(u.updatedAt),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(needle);
+        })
       : filtered;
 
     const rows: Row[] = searched.map((u) => ({
@@ -352,7 +453,8 @@ export default function ClientsAssignments() {
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a), bn = Number(b);
+      const an = Number(a),
+        bn = Number(b);
       if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
       return String(a).localeCompare(String(b));
     };
@@ -362,7 +464,16 @@ export default function ClientsAssignments() {
     });
 
     return rows;
-  }, [allUsers, statusFilter, stateFilter, districtFilter, q, sortKey, sortDir, movedClientIds]);
+  }, [
+    allUsers,
+    statusFilter,
+    stateFilter,
+    districtFilter,
+    q,
+    sortKey,
+    sortDir,
+    movedClientIds,
+  ]);
 
   const total = clientsRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -372,7 +483,9 @@ export default function ClientsAssignments() {
     return clientsRows.slice(start, start + pageSize);
   }, [clientsRows, pageSafe, pageSize]);
 
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [totalPages]); // keep in bounds
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page, setPage]);
 
   // Submit (assign)
   const canSubmit =
@@ -383,15 +496,17 @@ export default function ClientsAssignments() {
     !assignLoading;
 
   const onAssign = async () => {
-    const project = projects.find(p => p.projectId === selectedProjectId);
+    const project = projects.find((p) => p.projectId === selectedProjectId);
     const projectTitle = project?.title || "(Unknown Project)";
-    const selected = clients.filter(u => selectedClientIds.has(u.userId));
+    const selected = clients.filter((u) => selectedClientIds.has(u.userId));
     const names = selected.map(displayName).filter(Boolean);
 
     // duplicate guard
-    const dupes = selected.filter(u => alreadyAssignedToSelectedProject(u, selectedProjectId));
+    const dupes = selected.filter((u) =>
+      alreadyAssignedToSelectedProject(u, selectedProjectId)
+    );
     if (dupes.length > 0) {
-      const lines = dupes.map(u => {
+      const lines = dupes.map((u) => {
         const name = displayName(u) || "(No name)";
         return `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the Client Assignments.`;
       });
@@ -416,7 +531,7 @@ export default function ClientsAssignments() {
       projectId: selectedProjectId,
       companyId: null,
       validFrom, // "YYYY-MM-DD" (local)
-      validTo,   // "YYYY-MM-DD" (local)
+      validTo, // "YYYY-MM-DD" (local)
       isDefault: false,
     }));
 
@@ -425,7 +540,11 @@ export default function ClientsAssignments() {
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
 
-      alert(`Assigned ${data?.created ?? items.length} client(s) to "${projectTitle}".`);
+      alert(
+        `Assigned ${
+          data?.created ?? items.length
+        } client(s) to "${projectTitle}".`
+      );
 
       // Reset Tile 2
       setSelectedClientIds(new Set());
@@ -435,14 +554,20 @@ export default function ClientsAssignments() {
 
       // Refresh users list, so Tile 4 shows the new assignments immediately
       try {
-        const { data: fresh } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-        setAllUsers(Array.isArray(fresh) ? fresh : (fresh?.users ?? []));
-      } catch { }
+        const { data: fresh } = await api.get("/admin/users", {
+          params: { includeMemberships: "1" },
+        });
+        setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
+      } catch {}
 
       const el = document.querySelector('[data-tile-name="Browse Clients"]');
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Assign failed.";
+      const msg =
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        "Assign failed.";
       setErr(msg);
       alert(`Error: ${msg}`);
     } finally {
@@ -453,15 +578,29 @@ export default function ClientsAssignments() {
   // Move user from Tile 3 to Tile 2
   const onMoveToTile2 = (user: UserLite) => {
     if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
-      const projectTitle = projects.find(p => p.projectId === selectedProjectId)?.title || "(Selected Project)";
+      const projectTitle =
+        projects.find((p) => p.projectId === selectedProjectId)?.title ||
+        "(Selected Project)";
       const name = displayName(user) || "(No name)";
-      alert(`${name} has already assigned ${projectTitle}. If you wish to make changes, edit the Client Assignments.`);
+      alert(
+        `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the Client Assignments.`
+      );
       return;
     }
 
-    setClients((prev) => (prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]));
-    setMovedClientIds((prev) => { const next = new Set(prev); next.add(user.userId); return next; });
-    setSelectedClientIds((prev) => { const next = new Set(prev); next.add(user.userId); return next; });
+    setClients((prev) =>
+      prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]
+    );
+    setMovedClientIds((prev) => {
+      const next = new Set(prev);
+      next.add(user.userId);
+      return next;
+    });
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev);
+      next.add(user.userId);
+      return next;
+    });
     const el = document.querySelector('[data-tile-name="Roles & Options"]');
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -518,9 +657,9 @@ export default function ClientsAssignments() {
     projectTitle: string;
     status: string;
     validFrom: string; // local YYYY-MM-DD
-    validTo: string;   // local YYYY-MM-DD
+    validTo: string; // local YYYY-MM-DD
     validity: string;
-    updated: string;   // raw ISO/string from API; format on render
+    updated: string; // raw ISO/string from API; format on render
     membershipId?: string | null;
     _user?: UserLite;
     _mem?: MembershipLite;
@@ -529,14 +668,16 @@ export default function ClientsAssignments() {
   const assignedClientRows = useMemo<AssignmentRow[]>(() => {
     const rows: AssignmentRow[] = [];
     for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+      const mems = Array.isArray(u.userRoleMemberships)
+        ? u.userRoleMemberships
+        : [];
       for (const m of mems) {
         if (String(m?.role || "").toLowerCase() !== "client") continue;
         const pj = m?.project;
         if (!pj?.projectId || !pj?.title) continue;
 
         const vf = pickMembershipDate(m, "validFrom"); // local YYYY-MM-DD
-        const vt = pickMembershipDate(m, "validTo");   // local YYYY-MM-DD
+        const vt = pickMembershipDate(m, "validTo"); // local YYYY-MM-DD
 
         rows.push({
           userId: u.userId,
@@ -547,7 +688,7 @@ export default function ClientsAssignments() {
           validFrom: vf,
           validTo: vt,
           validity: computeValidityLabel(vf, vt),
-          updated: (m?.updatedAt || u.updatedAt || ""),
+          updated: m?.updatedAt || u.updatedAt || "",
           membershipId: m?.id ?? null,
           _user: u,
           _mem: m,
@@ -558,7 +699,15 @@ export default function ClientsAssignments() {
   }, [allUsers]);
 
   // ===== Tile 4 sort state + sorted rows =====
-  const [aSortKey, setASortKey] = useState<"userName" | "projectTitle" | "status" | "validFrom" | "validTo" | "validity" | "updated">("updated");
+  const [aSortKey, setASortKey] = useState<
+    | "userName"
+    | "projectTitle"
+    | "status"
+    | "validFrom"
+    | "validTo"
+    | "validity"
+    | "updated"
+  >("updated");
   const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
 
   const assignedSortedRows = useMemo<AssignmentRow[]>(() => {
@@ -573,7 +722,8 @@ export default function ClientsAssignments() {
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a), bn = Number(b);
+      const an = Number(a),
+        bn = Number(b);
       if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
       return String(a).localeCompare(String(b));
     };
@@ -584,7 +734,7 @@ export default function ClientsAssignments() {
     return rows;
   }, [assignedClientRows, aSortKey, aSortDir]);
 
-  {/* ===== Tile 4 pagination ===== */}
+  // ===== Tile 4 pagination =====
   const [aPage, setAPage] = useState(1);
   const aPageSize = pageSize; // <-- use the same selector value as Browse Clients
   const aTotal = assignedSortedRows.length;
@@ -594,7 +744,9 @@ export default function ClientsAssignments() {
     const start = (aPageSafe - 1) * aPageSize;
     return assignedSortedRows.slice(start, start + aPageSize);
   }, [assignedSortedRows, aPageSafe, aPageSize]);
-  useEffect(() => { if (aPage > aTotalPages) setAPage(aTotalPages); }, [aTotalPages]);
+  useEffect(() => {
+    if (aPage > aTotalPages) setAPage(aTotalPages);
+  }, [aTotalPages, aPage]);
 
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
@@ -606,7 +758,10 @@ export default function ClientsAssignments() {
   const [editTo, setEditTo] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
 
-  const openView = (row: AssignmentRow) => { setViewRow(row); setViewOpen(true); };
+  const openView = (row: AssignmentRow) => {
+    setViewRow(row);
+    setViewOpen(true);
+  };
   const openEdit = (row: AssignmentRow) => {
     setEditRow(row);
 
@@ -651,11 +806,12 @@ export default function ClientsAssignments() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editOpen, deleting]);
 
-
   // ---- Helpers for refreshing and robust membership resolution (for delete) ----
   const refetchUsers = async (): Promise<UserLite[]> => {
-    const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-    const list = Array.isArray(data) ? data : (data?.users ?? []);
+    const { data } = await api.get("/admin/users", {
+      params: { includeMemberships: "1" },
+    });
+    const list = Array.isArray(data) ? data : data?.users ?? [];
     setAllUsers(list);
     return list as UserLite[];
   };
@@ -667,7 +823,10 @@ export default function ClientsAssignments() {
     const pickBest = (mems: any[]) => {
       const candidates = mems
         .filter((mem) => String(mem?.role || "").toLowerCase() === "client")
-        .filter((mem) => normalizeId(mem?.project?.projectId) === normalizeId(projectId));
+        .filter(
+          (mem) =>
+            normalizeId(mem?.project?.projectId) === normalizeId(projectId)
+        );
 
       if (candidates.length === 0) return null;
 
@@ -683,23 +842,28 @@ export default function ClientsAssignments() {
       });
 
       const best = candidates[0];
-      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as string | null;
+      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as
+        | string
+        | null;
     };
 
-    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
+    const match = (u?: UserLite | null) =>
+      pickBest(u?.userRoleMemberships || []);
 
-    let id = match(allUsers.find(u => u.userId === userId));
+    let id = match(allUsers.find((u) => u.userId === userId));
     if (id) return id;
 
     const users = await refetchUsers();
-    id = match(users.find(u => u.userId === userId));
+    id = match(users.find((u) => u.userId === userId));
     return id ?? null;
   };
 
   // reuse existing pendingEditAlert + useEffect
   const onHardDeleteFromEdit = async () => {
     if (!editRow) return;
-    const resolvedId = editRow.membershipId || await findCurrentMembershipId(editRow.userId, editRow.projectId);
+    const resolvedId =
+      editRow.membershipId ||
+      (await findCurrentMembershipId(editRow.userId, editRow.projectId));
 
     if (!resolvedId) {
       await refetchUsers();
@@ -723,7 +887,9 @@ export default function ClientsAssignments() {
       await refetchUsers();
       setEditOpen(false);
       setEditRow(null);
-      setPendingEditAlert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
+      setPendingEditAlert(
+        `Unassigned ${editRow.userName} from ${editRow.projectTitle}.`
+      );
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 404) {
@@ -732,7 +898,11 @@ export default function ClientsAssignments() {
         setEditRow(null);
         setPendingEditAlert("Assignment already removed.");
       } else {
-        const errMsg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Unassign failed.";
+        const errMsg =
+          e?.response?.data?.message ||
+          e?.response?.data?.error ||
+          e?.message ||
+          "Unassign failed.";
         // keep modal open so users can retry or update dates instead
         alert(errMsg);
       }
@@ -742,74 +912,129 @@ export default function ClientsAssignments() {
   };
 
   const existingFromForMin = fmtLocalDateOnly(editRow?.validFrom || "");
-  const editFromMin = floorForEditFrom(existingFromForMin); // "" means no min
+  const editFromMin = floorForEditFrom(existingFromForMin); // "" means no min (kept for future use)
 
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">Client Assignments</h1>
+        <h1 className="text-2xl font-semibold dark:text-white">
+          Client Assignments
+        </h1>
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles & Options · <b>Browse Clients</b> · Client Assignments
+          Projects · Roles &amp; Options · Browse Clients · Client Assignments
         </p>
-        {err && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>}
+        {err && (
+          <p className="mt-3 text-sm text-red-700 dark:text-red-400">{err}</p>
+        )}
       </div>
 
       {/* Tile 1 — Projects */}
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Projects" data-tile-name="Projects">
-        <TileHeader title="Projects" subtitle="Choose the project to assign." />
-        <div className="max-w-xl">
-          <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Project</label>
-          <select
-            className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-            value={selectedProjectId}
-            onChange={(e) => { setSelectedProjectId(e.target.value); setPage(1); }}
-            title="Select project"
-          >
-            {/* {projects.length === 0 ? (
-              <option value="">Loading…</option>
-            ) : (
-              projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.title}</option>)
-            )} */}
-            <option value="">—</option>
-            {projects.map((p) => (
-              <option key={p.projectId} value={p.projectId}>{p.title}</option>
-            ))}
-          </select>
+      <section
+        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
+        aria-label="Tile: Projects"
+        data-tile-name="Projects"
+      >
+        <TileHeader
+          title="Projects"
+          subtitle="Choose the project to assign clients to."
+        />
+
+        <div className="max-w-xl mt-2">
+          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+            Project
+          </label>
+          <div className="relative">
+            <select
+              className={SOFT_SELECT}
+              value={selectedProjectId}
+              onChange={(e) => {
+                setSelectedProjectId(e.target.value);
+                setPage(1);
+              }}
+              title="Select project"
+            >
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+            {/* soft chevron */}
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+              ▼
+            </span>
+          </div>
         </div>
       </section>
 
       {/* Tile 2 — Roles & Options (Client) */}
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Roles & Options" data-tile-name="Roles & Options">
-        <TileHeader title="Roles & Options" subtitle="Pick from moved users & set validity." />
+      <section
+        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
+        aria-label="Tile: Roles & Options"
+        data-tile-name="Roles & Options"
+      >
+        <TileHeader
+          title="Roles & Options"
+          subtitle="Pick from moved clients and set validity."
+        />
 
-        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* moved users list */}
+        {/* Moved clients + validity underneath */}
+        <div className="mt-3 space-y-4">
+          {/* Moved clients list */}
           <div className="space-y-3" aria-label="Subtile: Moved Clients">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Moved Clients (select with checkbox)
-            </label>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                Moved Clients
+              </span>
+              {movedClientsList.length > 0 && (
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {selectedClientIds.size}/{movedClientsList.length} selected
+                </span>
+              )}
+            </div>
 
-            <div className="border rounded-lg dark:border-neutral-800 overflow-auto" style={{ maxHeight: 300 }}>
+            <div
+              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
+              style={{ maxHeight: 300 }}
+            >
               {movedClientIds.size === 0 ? (
-                <div className="p-3 text-sm text-gray-600 dark:text-gray-300">
-                  <b>Move Clients</b> from list below to assign roles.
+                <div className="p-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                  <b>Move clients</b> from the list below to assign them as
+                  Clients for the selected project.
                 </div>
               ) : (
-                <ul className="divide-y dark:divide-neutral-800">
+                <ul className="divide-y divide-slate-200/80 dark:divide-neutral-800">
                   {movedClientsList.map((u: UserLite) => {
                     const checked = selectedClientIds.has(u.userId);
                     return (
-                      <li key={u.userId} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <li
+                        key={u.userId}
+                        className="px-3 py-2 flex items-center justify-between gap-3"
+                      >
                         <label className="flex items-center gap-3 cursor-pointer">
-                          <input type="checkbox" checked={checked} onChange={() => toggleClientChecked(u.userId)} />
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-emerald-700 accent-emerald-600 focus:ring-emerald-500/70 focus:ring-offset-0"
+                            checked={checked}
+                            onChange={() => toggleClientChecked(u.userId)}
+                          />
                           <div className="flex flex-col">
-                            <div className="font-medium dark:text-white">{displayName(u) || "(No name)"}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {u.code || ""}{u.code ? " · " : ""}{u.email || ""}{u.email ? " · " : ""}{phoneDisplay(u)}
+                            <div className="text-sm font-medium dark:text-white">
+                              {displayName(u) || "(No name)"}
+                            </div>
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                              {u.code || ""}
+                              {u.code ? " · " : ""}
+                              {u.email || ""}
+                              {u.email ? " · " : ""}
+                              {phoneDisplay(u)}
                             </div>
                           </div>
                         </label>
-                        <span className="text-xs px-2 py-0.5 rounded border dark:border-neutral-700">{u.userStatus || "—"}</span>
+                        <span className="inline-flex items-center rounded-full border border-slate-200/80 dark:border-neutral-700 px-2 py-0.5 text-[11px] text-gray-700 dark:text-gray-200 bg-white dark:bg-neutral-900">
+                          {u.userStatus || "—"}
+                        </span>
                       </li>
                     );
                   })}
@@ -818,51 +1043,64 @@ export default function ClientsAssignments() {
             </div>
 
             {movedClientsList.length > 0 && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className="px-3 py-1.5 rounded border text-sm dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  onClick={() => setSelectedClientIds(new Set(movedClientsList.map(m => m.userId)))}
+                  className="h-8 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  onClick={() =>
+                    setSelectedClientIds(
+                      new Set(movedClientsList.map((m) => m.userId))
+                    )
+                  }
                 >
                   Select All
                 </button>
                 <button
-                  className="px-3 py-1.5 rounded border text-sm dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  className="h-8 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
                   onClick={() => setSelectedClientIds(new Set())}
                 >
-                  Clear
+                  Clear Selection
                 </button>
               </div>
             )}
           </div>
 
-          {/* dates */}
+          {/* Validity section under moved clients */}
           <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               Validity
-            </label>
+            </span>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid From</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  Valid From
+                </div>
                 <input
                   type="date"
-                  className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  className={SOFT_DATE}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  Valid To
+                </div>
                 <input
                   type="date"
-                  className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  className={SOFT_DATE}
                   value={validTo}
-                  min={(validFrom || todayLocalISO()) || undefined}
+                  min={validFrom || todayLocalISO() || undefined}
                   onChange={(e) => setValidTo(e.target.value)}
-                  title={validFrom ? `Choose a date on/after ${validFrom}` : "Choose end date"}
+                  title={
+                    validFrom
+                      ? `Choose a date on/after ${validFrom}`
+                      : "Choose end date"
+                  }
                 />
                 {validFrom && !validTo && (
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-[11px] text-gray-500">
                     Choose a date on or after <b>{validFrom}</b>.
                   </div>
                 )}
@@ -872,17 +1110,26 @@ export default function ClientsAssignments() {
             {/* Actions */}
             <div className="mt-2 flex items-center justify-end gap-2">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
                 onClick={onCancelTile2}
                 title="Clear dates and move clients back to Browse Clients"
               >
                 Cancel
               </button>
               <button
-                className={"px-4 py-2 rounded text-white " + (canSubmit ? "bg-emerald-600 hover:bg-emerald-700" : "bg-emerald-600/50 cursor-not-allowed")}
+                className={
+                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
+                  (canSubmit
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-emerald-600/60 cursor-not-allowed")
+                }
                 onClick={onAssign}
                 disabled={!canSubmit}
-                title={canSubmit ? "Assign selected clients to project" : "Select all required fields"}
+                title={
+                  canSubmit
+                    ? "Assign selected clients to project"
+                    : "Select project, clients and validity dates"
+                }
               >
                 {assignLoading ? "Assigning…" : "Assign"}
               </button>
@@ -892,125 +1139,199 @@ export default function ClientsAssignments() {
       </section>
 
       {/* Tile 3 — Browse Clients */}
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 mb-4" aria-label="Tile: Browse Clients" data-tile-name="Browse Clients">
-        <TileHeader title="Browse Clients" subtitle="Search and filter; sort columns; paginate. Use ‘Move’ to add clients to Tile 2." />
+      <section
+        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
+        aria-label="Tile: Browse Clients"
+        data-tile-name="Browse Clients"
+      >
+        <TileHeader
+          title="Browse Clients"
+          subtitle="Search, filter, sort and move clients into the selection."
+        />
 
         {/* Controls */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-3 mb-3">
-          <div className="lg:w-80">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Search</label>
-            <input
-              className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              placeholder="Code, name, project, phone, email…"
-              value={q}
-              onChange={(e) => { setQ(e.target.value); setPage(1); }}
-            />
-          </div>
-
-          <div className="lg:w-44">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Status</label>
-            <select
-              className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value as any); setPage(1); }}
-            >
-              <option value="all">All</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-
-          <div className="lg:w-56">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">State</label>
-            <select
-              className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              value={stateFilter}
-              onChange={(e) => { setStateFilter(e.target.value); setDistrictFilter(""); setPage(1); }}
-            >
-              <option value="">All States</option>
-              {statesRef.map((s) => <option key={s.stateId} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-
-          <div className="lg:w-56">
-            <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">District</label>
-            <select
-              className="w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              value={districtFilter}
-              onChange={(e) => { setDistrictFilter(e.target.value); setPage(1); }}
-              disabled={!stateFilter}
-              title={stateFilter ? "Filter by district" : "Select a state first"}
-            >
-              <option value="">All Districts</option>
-              {districtsRef.map((d) => <option key={d.districtId} value={d.name}>{d.name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex-1" />
-          <div className="flex items-end gap-2">
+        <div className="mb-3 space-y-3">
+          {/* Top grid: search + filters */}
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+            {/* Search */}
             <div>
-              <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Sort</label>
-              <div className="flex gap-2">
-                <select
-                  className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                  value={sortKey}
-                  onChange={(e) => { setSortKey(e.target.value as any); setPage(1); }}
-                >
-                  <option value="code">Code</option>
-                  <option value="name">Name</option>
-                  <option value="projects">Projects</option>
-                  <option value="mobile">Mobile</option>
-                  <option value="email">Email</option>
-                  <option value="state">State</option>
-                  <option value="zone">Zone</option>
-                  <option value="status">Status</option>
-                  <option value="updated">Updated</option>
-                </select>
-                <button
-                  className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-                  title="Toggle sort direction"
-                >
-                  {sortDir === "asc" ? "▲" : "▼"}
-                </button>
-                <button
-                  className="px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
-                  onClick={clearFilters}
-                  disabled={!hasActiveFilters}
-                  title="Clear all filters"
-                >
-                  Clear
-                </button>
-              </div>
+              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                Search
+              </label>
+              <input
+                className="h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 px-3 text-xs bg-white dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/70 focus:border-transparent placeholder:text-gray-400"
+                placeholder="Code, name, project, phone, email…"
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
+              />
             </div>
 
+            {/* Status */}
             <div>
-              <label className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 block">Rows</label>
+              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                Status
+              </label>
               <select
-                className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); setAPage(1); }} // <-- reset both paginations
+                className={SOFT_SELECT}
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as any);
+                  setPage(1);
+                }}
               >
-                {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                <option value="all">All</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
               </select>
+            </div>
+
+            {/* State */}
+            <div>
+              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                State
+              </label>
+              <select
+                className={SOFT_SELECT}
+                value={stateFilter}
+                onChange={(e) => {
+                  setStateFilter(e.target.value);
+                  setDistrictFilter("");
+                  setPage(1);
+                }}
+              >
+                <option value="">All States</option>
+                {statesRef.map((s) => (
+                  <option key={s.stateId} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* District */}
+            <div>
+              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                District
+              </label>
+              <select
+                className={SOFT_SELECT}
+                value={districtFilter}
+                onChange={(e) => {
+                  setDistrictFilter(e.target.value);
+                  setPage(1);
+                }}
+                disabled={!stateFilter}
+                title={
+                  stateFilter ? "Filter by district" : "Select a state first"
+                }
+              >
+                <option value="">All Districts</option>
+                {districtsRef.map((d) => (
+                  <option key={d.districtId} value={d.name}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Bottom controls: sort + rows + clear */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                  Sort By
+                </label>
+                <div className="flex gap-1.5">
+                  <select
+                    className={SOFT_SELECT}
+                    value={sortKey}
+                    onChange={(e) => {
+                      setSortKey(e.target.value as any);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="code">Code</option>
+                    <option value="name">Name</option>
+                    <option value="projects">Projects</option>
+                    <option value="mobile">Mobile</option>
+                    <option value="email">Email</option>
+                    <option value="state">State</option>
+                    <option value="zone">Zone</option>
+                    <option value="status">Status</option>
+                    <option value="updated">Updated</option>
+                  </select>
+                  <button
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    onClick={() =>
+                      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                    }
+                    title="Toggle sort direction"
+                  >
+                    {sortDir === "asc" ? "▲" : "▼"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                title="Clear all filters"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                  Rows per page
+                </label>
+                <select
+                  className={SOFT_SELECT}
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                    setAPage(1);
+                  }}
+                >
+                  {[10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="border rounded-xl dark:border-neutral-800 overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
+        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
+          <div
+            className="overflow-x-auto overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300/60 dark:scrollbar-thumb-neutral-700/60"
+            style={{ maxHeight: "55vh" }}
+          >
             {usersErr && (
               <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
                 {usersErr}
               </div>
             )}
             {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Loading clients…</div>
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+                Loading clients…
+              </div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No clients match the selected criteria.</div>
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+                No clients match the selected criteria.
+              </div>
             ) : (
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
                   <tr>
                     {[
@@ -1030,18 +1351,31 @@ export default function ClientsAssignments() {
                       return (
                         <th
                           key={h.key}
-                          className={"text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " + (sortable ? "cursor-pointer" : "")}
+                          className={[
+                            "px-3 py-2 border-b dark:border-neutral-800 text-left font-semibold whitespace-nowrap text-[11px] sm:text-xs select-none",
+                            sortable
+                              ? "cursor-pointer hover:bg-gray-100/70 dark:hover:bg-neutral-700/80"
+                              : "",
+                          ].join(" ")}
                           title={sortable ? `Sort by ${h.label}` : undefined}
                           onClick={() => {
                             if (!sortable) return;
-                            if (sortKey !== (h.key as any)) { setSortKey(h.key as any); setSortDir("asc"); }
-                            else { setSortDir(d => d === "asc" ? "desc" : "asc"); }
+                            if (sortKey !== (h.key as any)) {
+                              setSortKey(h.key as any);
+                              setSortDir("asc");
+                            } else {
+                              setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                            }
                             setPage(1);
                           }}
                         >
                           <span className="inline-flex items-center gap-1">
                             {h.label}
-                            {sortable && <span className="text-xs opacity-70">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>}
+                            {sortable && (
+                              <span className="text-[10px] opacity-70">
+                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                              </span>
+                            )}
                           </span>
                         </th>
                       );
@@ -1049,25 +1383,87 @@ export default function ClientsAssignments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rowsPaged.map((r) => (
-                    <tr key={r._id} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
+                  {rowsPaged.map((r, idx) => (
+                    <tr
+                      key={r._id}
+                      className={
+                        (idx % 2
+                          ? "bg-white dark:bg-neutral-900"
+                          : "bg-gray-50/50 dark:bg-neutral-900/60") +
+                        " hover:bg-gray-100/70 dark:hover:bg-neutral-800/80 transition-colors"
+                      }
+                    >
                       <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
                         <button
-                          className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
+                          className="inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
                           title="Move this client to selection"
-                          onClick={() => onMoveToTile2(r._raw!)}
+                          onClick={() => r._raw && onMoveToTile2(r._raw)}
                         >
-                          Move
+                          {/* Up-arrow icon */}
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.7}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 19V5" />
+                            <path d="M6.5 10.5 12 5l5.5 5.5" />
+                          </svg>
                         </button>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.code}>{r.code}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.name}>{r.name}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800" title={r.projects}><div className="truncate max-w-[360px]">{r.projects}</div></td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.mobile}>{r.mobile}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.email}>{r.email}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.state}>{r.state}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.zone}>{r.zone}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.status}>{r.status}</td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.code}
+                      >
+                        {r.code}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.name}
+                      >
+                        {r.name}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800"
+                        title={r.projects}
+                      >
+                        <div className="truncate max-w-[360px]">
+                          {r.projects}
+                        </div>
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.mobile}
+                      >
+                        {r.mobile}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.email}
+                      >
+                        {r.email}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.state}
+                      >
+                        {r.state}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.zone}
+                      >
+                        {r.zone}
+                      </td>
+                      <td
+                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        title={r.status}
+                      >
+                        {r.status}
+                      </td>
                       <td
                         className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
                         title={fmtLocalDateTime(r.updated)}
@@ -1082,40 +1478,94 @@ export default function ClientsAssignments() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
             <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b> clients
-              {stateFilter ? <> · State: <b>{stateFilter}</b></> : null}
-              {districtFilter ? <> · District: <b>{districtFilter}</b></> : null}
-              {statusFilter !== "all" ? <> · Status: <b>{statusFilter}</b></> : null}
+              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
+              <b>{rowsPaged.length}</b> of <b>{total}</b> clients
+              {stateFilter ? (
+                <>
+                  {" "}
+                  · State: <b>{stateFilter}</b>
+                </>
+              ) : null}
+              {districtFilter ? (
+                <>
+                  {" "}
+                  · District: <b>{districtFilter}</b>
+                </>
+              ) : null}
+              {statusFilter !== "all" ? (
+                <>
+                  {" "}
+                  · Status: <b>{statusFilter}</b>
+                </>
+              ) : null}
             </div>
             <div className="flex items-center gap-1">
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(1)} disabled={pageSafe <= 1} title="First">« First</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} title="Previous">‹ Prev</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} title="Next">Next ›</button>
-              <button className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(totalPages)} disabled={pageSafe >= totalPages} title="Last">Last »</button>
+              <button
+                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage(1)}
+                disabled={pageSafe <= 1}
+                title="First"
+              >
+                « First
+              </button>
+              <button
+                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                title="Previous"
+              >
+                ‹ Prev
+              </button>
+              <button
+                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={pageSafe >= totalPages}
+                title="Next"
+              >
+                Next ›
+              </button>
+              <button
+                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                onClick={() => setPage(totalPages)}
+                disabled={pageSafe >= totalPages}
+                title="Last"
+              >
+                Last »
+              </button>
             </div>
           </div>
         </div>
       </section>
 
       {/* Tile 4 — Client Assignments */}
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4" aria-label="Tile: Client Assignments" data-tile-name="Client Assignments">
-        <TileHeader title="Client Assignments" subtitle="All clients who have been assigned to projects." />
+      <section
+        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
+        aria-label="Tile: Client Assignments"
+        data-tile-name="Client Assignments"
+      >
+        <TileHeader
+          title="Client Assignments"
+          subtitle="All clients who have been assigned to projects."
+        />
 
-        <div className="border rounded-xl dark:border-neutral-800 overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
+        <div className="border rounded-2xl dark:border-neutral-800 overflow-hidden mt-2">
+          <div
+            className="overflow-x-auto overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300/60 dark:scrollbar-thumb-neutral-700/60"
+            style={{ maxHeight: "55vh" }}
+          >
             {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">No client assignments found.</div>
+              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+                No client assignments found.
+              </div>
             ) : (
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
                   <tr>
-                    <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">Action</th>
+                    <th className="px-3 py-2 border-b dark:border-neutral-700 text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap text-left">
+                      Action
+                    </th>
                     {[
                       { key: "userName", label: "Client" },
                       { key: "projectTitle", label: "Project" },
@@ -1129,16 +1579,24 @@ export default function ClientsAssignments() {
                       return (
                         <th
                           key={h.key}
-                          className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none cursor-pointer"
+                          className="px-3 py-2 border-b dark:border-neutral-700 text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap text-left select-none cursor-pointer hover:bg-gray-100/70 dark:hover:bg-neutral-700/80"
                           title={`Sort by ${h.label}`}
                           onClick={() => {
-                            if (aSortKey !== (h.key as any)) { setASortKey(h.key as any); setASortDir("asc"); }
-                            else { setASortDir(d => d === "asc" ? "desc" : "asc"); }
+                            if (aSortKey !== (h.key as any)) {
+                              setASortKey(h.key as any);
+                              setASortDir("asc");
+                            } else {
+                              setASortDir((d) =>
+                                d === "asc" ? "desc" : "asc"
+                              );
+                            }
                           }}
                         >
                           <span className="inline-flex items-center gap-1">
                             {h.label}
-                            <span className="text-xs opacity-70">{active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+                            <span className="text-[10px] opacity-70">
+                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
+                            </span>
                           </span>
                         </th>
                       );
@@ -1146,20 +1604,27 @@ export default function ClientsAssignments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* map over paged rows */}
                   {assignedRowsPaged.map((r, i) => (
-                    <tr key={`${r.userId}-${r.projectId}-${i}`} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex gap-2">
+                    <tr
+                      key={`${r.userId}-${r.projectId}-${i}`}
+                      className={
+                        (i % 2
+                          ? "bg-white dark:bg-neutral-900"
+                          : "bg-gray-50/40 dark:bg-neutral-900/60") +
+                        " text-xs sm:text-sm"
+                      }
+                    >
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
                           <button
-                            className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
+                            className="h-7 px-3 rounded-full border border-slate-200 dark:border-neutral-700 text-[11px] font-semibold text-slate-700 dark:text-neutral-100 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
                             title="View assignment"
                             onClick={() => openView(r)}
                           >
                             View
                           </button>
                           <button
-                            className="px-2 py-1 rounded border text-xs hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                            className="h-7 px-3 rounded-full border border-slate-200 dark:border-neutral-700 text-[11px] font-semibold text-slate-700 dark:text-neutral-100 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
                             title="Edit validity dates"
                             onClick={() => openEdit(r)}
                             disabled={!r.membershipId}
@@ -1168,13 +1633,33 @@ export default function ClientsAssignments() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.userName}>{r.userName}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap" title={r.projectTitle}>{r.projectTitle}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.status || "—"}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validFrom) || "—"}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateOnly(r.validTo) || "—"}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{r.validity || "—"}</td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">{fmtLocalDateTime(r.updated) || "—"}</td>
+                      <td
+                        className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        title={r.userName}
+                      >
+                        {r.userName}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        title={r.projectTitle}
+                      >
+                        {r.projectTitle}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        {r.status || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        {fmtLocalDateOnly(r.validFrom) || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        {fmtLocalDateOnly(r.validTo) || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        <ValidityBadge value={r.validity || "—"} />
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                        {fmtLocalDateTime(r.updated) || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1183,13 +1668,15 @@ export default function ClientsAssignments() {
           </div>
 
           {/* Pagination for assignments */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800">
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-100 dark:border-neutral-800">
             <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> client assignments
+              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
+              <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> client
+              assignments
             </div>
             <div className="flex items-center gap-1">
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
                 title="First"
@@ -1197,7 +1684,7 @@ export default function ClientsAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
                 title="Previous"
@@ -1205,7 +1692,7 @@ export default function ClientsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
                 title="Next"
@@ -1213,7 +1700,7 @@ export default function ClientsAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
                 title="Last"
@@ -1228,9 +1715,14 @@ export default function ClientsAssignments() {
       {/* ===== View Modal (read-only) ===== */}
       {viewOpen && viewRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setViewOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setViewOpen(false)}
+          />
           <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">Client Assignment</div>
+            <div className="text-lg font-semibold mb-2 dark:text-white">
+              Client Assignment
+            </div>
             <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
               {viewRow.userName} · {viewRow.projectTitle}
             </div>
@@ -1239,32 +1731,52 @@ export default function ClientsAssignments() {
               <table className="min-w-full text-sm">
                 <tbody>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Client</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Client
+                    </td>
                     <td className="px-3 py-2">{viewRow.userName || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Project</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Project
+                    </td>
                     <td className="px-3 py-2">{viewRow.projectTitle || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Status</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Status
+                    </td>
                     <td className="px-3 py-2">{viewRow.status || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Valid From</td>
-                    <td className="px-3 py-2">{fmtLocalDateOnly(viewRow.validFrom) || "—"}</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Valid From
+                    </td>
+                    <td className="px-3 py-2">
+                      {fmtLocalDateOnly(viewRow.validFrom) || "—"}
+                    </td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Valid To</td>
-                    <td className="px-3 py-2">{fmtLocalDateOnly(viewRow.validTo) || "—"}</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Valid To
+                    </td>
+                    <td className="px-3 py-2">
+                      {fmtLocalDateOnly(viewRow.validTo) || "—"}
+                    </td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Validity</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Validity
+                    </td>
                     <td className="px-3 py-2">{viewRow.validity || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Last Updated</td>
-                    <td className="px-3 py-2">{fmtLocalDateTime(viewRow.updated) || "—"}</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Last Updated
+                    </td>
+                    <td className="px-3 py-2">
+                      {fmtLocalDateTime(viewRow.updated) || "—"}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -1285,20 +1797,30 @@ export default function ClientsAssignments() {
       {/* ===== Edit Modal (with date updates + hard delete button) ===== */}
       {editOpen && editRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!deleting) setEditOpen(false); }} />
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              if (!deleting) setEditOpen(false);
+            }}
+          />
           <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
             {/* Header with delete at top-right */}
             <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">Edit Validity</div>
+              <div className="text-lg font-semibold dark:text-white">
+                Edit Validity
+              </div>
               <button
                 className="px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
                 onClick={onHardDeleteFromEdit}
                 disabled={deleting || !editRow?.membershipId}
-                title={editRow?.membershipId ? "Permanently remove this assignment" : "Missing membership id"}
+                title={
+                  editRow?.membershipId
+                    ? "Permanently remove this assignment"
+                    : "Missing membership id"
+                }
               >
                 {deleting ? "Removing…" : "Remove"}
               </button>
-
             </div>
 
             <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
@@ -1309,15 +1831,21 @@ export default function ClientsAssignments() {
               <table className="min-w-full text-sm">
                 <tbody>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Client</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Client
+                    </td>
                     <td className="px-3 py-2">{editRow.userName || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Project</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Project
+                    </td>
                     <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
                   </tr>
                   <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Status</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      Status
+                    </td>
                     <td className="px-3 py-2">{editRow.status || "—"}</td>
                   </tr>
                 </tbody>
@@ -1326,11 +1854,13 @@ export default function ClientsAssignments() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid From</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  Valid From
+                </div>
                 {/* Valid From */}
                 <input
                   type="date"
-                  className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  className={SOFT_DATE}
                   value={editFrom}
                   min={todayLocalISO()}
                   disabled={deleting}
@@ -1340,17 +1870,21 @@ export default function ClientsAssignments() {
                     if (editTo && editTo < v) setEditTo(v); // keep To >= From
                   }}
                 />
-
-
               </div>
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  Valid To
+                </div>
                 {/* Valid To */}
                 <input
                   type="date"
-                  className="mt-1 w-full border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  className={SOFT_DATE}
                   value={editTo}
-                  min={(editFrom && editFrom > todayLocalISO()) ? editFrom : todayLocalISO()}
+                  min={
+                    editFrom && editFrom > todayLocalISO()
+                      ? editFrom
+                      : todayLocalISO()
+                  }
                   disabled={deleting}
                   onChange={(e) => setEditTo(e.target.value)}
                 />
@@ -1369,12 +1903,24 @@ export default function ClientsAssignments() {
                 className="px-4 py-2 rounded text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
                 onClick={async () => {
                   const today = todayLocalISO();
-                  if (!editFrom || !editTo) { alert("Both Valid From and Valid To are required."); return; }
+                  if (!editFrom || !editTo) {
+                    alert("Both Valid From and Valid To are required.");
+                    return;
+                  }
 
                   // same rules as contractors/consultants
-                  if (editTo < today) { alert("Valid To cannot be before today."); return; }
-                  if (editTo < editFrom) { alert("Valid To must be on or after Valid From."); return; }
-                  if (!editRow?.membershipId) { alert("Cannot update: missing membership id."); return; }
+                  if (editTo < today) {
+                    alert("Valid To cannot be before today.");
+                    return;
+                  }
+                  if (editTo < editFrom) {
+                    alert("Valid To must be on or after Valid From.");
+                    return;
+                  }
+                  if (!editRow?.membershipId) {
+                    alert("Cannot update: missing membership id.");
+                    return;
+                  }
 
                   try {
                     const payload: any = {
@@ -1386,11 +1932,18 @@ export default function ClientsAssignments() {
                       payload.validFrom = editFrom;
                     }
 
-                    await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
+                    await api.patch(
+                      `/admin/assignments/${editRow.membershipId}`,
+                      payload
+                    );
 
                     // refresh data so table reflects the change
-                    const { data: fresh } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-                    setAllUsers(Array.isArray(fresh) ? fresh : (fresh?.users ?? []));
+                    const { data: fresh } = await api.get("/admin/users", {
+                      params: { includeMemberships: "1" },
+                    });
+                    setAllUsers(
+                      Array.isArray(fresh) ? fresh : fresh?.users ?? []
+                    );
 
                     // close first, then alert
                     const successMsg = [
@@ -1407,11 +1960,14 @@ export default function ClientsAssignments() {
                     setEditRow(null);
                     setPendingEditAlert(successMsg);
                   } catch (e: any) {
-                    const msg = e?.response?.data?.message || e?.response?.data?.error || e?.message || "Update failed.";
+                    const msg =
+                      e?.response?.data?.message ||
+                      e?.response?.data?.error ||
+                      e?.message ||
+                      "Update failed.";
                     alert(msg);
                   }
                 }}
-
                 title="Update validity dates"
                 disabled={!editRow?.membershipId || deleting}
               >

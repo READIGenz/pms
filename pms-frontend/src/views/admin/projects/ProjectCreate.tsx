@@ -10,14 +10,68 @@ type CompanyOpt = { companyId: string; name: string };
 type TagOpt = { tagCode: string; label: string };
 
 /* ---------- Enums (from prisma schema) ---------- */
-const projectStatuses = ["Draft", "Active", "OnHold", "Completed", "Archived"] as const;
-const stages = ["Planning", "Design", "Procurement", "Execution", "Handover", "Closed"] as const;
-const projectTypes = ["Residential", "Commercial", "Industrial", "Institutional", "MixedUse", "Infrastructure", "Other"] as const;
-const structureTypes = ["LowRise", "HighRise", "Villa", "RowHouse", "InteriorFitout", "ShellCore", "Other"] as const;
-const constructionTypes = ["New", "Renovation", "Retrofit", "Repair", "Fitout", "Other"] as const;
-const contractTypes = ["LumpSum", "ItemRate", "Turnkey", "EPC", "PMC", "LabourOnly", "Other"] as const;
+const projectStatuses = [
+  "Draft",
+  "Active",
+  "OnHold",
+  "Completed",
+  "Archived",
+] as const;
+const stages = [
+  "Planning",
+  "Design",
+  "Procurement",
+  "Execution",
+  "Handover",
+  "Closed",
+] as const;
+const projectTypes = [
+  "Residential",
+  "Commercial",
+  "Industrial",
+  "Institutional",
+  "MixedUse",
+  "Infrastructure",
+  "Other",
+] as const;
+const structureTypes = [
+  "LowRise",
+  "HighRise",
+  "Villa",
+  "RowHouse",
+  "InteriorFitout",
+  "ShellCore",
+  "Other",
+] as const;
+const constructionTypes = [
+  "New",
+  "Renovation",
+  "Retrofit",
+  "Repair",
+  "Fitout",
+  "Other",
+] as const;
+const contractTypes = [
+  "LumpSum",
+  "ItemRate",
+  "Turnkey",
+  "EPC",
+  "PMC",
+  "LabourOnly",
+  "Other",
+] as const;
 const healthOptions = ["Green", "Amber", "Red", "Unknown"] as const;
-const currencies = ["INR", "USD", "EUR", "GBP", "AED", "SAR", "SGD", "AUD", "Other"] as const;
+const currencies = [
+  "INR",
+  "USD",
+  "EUR",
+  "GBP",
+  "AED",
+  "SAR",
+  "SGD",
+  "AUD",
+  "Other",
+] as const;
 const areaUnits = ["SQFT", "SQM", "SQYD", "Acre", "Hectare"] as const;
 
 /* ---------- Component ---------- */
@@ -46,16 +100,17 @@ export default function ProjectCreate() {
   const [longitude, setLongitude] = useState("");
 
   // ---------- Dates and Cost ----------
-  const [startDate, setStartDate] = useState<string>("");               // yyyy-mm-dd
-  const [plannedCompletionDate, setPlannedCompletionDate] = useState<string>(""); // yyyy-mm-dd
+  const [startDate, setStartDate] = useState<string>(""); // yyyy-mm-dd
+  const [plannedCompletionDate, setPlannedCompletionDate] =
+    useState<string>(""); // yyyy-mm-dd
   const [currency, setCurrency] = useState<string>("INR");
-  const [contractValue, setContractValue] = useState<string>("");       // send as string (Decimal)
+  const [contractValue, setContractValue] = useState<string>(""); // Decimal string
 
   // ---------- Attributes ----------
   const [areaUnit, setAreaUnit] = useState<string>("");
-  const [plotArea, setPlotArea] = useState<string>("");                 // Decimal string
-  const [builtUpArea, setBuiltUpArea] = useState<string>("");           // Decimal string
-  const [floors, setFloors] = useState<string>("");                     // Int as string
+  const [plotArea, setPlotArea] = useState<string>(""); // Decimal string
+  const [builtUpArea, setBuiltUpArea] = useState<string>(""); // Decimal string
+  const [floors, setFloors] = useState<string>(""); // Int as string
 
   // ---------- Tags ----------
   const [allTags, setAllTags] = useState<TagOpt[]>([]);
@@ -74,7 +129,6 @@ export default function ProjectCreate() {
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
 
-
   // --- Auth gate simple check ---
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -90,10 +144,16 @@ export default function ProjectCreate() {
           api.get("/admin/companies-brief"),
           // Try a couple of likely endpoints for ref project tags; gracefully degrade to []:
           (async () => {
-            try { const { data } = await api.get("/admin/ref/project-tags"); return data; }
-            catch {
-              try { const { data } = await api.get("/admin/project-tags"); return data; }
-              catch { return []; }
+            try {
+              const { data } = await api.get("/admin/ref/project-tags");
+              return data;
+            } catch {
+              try {
+                const { data } = await api.get("/admin/project-tags");
+                return data;
+              } catch {
+                return [];
+              }
             }
           })(),
         ]);
@@ -102,11 +162,12 @@ export default function ProjectCreate() {
         setCompanies(Array.isArray(c) ? c : c?.companies || []);
 
         const tagList = Array.isArray(tg) ? tg : tg?.tags || [];
-        // Normalize to {tagCode, label}
-        const norm = tagList.map((t: any) => ({
-          tagCode: t.tagCode ?? t.code ?? t.value ?? "",
-          label: t.label ?? t.name ?? t.tagCode ?? "",
-        })).filter((t: TagOpt) => t.tagCode);
+        const norm = tagList
+          .map((t: any) => ({
+            tagCode: t.tagCode ?? t.code ?? t.value ?? "",
+            label: t.label ?? t.name ?? t.tagCode ?? "",
+          }))
+          .filter((t: TagOpt) => t.tagCode);
         setAllTags(norm);
       } catch (e: any) {
         setErr(e?.response?.data?.error || "Failed to load reference data.");
@@ -117,12 +178,15 @@ export default function ProjectCreate() {
   // Districts by state
   useEffect(() => {
     if (!stateId) {
-      setDistricts([]); setDistrictId("");
+      setDistricts([]);
+      setDistrictId("");
       return;
     }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", { params: { stateId } });
+        const { data } = await api.get("/admin/districts", {
+          params: { stateId },
+        });
         setDistricts(Array.isArray(data) ? data : data?.districts || []);
       } catch (e: any) {
         setErr(e?.response?.data?.error || "Failed to load districts.");
@@ -133,7 +197,6 @@ export default function ProjectCreate() {
   const canSave = useMemo(() => {
     if (!title.trim()) return false;
     if (!status) return false;
-    // date rule: plannedCompletion >= startDate (if both present)
     if (startDate && plannedCompletionDate) {
       const s = new Date(startDate + "T00:00:00Z").getTime();
       const p = new Date(plannedCompletionDate + "T00:00:00Z").getTime();
@@ -147,24 +210,45 @@ export default function ProjectCreate() {
     setSelectedTagCodes(values);
   };
 
+  // 🔹 derive client company name from selected company id
+  const clientCompanyName = useMemo(() => {
+    if (!clientCompanyId) return "";
+    const c = companies.find((x) => x.companyId === clientCompanyId);
+    return c?.name ?? "";
+  }, [companies, clientCompanyId]);
+
+  // 🔹 dynamic hint for Project Code
+  const projectCodePlaceholder = useMemo(() => {
+    const projPart = (title || "").trim().slice(0, 3).toUpperCase();
+    const compPart = (clientCompanyName || "").trim().slice(0, 3).toUpperCase();
+    const pinPart = (pin || "").trim();
+
+    if (projPart && compPart && pinPart) {
+      return `${projPart}-${compPart}-${pinPart}`;
+    }
+
+    return "e.g. PRO-COM-110001";
+  }, [title, clientCompanyName, pin]);
+
   const submit = async () => {
     setErr(null);
     if (!canSave) {
-      setErr("Please fill required fields. Also ensure 'Planned Completion' is not before 'Start Date'.");
+      setErr(
+        "Please fill required fields. Also ensure 'Planned Completion' is not before 'Start Date'."
+      );
       return;
     }
 
-    // Build payload aligned with backend schema
     const payload: any = {
       title: title.trim(),
       code: code.trim() || undefined,
-      status: status || undefined,                  // ProjectStatus
-      stage: stage || undefined,                    // ProjectStage
-      projectType: projectType || undefined,        // ProjectType
-      structureType: structureType || undefined,    // StructureType
-      constructionType: constructionType || undefined, // ConstructionType
-      contractType: contractType || undefined,      // ContractType
-      health: health || undefined,                  // ProjectHealth
+      status: status || undefined,
+      stage: stage || undefined,
+      projectType: projectType || undefined,
+      structureType: structureType || undefined,
+      constructionType: constructionType || undefined,
+      contractType: contractType || undefined,
+      health: health || undefined,
       clientCompanyId: clientCompanyId || undefined,
 
       // Location
@@ -173,19 +257,19 @@ export default function ProjectCreate() {
       districtId: districtId || undefined,
       cityTown: cityTown || undefined,
       pin: pin.replace(/[^\d]/g, "").slice(0, 6) || undefined,
-      latitude: latitude || undefined,              // send as string; backend uses Decimal(9,6)
+      latitude: latitude || undefined,
       longitude: longitude || undefined,
 
       // Dates & cost
       startDate: startDate || undefined,
       plannedCompletionDate: plannedCompletionDate || undefined,
-      currency: currency || undefined,              // CurrencyCode
-      contractValue: contractValue || undefined,    // Decimal string
+      currency: currency || undefined,
+      contractValue: contractValue || undefined,
 
       // Attributes
       areaUnit: areaUnit || undefined,
-      plotArea: plotArea || undefined,              // Decimal string
-      builtUpArea: builtUpArea || undefined,        // Decimal string
+      plotArea: plotArea || undefined,
+      builtUpArea: builtUpArea || undefined,
       floors: floors ? Number(floors) : undefined,
 
       // Notes
@@ -195,122 +279,199 @@ export default function ProjectCreate() {
     try {
       setSaving(true);
 
-      // 1) Create project
       const createRes = await api.post("/admin/projects", payload);
       const pid: string | undefined =
         createRes?.data?.project?.projectId ??
         createRes?.data?.projectId ??
         createRes?.data?.id;
 
-      if (!pid) throw new Error(createRes?.data?.error || "Failed to create project");
+      if (!pid)
+        throw new Error(createRes?.data?.error || "Failed to create project");
 
-      // 2) Save tags (if any) — try common endpoints, ignore failure softly
       if (selectedTagCodes.length > 0) {
         try {
-          await api.post(`/admin/projects/${pid}/tags`, { tagCodes: selectedTagCodes });
+          await api.post(`/admin/projects/${pid}/tags`, {
+            tagCodes: selectedTagCodes,
+          });
         } catch {
-          try { await api.post(`/admin/projects/${pid}/project-tags`, { tagCodes: selectedTagCodes }); }
-          catch (e) { console.warn("Saving project tags failed:", e); }
+          try {
+            await api.post(`/admin/projects/${pid}/project-tags`, {
+              tagCodes: selectedTagCodes,
+            });
+          } catch (e) {
+            console.warn("Saving project tags failed:", e);
+          }
         }
       }
 
       nav("/admin/projects", { replace: true });
     } catch (e: any) {
-      setErr(e?.response?.data?.error || e?.message || "Failed to create project");
+      setErr(
+        e?.response?.data?.error || e?.message || "Failed to create project"
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  // helpful labels when selected values aren’t preloaded yet
   const stateLabel = useMemo(() => {
     if (!stateId) return "";
-    const s = states.find(x => x.stateId === stateId);
+    const s = states.find((x) => x.stateId === stateId);
     return s ? `${s.name} (${s.code})` : "(unknown state)";
   }, [stateId, states]);
 
   const districtLabel = useMemo(() => {
     if (!districtId) return "";
-    const d = districts.find(x => x.districtId === districtId);
+    const d = districts.find((x) => x.districtId === districtId);
     return d ? d.name : "(unknown district)";
   }, [districtId, districts]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Create Project</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Fill the details below and save. Project Title is mandatory field.
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Create Project
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
+              <span>
+                Fill the details below and save. Project Title is mandatory field.
+              </span>
+
+              {/* Info icon (replaces Note button functionality) */}
+              <button
+                type="button"
+                onClick={() => setShowNote(true)}
+                aria-label="Info"
+                title="Info"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              >
+                i
+              </button>
             </p>
           </div>
-         
+
           <div className="flex gap-2">
-             {/* Note button */}
-          <button
-            className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-            type="button"
-            onClick={() => setShowNote(true)}
-          >
-            Note
-          </button>
             <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/projects")}
+              type="button"
             >
               Cancel
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={submit}
               disabled={!canSave || saving}
+              type="button"
             >
               {saving ? "Saving…" : "Create"}
             </button>
           </div>
         </div>
 
-        {err && <div className="mb-3 text-sm text-red-700 dark:text-red-400">{err}</div>}
+        {err && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            {err}
+          </div>
+        )}
 
         {/* ========== Summary ========== */}
         <Section title="Summary">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Text label="Project Title" value={title} setValue={setTitle} required />
-            <Text label="Project Code" value={code} setValue={setCode} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Text
+              label="Project Title"
+              value={title}
+              setValue={setTitle}
+              required
+            />
+            <Text
+              label="Project Code"
+              value={code}
+              setValue={setCode}
+              placeholder={projectCodePlaceholder}
+            />
 
-            <Select label="Status" value={status} setValue={setStatus} options={projectStatuses as unknown as string[]} />
-            <Select label="Stage" value={stage} setValue={setStage} options={["", ...stages]} />
+            <Select
+              label="Status"
+              value={status}
+              setValue={setStatus}
+              options={projectStatuses as unknown as string[]}
+            />
+            <Select
+              label="Stage"
+              value={stage}
+              setValue={setStage}
+              options={["", ...stages]}
+            />
 
-            <Select label="Project Type" value={projectType} setValue={setProjectType} options={["", ...projectTypes]} />
-            <Select label="Structure Type" value={structureType} setValue={setStructureType} options={["", ...structureTypes]} />
-            <Select label="Construction Mode" value={constructionType} setValue={setConstructionType} options={["", ...constructionTypes]} />
-            <Select label="Contract Type" value={contractType} setValue={setContractType} options={["", ...contractTypes]} />
-            <Select label="Project Health" value={health} setValue={setHealth} options={healthOptions as unknown as string[]} />
+            <Select
+              label="Project Type"
+              value={projectType}
+              setValue={setProjectType}
+              options={["", ...projectTypes]}
+            />
+            <Select
+              label="Structure Type"
+              value={structureType}
+              setValue={setStructureType}
+              options={["", ...structureTypes]}
+            />
+            <Select
+              label="Construction Mode"
+              value={constructionType}
+              setValue={setConstructionType}
+              options={["", ...constructionTypes]}
+            />
+            <Select
+              label="Contract Type"
+              value={contractType}
+              setValue={setContractType}
+              options={["", ...contractTypes]}
+            />
+            <Select
+              label="Project Health"
+              value={health}
+              setValue={setHealth}
+              options={healthOptions as unknown as string[]}
+            />
 
             <Select
               label="Client / Owner Company"
               value={clientCompanyId}
               setValue={setClientCompanyId}
-              options={["", ...companies.map(c => ({ value: c.companyId, label: c.name }))]}
+              options={[
+                "",
+                ...companies.map((c) => ({
+                  value: c.companyId,
+                  label: c.name,
+                })),
+              ]}
             />
           </div>
         </Section>
 
         {/* ========== Location ========== */}
         <Section title="Location">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <TextArea label="Address" value={address} setValue={setAddress} />
 
             <Select
               label="State / UT"
               value={stateId}
-              setValue={(v) => { setStateId(v); setDistrictId(""); }}
+              setValue={(v) => {
+                setStateId(v);
+                setDistrictId("");
+              }}
               options={[
                 "",
-                ...states.map(s => ({ value: s.stateId, label: `${s.name} (${s.code})` })),
-                ...(stateId && !states.some(s => s.stateId === stateId)
+                ...states.map((s) => ({
+                  value: s.stateId,
+                  label: `${s.name} (${s.code})`,
+                })),
+                ...(stateId && !states.some((s) => s.stateId === stateId)
                   ? [{ value: stateId, label: stateLabel }]
                   : []),
               ]}
@@ -321,8 +482,12 @@ export default function ProjectCreate() {
               setValue={setDistrictId}
               options={[
                 "",
-                ...districts.map(d => ({ value: d.districtId, label: d.name })),
-                ...(districtId && !districts.some(d => d.districtId === districtId)
+                ...districts.map((d) => ({
+                  value: d.districtId,
+                  label: d.name,
+                })),
+                ...(districtId &&
+                !districts.some((d) => d.districtId === districtId)
                   ? [{ value: districtId, label: districtLabel }]
                   : []),
               ]}
@@ -338,13 +503,17 @@ export default function ProjectCreate() {
             <Text
               label="Latitude"
               value={latitude}
-              setValue={(v) => setLatitude(v.replace(/[^0-9\.\-]/g, "").slice(0, 12))}
+              setValue={(v) =>
+                setLatitude(v.replace(/[^0-9.\-]/g, "").slice(0, 12))
+              }
               placeholder="e.g., 12.9716"
             />
             <Text
               label="Longitude"
               value={longitude}
-              setValue={(v) => setLongitude(v.replace(/[^0-9\.\-]/g, "").slice(0, 13))}
+              setValue={(v) =>
+                setLongitude(v.replace(/[^0-9.\-]/g, "").slice(0, 13))
+              }
               placeholder="e.g., 77.5946"
             />
           </div>
@@ -352,16 +521,25 @@ export default function ProjectCreate() {
 
         {/* ========== Dates & Cost ========== */}
         <Section title="Dates and Cost">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <DateInput label="Start Date" value={startDate} setValue={setStartDate} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <DateInput
+              label="Start Date"
+              value={startDate}
+              setValue={setStartDate}
+            />
             <DateInput
               label="Planned Completion"
               value={plannedCompletionDate}
-              setValue={(v) => setPlannedCompletionDate(v)}
+              setValue={setPlannedCompletionDate}
               min={startDate || undefined}
             />
 
-            <Select label="Currency" value={currency} setValue={setCurrency} options={currencies as unknown as string[]} />
+            <Select
+              label="Currency"
+              value={currency}
+              setValue={setCurrency}
+              options={currencies as unknown as string[]}
+            />
             <Text
               label="Contract Value"
               value={contractValue}
@@ -373,8 +551,13 @@ export default function ProjectCreate() {
 
         {/* ========== Attributes ========== */}
         <Section title="Attributes">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Area Units" value={areaUnit} setValue={setAreaUnit} options={["", ...areaUnits]} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Select
+              label="Area Units"
+              value={areaUnit}
+              setValue={setAreaUnit}
+              options={["", ...areaUnits]}
+            />
             <Text
               label="Plot Area"
               value={plotArea}
@@ -398,12 +581,15 @@ export default function ProjectCreate() {
 
         {/* ========== Tags ========== */}
         <Section title="Tags">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <MultiSelect
               label="Select Tag(s)"
               value={selectedTagCodes}
               onChange={onPickTags}
-              options={allTags.map(t => ({ value: t.tagCode, label: t.label || t.tagCode }))}
+              options={allTags.map((t) => ({
+                value: t.tagCode,
+                label: t.label || t.tagCode,
+              }))}
             />
           </div>
         </Section>
@@ -411,48 +597,48 @@ export default function ProjectCreate() {
         {/* ========== Notes / Description ========== */}
         <Section title="Notes / Description">
           <div className="grid grid-cols-1 gap-4">
-            <TextArea label="Description" value={description} setValue={setDescription} />
+            <TextArea
+              label="Description"
+              value={description}
+              setValue={setDescription}
+            />
           </div>
         </Section>
 
         {/* Footer actions */}
         <div className="mt-6 flex justify-end gap-2">
           <button
-            className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
             onClick={() => nav("/admin/projects")}
+            type="button"
           >
             Cancel
           </button>
           <button
-            className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
             onClick={submit}
             disabled={!canSave || saving}
+            type="button"
           >
             {saving ? "Saving…" : "Create"}
           </button>
         </div>
       </div>
+
       {/* Note modal */}
       {showNote && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           role="dialog"
           aria-modal="true"
         >
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowNote(false)}
-          />
-
-          {/* Dialog */}
-          <div className="relative z-10 w-full max-w-xl mx-4 rounded-2xl border bg-white dark:bg-neutral-900 dark:border-neutral-800 shadow-xl">
-            <div className="p-5 border-b dark:border-neutral-800 flex items-center justify-between">
-              <h2 className="text-base font-semibold dark:text-white">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900 mx-4">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 Note for Admins — Creating a New Project
               </h2>
               <button
-                className="text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
                 onClick={() => setShowNote(false)}
                 aria-label="Close"
               >
@@ -466,24 +652,31 @@ export default function ProjectCreate() {
               </div>
 
               <div>
-                <b>Dates rule:</b> if you enter both Start Date and Planned Completion, the completion date cannot be before the start date.
+                <b>Dates rule:</b> if you enter both Start Date and Planned
+                Completion, the completion date cannot be before the start date.
               </div>
 
               <div>
-                <b>Optional but helpful:</b> Stage, Project Type, Structure Type, Construction Mode, Contract Type, Project Health,
+                <b>Optional but helpful:</b> Stage, Project Type, Structure
+                Type, Construction Mode, Contract Type, Project Health,
                 Client/Owner Company, Description/Notes, and Tags.
               </div>
 
               <div>
-                <b>Location (optional):</b> Address, State, District, City/Town, PIN, Latitude, Longitude.
+                <b>Location (optional):</b> Address, State, District, City/Town,
+                PIN, Latitude, Longitude.
                 <ul className="list-disc pl-5 mt-1 space-y-1">
                   <li>PIN should be a 6-digit number.</li>
-                  <li>Latitude/Longitude accept only numbers, decimal points, and minus signs.</li>
+                  <li>
+                    Latitude/Longitude accept only numbers, decimal points, and
+                    minus signs.
+                  </li>
                 </ul>
               </div>
 
               <div>
-                <b>Currency & Contract Value (optional):</b> Currency defaults to INR; Contract Value accepts numbers and decimals.
+                <b>Currency &amp; Contract Value (optional):</b> Currency
+                defaults to INR; Contract Value accepts numbers and decimals.
               </div>
 
               <div>
@@ -491,7 +684,8 @@ export default function ProjectCreate() {
               </div>
 
               <div>
-                <b>After a successful save:</b> you’ll be taken back to the Projects page.
+                <b>After a successful save:</b> you’ll be taken back to the
+                Projects page.
               </div>
 
               <div>
@@ -499,9 +693,9 @@ export default function ProjectCreate() {
               </div>
             </div>
 
-            <div className="p-4 border-t dark:border-neutral-800 flex justify-end gap-2">
+            <div className="p-4 border-t border-slate-200 dark:border-neutral-800 flex justify-end gap-2">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                 onClick={() => setShowNote(false)}
                 type="button"
               >
@@ -511,18 +705,25 @@ export default function ProjectCreate() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
 
 /* ------------------------ Small UI helpers ------------------------ */
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mb-5">
-      <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-white">{title}</div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-5">
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+          {title}
+        </div>
         {children}
       </div>
     </section>
@@ -530,53 +731,95 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type = "text", required = false, placeholder, disabled = false
-}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
+  label,
+  value,
+  setValue,
+  type = "text",
+  required = false,
+  placeholder,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">
-        {label}{required && <span className="text-red-600"> *</span>}
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+        {required && <span className="text-red-500"> *</span>}
       </span>
       <input
-        className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
-        type={type} placeholder={placeholder} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        type={type}
+        placeholder={placeholder}
+        disabled={disabled}
       />
     </label>
   );
 }
 
 function TextArea({
-  label, value, setValue
-}: { label: string; value: string; setValue: (v: string) => void }) {
+  label,
+  value,
+  setValue,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+}) {
   return (
-    <label className="flex flex-col gap-1 md:col-span-2">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block md:col-span-2">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <textarea
-        className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
+        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled = false
+  label,
+  value,
+  setValue,
+  options,
+  disabled = false,
 }: {
-  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  options: (string | { value: string; label: string })[];
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <select
-        className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? (o || "—") : o.label;
-          return <option key={v || `empty-${i}`} value={v}>{l || "—"}</option>;
+          const l = typeof o === "string" ? o || "—" : o.label;
+          return (
+            <option key={v || `empty-${i}`} value={v}>
+              {l || "—"}
+            </option>
+          );
         })}
       </select>
     </label>
@@ -584,7 +827,11 @@ function Select({
 }
 
 function MultiSelect({
-  label, value, onChange, options, disabled = false
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
 }: {
   label: string;
   value: string[];
@@ -593,11 +840,13 @@ function MultiSelect({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <select
         multiple
-        className="border rounded px-2 py-2 min-h-[8rem] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+        className="w-full min-h-[8rem] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -616,14 +865,26 @@ function MultiSelect({
 }
 
 function DateInput({
-  label, value, setValue, min, max
-}: { label: string; value: string; setValue: (v: string) => void; min?: string; max?: string }) {
+  label,
+  value,
+  setValue,
+  min,
+  max,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  min?: string;
+  max?: string;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <input
         type="date"
-        className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         min={min}
         max={max}

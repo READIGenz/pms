@@ -1,5 +1,6 @@
 // pms-frontend/src/views/admin/users/UserEdit.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
 
@@ -10,11 +11,29 @@ type ProjectOpt = { projectId: string; title: string; code?: string | null };
 type CompanyOpt = {
   companyId: string;
   name: string;
-  companyRole?: "IH_PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
+  companyRole?:
+    | "IH_PMT"
+    | "Contractor"
+    | "Consultant"
+    | "PMC"
+    | "Supplier"
+    | null;
 };
 
 /** Enums from prisma schema */
-const preferredLanguages = ["en", "hi", "bn", "ta", "te", "mr", "pa", "or", "gu", "kn", "ml"] as const;
+const preferredLanguages = [
+  "en",
+  "hi",
+  "bn",
+  "ta",
+  "te",
+  "mr",
+  "pa",
+  "or",
+  "gu",
+  "kn",
+  "ml",
+] as const;
 const zones = ["NCR", "North", "South", "East", "West", "Central"] as const;
 const statuses = ["Active", "Inactive"] as const;
 
@@ -52,7 +71,7 @@ export default function UserEdit() {
 
   // ---------- Affiliations ----------
   const [isClient, setIsClient] = useState<boolean>(false);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedProjectIds] = useState<string[]>([]); // intentionally not used in UI
   const [isServiceProvider, setIsServiceProvider] = useState<boolean>(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
 
@@ -63,34 +82,35 @@ export default function UserEdit() {
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [refsErr, setRefsErr] = useState<string | null>(null);
   const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
+
   // Map of service-provider companyId -> list of projectIds the user is assigned on via that company
-  const [svcProjByCompany, setSvcProjByCompany] = useState<Record<string, string[]>>({});
+  const [svcProjByCompany, setSvcProjByCompany] = useState<
+    Record<string, string[]>
+  >({});
 
   const filteredCompanies = useMemo(() => {
-    // normalize underscores/hyphens/case and accept server's "IH-PMT"
     const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
-    const filter = companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
+    const filter =
+      companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
     const f = normalize(filter || "");
-    return companies.filter(c => {
+    return companies.filter((c) => {
       if (!f) return true;
       return normalize(String(c.companyRole ?? "")) === f;
     });
   }, [companies, companyRoleFilter]);
 
-  // Nice labels for projects the user is Client on
   const clientProjectLabels = useMemo(() => {
     return selectedProjectIds.map((pid) => {
-      const p = projects.find(pr => pr.projectId === pid);
-      if (!p) return pid; // fallback
-      // Prefer "CODE — Title" if code exists
+      const p = projects.find((pr) => pr.projectId === pid);
+      if (!p) return pid;
       return p.code ? `${p.code} — ${p.title}` : p.title;
     });
   }, [selectedProjectIds, projects]);
 
   const serviceCompanyLabels = useMemo(() => {
     return selectedCompanyIds.map((cid) => {
-      const c = companies.find(co => co.companyId === cid);
-      if (!c) return cid; // fallback
+      const c = companies.find((co) => co.companyId === cid);
+      if (!c) return cid;
       return c.companyRole ? `${c.name} — ${c.companyRole}` : c.name;
     });
   }, [selectedCompanyIds, companies]);
@@ -99,6 +119,7 @@ export default function UserEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showNote, setShowNote] = useState(false);
 
   // --- Auth gate simple check ---
   useEffect(() => {
@@ -111,7 +132,6 @@ export default function UserEdit() {
     setRefsErr(null);
     const results = await Promise.allSettled([
       api.get("/admin/states"),
-      //api.get("/admin/projects", { params: { status: "Active" } }),
       api.get("/admin/projects"),
       api.get("/admin/companies-brief"),
     ]);
@@ -119,40 +139,48 @@ export default function UserEdit() {
     // states
     if (results[0].status === "fulfilled") {
       const s: any = results[0].value.data;
-      setStates(Array.isArray(s) ? s : (s?.states || []));
+      setStates(Array.isArray(s) ? s : s?.states || []);
     } else {
       const status = (results[0] as any)?.reason?.response?.status;
       setStates([]);
       setRefsErr(
         status === 404
           ? "States API not found (list may be incomplete)."
-          : ((results[0] as any)?.reason?.response?.data?.error || "Failed to load states.")
+          : (results[0] as any)?.reason?.response?.data?.error ||
+              "Failed to load states."
       );
     }
 
     // projects
     if (results[1].status === "fulfilled") {
       const p: any = results[1].value.data;
-      setProjects(Array.isArray(p) ? p : (p?.projects || []));
+      setProjects(Array.isArray(p) ? p : p?.projects || []);
     } else {
       if (!refsErr) {
-        setRefsErr((results[1] as any)?.reason?.response?.data?.error || "Failed to load projects.");
+        setRefsErr(
+          (results[1] as any)?.reason?.response?.data?.error ||
+            "Failed to load projects."
+        );
       }
     }
 
     // companies
     if (results[2].status === "fulfilled") {
       const c: any = results[2].value.data;
-      setCompanies(Array.isArray(c) ? c : (c?.companies || []));
+      setCompanies(Array.isArray(c) ? c : c?.companies || []);
     } else {
       if (!refsErr) {
-        setRefsErr((results[2] as any)?.reason?.response?.data?.error || "Failed to load companies.");
+        setRefsErr(
+          (results[2] as any)?.reason?.response?.data?.error ||
+            "Failed to load companies."
+        );
       }
     }
   };
 
   useEffect(() => {
     loadRefs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- Load user by id (GET /admin/users/:id?includeMemberships=1) ---
@@ -161,15 +189,21 @@ export default function UserEdit() {
     (async () => {
       try {
         setLoading(true);
-        const { data } = await api.get(`/admin/users/${id}`, { params: { includeMemberships: "1" } });
-        const u = data?.user || data; // accept both shapes
+        const { data } = await api.get(`/admin/users/${id}`, {
+          params: { includeMemberships: "1" },
+        });
+        const u = data?.user || data;
         if (!u) throw new Error("User not found");
 
         // Identity
         setFirstName(u.firstName || "");
         setMiddleName(u.middleName || "");
         setLastName(u.lastName || "");
-        setPhone(String(u.phone || "").replace(/\D/g, "").slice(0, 10));
+        setPhone(
+          String(u.phone || "")
+            .replace(/\D/g, "")
+            .slice(0, 10)
+        );
         setEmail(u.email || "");
         setPreferredLanguage(u.preferredLanguage || "");
         setUserStatus(u.userStatus || "Active");
@@ -179,7 +213,11 @@ export default function UserEdit() {
         setStateId(u.stateId || "");
         setDistrictId(u.districtId || "");
         setCityTown(u.cityTown || "");
-        setPin(String(u.pin || "").replace(/\D/g, "").slice(0, 6));
+        setPin(
+          String(u.pin || "")
+            .replace(/\D/g, "")
+            .slice(0, 6)
+        );
         setOperatingZone(u.operatingZone || "");
         setAddress(u.address || "");
 
@@ -187,33 +225,45 @@ export default function UserEdit() {
         setIsClient(!!u.isClient);
         setIsServiceProvider(!!u.isServiceProvider);
 
-        const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-        setSelectedProjectIds(
-          memberships
-            .filter((m) => m.scopeType === "Project" && m.role === "Client" && m.projectId)
-            .map((m) => m.projectId)
-        );
+        const memberships: any[] = Array.isArray(u.userRoleMemberships)
+          ? u.userRoleMemberships
+          : [];
+
+        // Client projects still parsed for the guard alerts
+        // (even though selection UI is hidden)
+        const clientPids = memberships
+          .filter(
+            (m) =>
+              m.scopeType === "Project" && m.role === "Client" && m.projectId
+          )
+          .map((m) => m.projectId);
+        // we don't show project picker, but we need these for guard checks
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        clientPids;
+
         setSelectedCompanyIds(
           memberships
             .filter((m) => m.scopeType === "Company" && m.companyId)
             .map((m) => m.companyId)
         );
       } catch (e: any) {
-        setErr(e?.response?.data?.error || e?.message || "Failed to load user.");
+        setErr(
+          e?.response?.data?.error || e?.message || "Failed to load user."
+        );
       } finally {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
     if (!id || projects.length === 0) return;
-    // only need active projects we already loaded
     buildSvcAssignmentsMap(id, projects);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, projects]);
 
-  // Districts by state (from refs controller) — runs whenever stateId is set/changes
+  // Districts by state
   useEffect(() => {
     if (!stateId) {
       setDistricts([]);
@@ -222,12 +272,15 @@ export default function UserEdit() {
     }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", { params: { stateId } });
-        const list = Array.isArray(data) ? data : (data?.districts || []);
+        const { data } = await api.get("/admin/districts", {
+          params: { stateId },
+        });
+        const list = Array.isArray(data) ? data : data?.districts || [];
         setDistricts(list);
-        // if current selected district doesn't belong to this state, clear it
         if (list.length && districtId) {
-          const found = list.some((d: { districtId: string; }) => d.districtId === districtId);
+          const found = list.some(
+            (d: { districtId: string }) => d.districtId === districtId
+          );
           if (!found) setDistrictId("");
         }
       } catch (e: any) {
@@ -246,30 +299,23 @@ export default function UserEdit() {
   const phoneClean = phone.replace(/\D/g, "");
   const pinClean = pin.replace(/\D/g, "");
 
-  const canSave =
-    firstName.trim().length > 0 &&
-    phoneClean.length >= 10;
-
-  // const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
-  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-  //   setSelectedCompanyIds(values);
-  // };
-
-  // const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
-  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-  //   setSelectedProjectIds(values);
-  // };
+  const canSave = firstName.trim().length > 0 && phoneClean.length >= 10;
 
   // Fetch assignments per project and build: companyId -> projectIds where this user is assigned
-  async function buildSvcAssignmentsMap(userId: string, projList: ProjectOpt[]) {
+  async function buildSvcAssignmentsMap(
+    userId: string,
+    projList: ProjectOpt[]
+  ) {
     const map: Record<string, string[]> = {};
 
-    // NOTE: we query the only GET that exposes assignments
-    // /admin/projects/:id/assignments -> { assignments: [...] } or [...]
     for (const p of projList) {
       try {
-        const { data } = await api.get(`/admin/projects/${p.projectId}/assignments`);
-        const rows: any[] = Array.isArray(data) ? data : (data?.assignments || []);
+        const { data } = await api.get(
+          `/admin/projects/${p.projectId}/assignments`
+        );
+        const rows: any[] = Array.isArray(data)
+          ? data
+          : data?.assignments || [];
 
         rows
           .filter((r) => String(r.userId) === String(userId))
@@ -277,7 +323,9 @@ export default function UserEdit() {
             const cid =
               r.companyId ||
               r.company?.companyId ||
-              (Array.isArray(r.companies) ? r.companies[0]?.companyId : undefined);
+              (Array.isArray(r.companies)
+                ? r.companies[0]?.companyId
+                : undefined);
 
             const pid = r.projectId || p.projectId;
             if (!cid || !pid) return;
@@ -285,9 +333,8 @@ export default function UserEdit() {
             if (!map[cid]) map[cid] = [];
             if (!map[cid].includes(pid)) map[cid].push(pid);
           });
-      } catch (e) {
-        // ignore per-project errors; we just skip that project's assignments
-        // console.warn("assignments fetch failed for project", p.projectId, e);
+      } catch {
+        // ignore per-project errors
       }
     }
 
@@ -300,19 +347,18 @@ export default function UserEdit() {
       setErr("First Name and a valid Mobile (India) are required.");
       return;
     }
-    // If user has no Service Partner companies selected but the toggle is still Yes, warn & stop
+
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-        "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+          "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
-      return; // do not proceed with saving
+      return;
     }
 
     try {
       setSaving(true);
 
-      // 1) Update scalar fields
       const updatePayload = {
         firstName,
         middleName: middleName || undefined,
@@ -322,21 +368,18 @@ export default function UserEdit() {
         phone: phoneClean,
         preferredLanguage: preferredLanguage || undefined,
         userStatus: userStatus || "Active",
-        // location:
         stateId: stateId || undefined,
         districtId: districtId || undefined,
         cityTown: cityTown || undefined,
         pin: pinClean || undefined,
         operatingZone: operatingZone || undefined,
         address: address || undefined,
-        // flags (top-level)
         isClient,
         isServiceProvider,
       };
 
       await api.patch(`/admin/users/${id}`, updatePayload);
 
-      // 2) Optional: upload a new profile photo
       if (profileFile) {
         const fd = new FormData();
         fd.append("file", profileFile);
@@ -348,11 +391,9 @@ export default function UserEdit() {
         }
       }
 
-      // 3) Save affiliations (projects/companies)
       try {
         await api.post(`/admin/users/${id}/affiliations`, {
           isClient,
-        //  projectIds: isClient ? selectedProjectIds : [],
           isServiceProvider,
           companyIds: isServiceProvider ? selectedCompanyIds : [],
         });
@@ -368,102 +409,106 @@ export default function UserEdit() {
     }
   };
 
-  // Useful labels for the selects (in case selected value isn't in the list yet)
-  const stateLabel = useMemo(() => {
-    if (!stateId) return "";
-    const s = states.find(x => x.stateId === stateId);
-    return s ? `${s.name} (${s.code})` : "(unknown state)";
-  }, [stateId, states]);
-
-  const districtLabel = useMemo(() => {
-    if (!districtId) return "";
-    const d = districts.find(x => x.districtId === districtId);
-    return d ? d.name : "(unknown district)";
-  }, [districtId, districts]);
-
   const onToggleClient = (next: boolean) => {
-    // If trying to switch from Yes -> No but user is assigned to client projects
     if (!next && selectedProjectIds.length > 0) {
       const list = clientProjectLabels.length
         ? `\n\nAssigned as Client on:\n• ${clientProjectLabels.join("\n• ")}`
         : "";
       window.alert(
         "This user is assigned as Client to one or more projects." +
-        list +
-        "\n\nPlease remove those assignments first, then change this setting."
+          list +
+          "\n\nPlease remove those assignments first, then change this setting."
       );
-      // Do NOT change isClient (reverts any attempted change)
       return;
     }
     setIsClient(next);
   };
 
   const onToggleServiceProvider = (next: boolean) => {
-    // If trying to switch from Yes -> No but user is assigned to service partner companies
     if (!next && selectedCompanyIds.length > 0) {
       const list = serviceCompanyLabels.length
-        ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join("\n• ")}`
+        ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join(
+            "\n• "
+          )}`
         : "";
       window.alert(
         "This user is linked to one or more Service Partner companies." +
-        list +
-        "\n\nPlease remove those assignments first, then change this setting."
+          list +
+          "\n\nPlease remove those assignments first, then change this setting."
       );
-      // Do NOT change isServiceProvider (revert attempted change)
       return;
     }
     setIsServiceProvider(next);
   };
 
   const onBeforeUncheckCompany = (companyId: string) => {
-    const c = companies.find(co => co.companyId === companyId);
-    const companyLabel = c ? (c.companyRole ? `${c.name} — ${c.companyRole}` : c.name) : companyId;
+    const c = companies.find((co) => co.companyId === companyId);
+    const companyLabel = c
+      ? c.companyRole
+        ? `${c.name} — ${c.companyRole}`
+        : c.name
+      : companyId;
 
-    // projects where this user is assigned with this company (from svcProjByCompany)
     const pids = svcProjByCompany[companyId] || [];
-    if (pids.length === 0) {
-      // No project ties to this company → allow uncheck (no alert)
-      return; // returning undefined (truthy) lets CheckboxGroup proceed
-    }
+    if (pids.length === 0) return;
 
-    const projectLabels = pids.map(pid => {
-      const p = projects.find(pr => pr.projectId === pid);
+    const projectLabels = pids.map((pid) => {
+      const p = projects.find((pr) => pr.projectId === pid);
       return p ? (p.code ? `${p.code} — ${p.title}` : p.title) : pid;
     });
 
     window.alert(
       "This user is linked to a Service Partner company." +
-      `\n\n• ${companyLabel}` +
-      `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join("\n• ")}` +
-      "\n\nPlease remove those assignments first, then change this setting."
+        `\n\n• ${companyLabel}` +
+        `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join(
+          "\n• "
+        )}` +
+        "\n\nPlease remove those assignments first, then change this setting."
     );
-    return false; // block the uncheck only when there ARE project assignments
+    return false;
   };
 
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Header (Create-like) */}
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Edit User</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Update the blocks below and save changes.
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Edit User
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
+              <span>
+                Update the details below and save changes.
+              </span>
+
+              {/* Info icon (replaces Note button functionality) */}
+              <button
+                type="button"
+                onClick={() => setShowNote(true)}
+                aria-label="Info"
+                title="Info"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              >
+                i
+              </button>
             </p>
             {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{refsErr}</p>
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {refsErr}
+              </p>
             )}
           </div>
           <div className="flex gap-2">
             <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/users")}
+              type="button"
             >
               Cancel
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={submit}
               disabled={!canSave || saving}
             >
@@ -472,26 +517,52 @@ export default function UserEdit() {
           </div>
         </div>
 
-        {err && <div className="mb-3 text-sm text-red-700 dark:text-red-400">{err}</div>}
+        {err && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            {err}
+          </div>
+        )}
 
         {loading ? (
-          <div className="text-sm text-gray-700 dark:text-gray-300">Loading…</div>
+          <div className="text-sm text-gray-700 dark:text-gray-300">
+            Loading…
+          </div>
         ) : (
           <>
             {/* ========== Identity Block ========== */}
             <Section title="Identity">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Text label="First Name" value={firstName} setValue={setFirstName} required />
-                <Text label="Middle Name" value={middleName} setValue={setMiddleName} />
-                <Text label="Last Name" value={lastName} setValue={setLastName} />
-                <Text label="Email (optional)" type="email" value={email} setValue={setEmail} />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Text
+                  label="First Name"
+                  value={firstName}
+                  setValue={setFirstName}
+                  required
+                />
+                <Text
+                  label="Middle Name"
+                  value={middleName}
+                  setValue={setMiddleName}
+                />
+                <Text
+                  label="Last Name"
+                  value={lastName}
+                  setValue={setLastName}
+                />
+                <Text
+                  label="Email (optional)"
+                  type="email"
+                  value={email}
+                  setValue={setEmail}
+                />
 
-                <div className="grid grid-cols-[5rem,1fr] gap-2">
-                  <Text label="Code" value="+91" setValue={() => { }} disabled />
+                <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
+                  <Text label="Code" value="+91" setValue={() => {}} disabled />
                   <Text
                     label="Mobile (India)"
                     value={phone}
-                    setValue={(v) => setPhone(v.replace(/[^\d]/g, "").slice(0, 10))}
+                    setValue={(v) =>
+                      setPhone(v.replace(/[^\d]/g, "").slice(0, 10))
+                    }
                     required
                     placeholder="10-digit mobile"
                   />
@@ -510,11 +581,14 @@ export default function UserEdit() {
                   options={statuses as unknown as string[]}
                 />
 
-                {/* Profile Photo: preview + change */}
+                {/* Profile Photo: preview + change (Create-like styling) */}
                 <div className="md:col-span-2">
-                  <span className="block text-sm text-gray-700 dark:text-gray-300 mb-1">Profile Photo</span>
-                  <div className="flex items-center gap-4">
-                    <div className="h-16 w-16 rounded-full overflow-hidden border dark:border-neutral-800 bg-gray-100 dark:bg-neutral-800">
+                  <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Profile Photo
+                  </span>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="h-16 w-16 rounded-full overflow-hidden border border-slate-200 bg-slate-100 dark:border-neutral-700 dark:bg-neutral-800">
                       {profileFile ? (
                         <img
                           src={URL.createObjectURL(profileFile)}
@@ -528,19 +602,26 @@ export default function UserEdit() {
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="h-full w-full grid place-items-center text-xs text-gray-500">No photo</div>
+                        <div className="grid h-full w-full place-items-center text-[10px] text-slate-500">
+                          No photo
+                        </div>
                       )}
                     </div>
+
                     <input
                       ref={fileRef}
                       type="file"
                       accept="image/*"
-                      onChange={(e) => setProfileFile(e.target.files?.[0] || null)}
-                      className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border file:bg-white dark:file:bg-neutral-900 file:text-sm file:border-gray-300 dark:file:border-neutral-800"
+                      onChange={(e) =>
+                        setProfileFile(e.target.files?.[0] || null)
+                      }
+                      className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
                     />
+
                     {profileFile && (
                       <span className="text-xs text-gray-600 dark:text-gray-400">
-                        {profileFile.name} ({Math.round(profileFile.size / 1024)} KB)
+                        {profileFile.name} (
+                        {Math.round(profileFile.size / 1024)} KB)
                       </span>
                     )}
                   </div>
@@ -548,24 +629,29 @@ export default function UserEdit() {
               </div>
 
               <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-                Name preview: <b className="dark:text-white">{namePreview || "(empty)"}</b>
+                Name preview:{" "}
+                <b className="text-slate-900 dark:text-white">
+                  {namePreview || "(empty)"}
+                </b>
               </div>
             </Section>
 
             {/* ========== Location Block ========== */}
             <Section title="Location">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Select
                   label="State / UT"
                   value={stateId}
-                  setValue={(v) => { setStateId(v); setDistrictId(""); }}
+                  setValue={(v) => {
+                    setStateId(v);
+                    setDistrictId("");
+                  }}
                   options={[
                     "",
-                    ...states.map(s => ({ value: s.stateId, label: `${s.name} (${s.code})` })),
-                    // If current stateId not in states (e.g. refs failed but user has a value), show a fallback option
-                    ...(stateId && !states.some(s => s.stateId === stateId)
-                      ? [{ value: stateId, label: stateLabel }]
-                      : []),
+                    ...states.map((s) => ({
+                      value: s.stateId,
+                      label: `${s.name} (${s.code})`,
+                    })),
                   ]}
                 />
                 <Select
@@ -574,14 +660,18 @@ export default function UserEdit() {
                   setValue={setDistrictId}
                   options={[
                     "",
-                    ...districts.map(d => ({ value: d.districtId, label: d.name })),
-                    ...(districtId && !districts.some(d => d.districtId === districtId)
-                      ? [{ value: districtId, label: districtLabel }]
-                      : []),
+                    ...districts.map((d) => ({
+                      value: d.districtId,
+                      label: d.name,
+                    })),
                   ]}
                   disabled={!stateId}
                 />
-                <Text label="City/Town" value={cityTown} setValue={setCityTown} />
+                <Text
+                  label="City/Town"
+                  value={cityTown}
+                  setValue={setCityTown}
+                />
                 <Text
                   label="PIN Code"
                   value={pin}
@@ -594,33 +684,38 @@ export default function UserEdit() {
                   setValue={setOperatingZone}
                   options={["", ...zones]}
                 />
-                <TextArea label="Address" value={address} setValue={setAddress} />
+                <TextArea
+                  label="Address"
+                  value={address}
+                  setValue={setAddress}
+                />
               </div>
             </Section>
 
             {/* ========== Affiliations Block ========== */}
             <Section title="Affiliations">
-              <div className="space-y-5">
-                {/* Client (editable) */}
+              <div className="space-y-6">
+                {/* Client */}
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       Are you Client for any Project?
                     </span>
-                    <ToggleYN value={isClient} setValue={onToggleClient} />                  </div>
-                  {/* Project selection intentionally hidden (same as Create) */}
+                    <ToggleYN value={isClient} setValue={onToggleClient} />
+                  </div>
+                  {/* Project selection intentionally hidden (same as your edit intent) */}
                 </div>
 
-
-                {/* Service Partner Companies (editable list) */}
+                {/* Service Partner Companies */}
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       Are you working for any of our Service Partner?
                     </span>
-                    {/*  <ToggleYN value={isServiceProvider} setValue={setIsServiceProvider} />*/}
-                    <ToggleYN value={isServiceProvider} setValue={onToggleServiceProvider} />
-
+                    <ToggleYN
+                      value={isServiceProvider}
+                      setValue={onToggleServiceProvider}
+                    />
                   </div>
 
                   {isServiceProvider ? (
@@ -644,7 +739,11 @@ export default function UserEdit() {
                       <CheckboxGroup
                         label={
                           companyRoleFilter
-                            ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter}`
+                            ? `Select Company(ies) — ${
+                                companyRoleFilter === "IH_PMT"
+                                  ? "IH-PMT"
+                                  : companyRoleFilter
+                              }`
                             : "Select Company(ies)"
                         }
                         items={filteredCompanies.map((c) => ({
@@ -671,16 +770,17 @@ export default function UserEdit() {
               </div>
             </Section>
 
-            {/* Footer actions */}
+            {/* Footer actions (Create-like) */}
             <div className="mt-6 flex justify-end gap-2">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                 onClick={() => nav("/admin/users")}
+                type="button"
               >
                 Cancel
               </button>
               <button
-                className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
                 onClick={submit}
                 disabled={!canSave || saving}
               >
@@ -690,17 +790,85 @@ export default function UserEdit() {
           </>
         )}
       </div>
+
+      {/* NOTE MODAL (Edit version) */}
+      {showNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="note-modal-title"
+        >
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
+              <h2
+                id="note-modal-title"
+                className="text-base font-semibold text-slate-900 dark:text-white"
+              >
+                Note for Admins — Editing a User
+              </h2>
+              <button
+                onClick={() => setShowNote(false)}
+                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 px-5 py-4 text-sm leading-6 text-gray-800 dark:text-gray-100">
+              <p>
+                <b>Required to save:</b> First Name and a 10-digit Indian mobile
+                number.
+              </p>
+
+              <p>
+                <b>Service Partner rule:</b> If <b>Service Partner = Yes</b>, at
+                least one company must remain selected.
+              </p>
+
+              <p>
+                <b>Guardrails you added:</b> If the user is already mapped to
+                projects via a Service Partner company, removing that company is
+                blocked until those assignments are removed.
+              </p>
+
+              <p>
+                <b>Location & photo</b> are optional. Photo updates won’t block
+                saving if the main profile patch succeeds.
+              </p>
+
+              <p>
+                <b>After a successful save:</b> you’ll be taken back to the
+                Users page.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-neutral-800">
+              <button
+                onClick={() => setShowNote(false)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ------------------------ Small UI helpers ------------------------ */
+/* ------------------------ Create-like UI helpers ------------------------ */
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-5">
-      <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-white">{title}</div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-5">
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+          {title}
+        </div>
         {children}
       </div>
     </section>
@@ -708,115 +876,98 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type = "text", required = false, placeholder, disabled = false
-}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
+  label,
+  value,
+  setValue,
+  type = "text",
+  required = false,
+  placeholder,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">
-        {label}{required && <span className="text-red-600"> *</span>}
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+        {required && <span className="text-red-500"> *</span>}
       </span>
       <input
-        className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
-        type={type} placeholder={placeholder} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        type={type}
+        placeholder={placeholder}
+        disabled={disabled}
       />
     </label>
   );
 }
 
 function TextArea({
-  label, value, setValue
-}: { label: string; value: string; setValue: (v: string) => void }) {
+  label,
+  value,
+  setValue,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+}) {
   return (
-    <label className="flex flex-col gap-1 md:col-span-2">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block md:col-span-2">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <textarea
-        className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
+        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled = false
+  label,
+  value,
+  setValue,
+  options,
+  disabled = false,
 }: {
-  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  options: (string | { value: string; label: string })[];
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <select
-        className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? (o || "—") : o.label;
-          return <option key={v || `empty-${i}`} value={v}>{l || "—"}</option>;
+          const l = typeof o === "string" ? o || "—" : o.label;
+          return (
+            <option key={v || `empty-${i}`} value={v}>
+              {l || "—"}
+            </option>
+          );
         })}
       </select>
     </label>
-  );
-}
-
-function MultiSelect({
-  label, value, onChange, options, disabled = false
-}: {
-  label: string;
-  value: string[];
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  options: { value: string; label: string }[];
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-      <select
-        multiple
-        className="border rounded px-2 py-2 min-h-[8rem] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <span className="text-xs text-gray-600 dark:text-gray-400">
-        Hold Ctrl/Cmd to select multiple.
-      </span>
-    </label>
-  );
-}
-
-function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) => void }) {
-  return (
-    <div className="inline-flex rounded-lg border dark:border-neutral-800 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setValue(true)}
-        className={
-          "px-3 py-1 text-sm " +
-          (value ? "bg-emerald-600 text-white" : "bg-white dark:bg-neutral-900")
-        }
-      >
-        Yes
-      </button>
-      <button
-        type="button"
-        onClick={() => setValue(false)}
-        className={
-          "px-3 py-1 text-sm " +
-          (!value ? "bg-emerald-600 text-white" : "bg-white dark:bg-neutral-900")
-        }
-      >
-        No
-      </button>
-    </div>
   );
 }
 
@@ -836,10 +987,7 @@ function CheckboxGroup({
   const toggle = (val: string) => {
     const isChecked = selected.includes(val);
     if (isChecked) {
-      // about to UNCHECK
-      if (onBeforeUncheck && onBeforeUncheck(val) === false) {
-        return; // block uncheck
-      }
+      if (onBeforeUncheck && onBeforeUncheck(val) === false) return;
       setSelected(selected.filter((v) => v !== val));
     } else {
       setSelected([...selected, val]);
@@ -847,11 +995,11 @@ function CheckboxGroup({
   };
 
   return (
-    <fieldset className="border rounded-2xl p-4 dark:border-neutral-800">
-      <legend className="text-sm text-gray-700 dark:text-gray-300 px-1">
+    <fieldset className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
         {label}
       </legend>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         {items.map((it) => (
           <label
             key={it.value}
@@ -859,7 +1007,7 @@ function CheckboxGroup({
           >
             <input
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               checked={selected.includes(it.value)}
               onChange={() => toggle(it.value)}
             />
@@ -868,10 +1016,47 @@ function CheckboxGroup({
         ))}
       </div>
       {items.length === 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           No options available.
         </div>
       )}
     </fieldset>
+  );
+}
+
+function ToggleYN({
+  value,
+  setValue,
+}: {
+  value: boolean;
+  setValue: (v: boolean) => void;
+}) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-xs shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+      <button
+        type="button"
+        onClick={() => setValue(true)}
+        className={
+          "px-4 py-1.5 text-xs font-medium transition-colors " +
+          (value
+            ? "bg-emerald-600 text-white"
+            : "bg-transparent text-slate-700 dark:text-neutral-100")
+        }
+      >
+        Yes
+      </button>
+      <button
+        type="button"
+        onClick={() => setValue(false)}
+        className={
+          "px-4 py-1.5 text-xs font-medium transition-colors " +
+          (!value
+            ? "bg-emerald-600 text-white"
+            : "bg-transparent text-slate-700 dark:text-neutral-100")
+        }
+      >
+        No
+      </button>
+    </div>
   );
 }
