@@ -10,6 +10,15 @@ type RunRow = {
     createdAt: string; // ISO
 };
 
+type EvidenceRow = {
+    id: string;
+    kind: "Photo" | "Video" | "File";
+    url: string;
+    thumbUrl?: string | null;
+    fileName?: string | null;
+    createdAt?: string | null;
+};
+
 type WirItem = {
     id: string;
     seq?: number | null;
@@ -27,6 +36,7 @@ type WirItem = {
     inspectorStatus?: "PASS" | "FAIL" | "NA" | null;
     inspectorNote?: string | null;
     runs?: RunRow[];
+    evidences?: EvidenceRow[];
 };
 
 type WirDoc = {
@@ -136,6 +146,98 @@ function RunsHistory({ runs }: { runs?: RunRow[] }) {
             </ul>
         </div>
     );
+}
+
+function EvidenceList({ evidences }: { evidences?: EvidenceRow[] }) {
+  if (!evidences || evidences.length === 0) return null;
+
+  // Try common token keys; still works if you're on cookie auth
+  const getToken = () =>
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("jwt") ||
+    localStorage.getItem("token") ||
+    "";
+
+  async function openProtected(url: string, suggestedName?: string | null) {
+    try {
+      const token = getToken();
+      const res = await fetch(url, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include", // also send cookies if present
+      });
+
+      // If auth fails or server redirects (e.g., to /login), fall back to plain open
+      if (!res.ok || res.headers.get("content-type")?.includes("text/html")) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Open in a new tab; try to hint filename for downloads
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      if (suggestedName && suggestedName.trim()) a.download = suggestedName.trim();
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      // For images/PDFs this will open preview; for others it will download
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      // Revoke after a little while
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch {
+      // Last resort
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  // newest first if timestamps exist
+  const sorted = [...evidences].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  const icon = (k: EvidenceRow["kind"]) =>
+    k === "Photo" ? "📷" : k === "Video" ? "🎥" : "📄";
+
+  return (
+    <div className="mt-3">
+      <div className="text-[12px] font-medium mb-1">Evidences</div>
+      <ul className="space-y-1">
+        {sorted.map((ev) => (
+          <li
+            key={ev.id}
+            className="text-[13px] flex items-center gap-2 rounded-lg border dark:border-neutral-800 px-2 py-1 hover:bg-gray-50 dark:hover:bg-neutral-800"
+            title={ev.fileName || ev.url}
+          >
+            <span aria-hidden>{icon(ev.kind)}</span>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                openProtected(ev.url, ev.fileName);
+              }}
+              className="truncate underline decoration-dotted hover:decoration-solid text-left"
+              style={{ maxWidth: "60%" }}
+            >
+              {ev.fileName?.trim() || ev.url}
+            </button>
+
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 ml-auto">
+              {ev.kind}
+              {ev.createdAt ? ` • ${fmtDateTime(ev.createdAt)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export default function InspRecoHODRunner({
@@ -314,6 +416,9 @@ export default function InspRecoHODRunner({
                                                     <div className="text-[12px] font-medium mb-1">Latest Measurement</div>
                                                     <LatestRun runs={it.runs} />
                                                 </div>
+
+                                                {/* Inspector evidences (photos/docs/videos) */}
+                                                <EvidenceList evidences={it.evidences} />
 
                                                 {/* Toggle history */}
                                                 {(it.runs?.length || 0) > 1 && (

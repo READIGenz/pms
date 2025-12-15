@@ -1,6 +1,8 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="en">
   <head>
+     <!-- ... vite/react-refresh etc ... -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trinity</title>
@@ -8,9 +10,13 @@
   <body>
     <!-- Root element for React -->
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx">
-        window.__API_BASE_URL__ = "http://localhost:3000";
 
+    <!-- this must be its own inline script (no src attr) -->
+    <script>
+      window.__API_BASE_URL__ = "http://localhost:3000";
     </script>
+
+    <!-- your app bundle -->
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

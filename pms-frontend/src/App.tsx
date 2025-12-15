@@ -50,6 +50,35 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return token ? children : <Navigate to="/login" replace />;
 }
 
+function PublicFilePassthrough() {
+  const path = window.location.pathname + window.location.search;
+
+  // Read from inline global OR Vite env; both supported
+  const rawBase =
+    (typeof window !== "undefined" && (window as any).__API_BASE_URL__) ||
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    "";
+
+  try {
+    const apiOrigin = rawBase ? new URL(rawBase).origin : "";
+    const target = apiOrigin ? `${apiOrigin}${path}` : "";
+
+    // If we resolved a backend origin and it's different, go there.
+    if (target && target !== window.location.href) {
+      window.location.replace(target);
+      return null;
+    }
+
+    // Fallbacks:
+    // 1) If apiOrigin is empty OR equals current origin, try opening in place to break router control.
+    const direct = target || path; // at least navigate somewhere
+    window.open(direct, "_self"); // replaces current tab without keeping SPA history
+  } catch {
+    // If URL() parsing failed, just try a plain jump
+    window.open(rawBase + path, "_self");
+  }
+  return null;
+}
 
 export default function App() {
   return (
@@ -115,6 +144,9 @@ export default function App() {
           <Route path="projects/:projectId/wir/new" element={<CreateWIR />} />
           <Route path="projects/:projectId/wir/:wirId/doc" element={<WIRDocDis />} />
         </Route>
+
+        <Route path="/uploads/*" element={<PublicFilePassthrough />} />
+        <Route path="/files/*" element={<PublicFilePassthrough />} />
 
         {/* Fallback */}
         <Route path="/landing" element={<RequireAuth><Landing /></RequireAuth>} />

@@ -22,6 +22,18 @@ type NavState = {
     project?: { projectId: string; code?: string | null; title?: string | null };
 };
 
+type WirItemEvidence = {
+    id: string;
+    kind: "Photo" | "Video" | "File";
+    url: string;
+    thumbUrl?: string | null;
+    fileName?: string | null;
+    fileSize?: number | null;
+    mimeType?: string | null;
+    capturedAt?: string | null;
+    createdAt?: string | null;
+};
+
 type WirItem = {
     id: string;
     seq?: number | null;
@@ -49,6 +61,7 @@ type WirItem = {
         comment: string | null;
         createdAt: string;
     }>;
+    evidences?: WirItemEvidence[];
 };
 
 type WirDoc = {
@@ -150,9 +163,11 @@ type EditBuf = {
     remark?: string;
     status?: "PASS" | "FAIL" | "NA";
     photo?: File | null;                   // local selection (pre-upload)
+    pendingFiles?: File[];               // locally staged, not yet uploaded
     evidenceUrl?: string | null;           // uploaded file URL (server)
     evidenceName?: string | null;          // uploaded file name (display)
     uploading?: boolean;                   // per-item upload spinner
+    evidenceId?: string | null;
 };
 
 function TabButton({
@@ -180,6 +195,9 @@ const detectKind = (file: File): "Photo" | "Video" | "File" => {
     if (t.startsWith("video/")) return "Video";
     return "File";
 };
+
+// ---- Evidence cap (UI + client guard) ----
+const MAX_EVIDENCES_PER_ITEM = 5;
 
 // Pretty (fallback) name from URL
 const baseName = (s?: string | null) => {
@@ -258,6 +276,54 @@ export default function WIRDocDis() {
         });
     };
 
+    // add files to local queue (respect cap)
+    const addPendingFiles = (itemId: string, files: FileList | File[]) => {
+        const list = Array.from(files || []);
+        if (list.length === 0) return;
+
+        const saved = (row?.items?.find(x => x.id === itemId)?.evidences?.length || 0);
+        const current = (edits[itemId]?.pendingFiles?.length || 0);
+        const room = Math.max(0, MAX_EVIDENCES_PER_ITEM - (saved + current));
+        if (room <= 0) { setErr(`You can attach up to ${MAX_EVIDENCES_PER_ITEM} files for this item.`); return; }
+
+        const toAdd = list.slice(0, room);
+        setEdits(m => {
+            const prev = m[itemId]?.pendingFiles || [];
+            return { ...m, [itemId]: { ...(m[itemId] || {}), pendingFiles: [...prev, ...toAdd] } };
+        });
+    };
+
+    const removePendingFile = (itemId: string, idx: number) => {
+        setEdits(m => {
+            const prev = m[itemId]?.pendingFiles || [];
+            const next = prev.slice(); next.splice(idx, 1);
+            return { ...m, [itemId]: { ...(m[itemId] || {}), pendingFiles: next } };
+        });
+    };
+
+    // DELETE a saved (server) evidence and optimistically update UI
+    const deleteSavedEvidence = async (itemId: string, evidenceId: string) => {
+        // optimistic UI
+        setRow(prev => {
+            if (!prev) return prev;
+            const items = (prev.items || []).map(it => {
+                if (it.id !== itemId) return it;
+                const kept = (it.evidences || []).filter(ev => ev.id !== evidenceId);
+                return { ...it, evidences: kept };
+            });
+            return { ...prev, items };
+        });
+
+        try {
+            // adjust path if your backend differs
+            await api.delete(`/projects/${projectId}/wir/${wirId}/runner/attachments/${evidenceId}`);
+        } catch (e: any) {
+            // rollback on failure
+            setErr(e?.response?.data?.error || e?.message || "Failed to delete attachment.");
+            await fetchWir(); // re-sync from server
+        }
+    };
+
     const fetchWir = useCallback(async () => {
         setLoading(true);
         setErr(null);
@@ -296,9 +362,115 @@ export default function WIRDocDis() {
     // Hold local (unsaved) pick
     const [pendingRec, setPendingRec] =
         useState<WirDoc["inspectorRecommendation"] | null>(null);
-    const onPreview = useCallback(() => {
+
+    // --- PATCH: keep showing ALL saved evidences without waiting for a refetch ---
+    const uploadEvidence = useCallback(async (itemId: string, file: File) => {
+        // mark uploading
+        setEdit(itemId, { uploading: true, evidenceUrl: null, evidenceName: null });
+        try {
+            const fd = new FormData();
+            fd.append("files", file);
+            const meta = [{ idx: 0, itemId, kind: detectKind(file) }];
+            fd.append("meta", JSON.stringify(meta));
+
+            const { data } = await api.post(
+                `/projects/${projectId}/wir/${wirId}/runner/attachments`,
+                fd,
+                { headers: { "Content-Type": "multipart/form-data" } }
+            );
+
+            // normalize response
+            const list: any[] =
+                Array.isArray(data) ? data :
+                    Array.isArray((data || {}).attachments) ? data.attachments :
+                        Array.isArray((data || {}).created) ? data.created : [];
+
+            const first = list[0] || {};
+            const url = first.url || first.fileUrl || first.link || null;
+            const name = first.fileName || file.name || baseName(url) || null;
+            const kind = (first.kind as WirItemEvidence["kind"]) || detectKind(file);
+            const evId = first.evidenceId || first.id || `${itemId}:${Date.now()}`;
+
+            // 1) Update the per-item edit buffer (so the "pending" chip still shows this upload too)
+            setEdit(itemId, {
+                photo: null,
+                evidenceUrl: url || null,
+                evidenceName: name || null,
+                evidenceId: evId || null,
+                uploading: false
+            });
+
+            // 2) Optimistically append to the in-memory row so the SAVED list shows ALL items
+            setRow(prev => {
+                if (!prev) return prev;
+                const items = (prev.items || []).map(it => {
+                    if (it.id !== itemId) return it;
+                    const existing = Array.isArray(it.evidences) ? it.evidences : [];
+
+                    // dedupe by id (in case of quick double-clicks or retries)
+                    if (existing.some(e => e.id === evId)) return it;
+
+                    const appended: WirItemEvidence = {
+                        id: evId,
+                        kind,
+                        url: url || "",
+                        thumbUrl: first.thumbUrl || first.thumbnailUrl || null,
+                        fileName: name || null,
+                        fileSize: first.fileSize || first.size || null,
+                        mimeType: first.mimeType || file.type || null,
+                        capturedAt: first.capturedAt || null,
+                        createdAt: first.createdAt || new Date().toISOString(),
+                    };
+
+                    // newest-first (common BE order). Change to [...existing, appended] if you prefer oldest-first.
+                    return {
+                        ...it,
+                        evidences: [appended, ...existing],
+                    };
+                });
+                return { ...prev, items };
+            });
+        } catch (e: any) {
+            setErr(e?.response?.data?.error || e?.message || "Upload failed.");
+            setEdit(itemId, { uploading: false });
+            // clear inputs so user can retry
+            clearFileInputs(itemId);
+        }
+    }, [projectId, wirId]);
+
+    // Upload any locally selected files for all items (no-op if none)
+    // Uses existing uploadEvidence(itemId, file) to perform the actual POST.
+    const uploadAllPending = useCallback(async () => {
+        const pairs: Array<[string, File]> = [];
+        for (const [itemId, buf] of Object.entries(edits)) {
+            const staged = buf?.pendingFiles || [];
+            for (const f of staged) pairs.push([itemId, f]);
+        }
+        if (pairs.length === 0) return;
+
+        for (const [itemId, file] of pairs) {
+            try {
+                await uploadEvidence(itemId, file);
+                // after successful upload, drop that file from staged list
+                setEdits(m => {
+                    const prev = m[itemId]?.pendingFiles || [];
+                    const idx = prev.findIndex(p => p === file);
+                    const next = prev.slice();
+                    if (idx >= 0) next.splice(idx, 1);
+                    return { ...m, [itemId]: { ...(m[itemId] || {}), pendingFiles: next } };
+                });
+            } catch {
+                // stop on first failure; user can retry
+                break;
+            }
+        }
+    }, [edits, uploadEvidence]);
+
+    const onPreview = useCallback(async () => {
+        await uploadAllPending();
         setPreviewOpen(true);
-    }, []);
+    }, [uploadAllPending]);
+
     const [recLockedReject, setRecLockedReject] = useState(false);
 
 
@@ -328,11 +500,32 @@ export default function WIRDocDis() {
     const setEdit = (itemId: string, patch: Partial<EditBuf>) =>
         setEdits((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), ...patch } }));
 
+    // const onPickPhoto = (itemId: string, file?: File | null) => {
+    //     if (!file) { setEdit(itemId, { photo: null }); return; }
+    //     // hard stop if cap reached from server-saved + local pending
+    //     const saved = (row?.items?.find(x => x.id === itemId)?.evidences?.length || 0);
+    //     const pending = (edits[itemId]?.photo ? 1 : 0) + (edits[itemId]?.evidenceUrl ? 1 : 0);
+    //     if (saved + pending >= MAX_EVIDENCES_PER_ITEM) {
+    //         setErr(`You can attach up to ${MAX_EVIDENCES_PER_ITEM} files for this item.`);
+    //         clearFileInputs(itemId);
+    //         return;
+    //     }
+    //     setEdit(itemId, { photo: file });
+    //     uploadEvidence(itemId, file);
+    // };
     const onPickPhoto = (itemId: string, file?: File | null) => {
         if (!file) { setEdit(itemId, { photo: null }); return; }
-        // keep the local file briefly (optional), then upload
-        setEdit(itemId, { photo: file });
-        uploadEvidence(itemId, file);
+        // hard stop if cap reached from server-saved + local pending
+        const saved = (row?.items?.find(x => x.id === itemId)?.evidences?.length || 0);
+        // NOTE: pending now ONLY counts local selection; we won’t upload immediately
+        const pending = (edits[itemId]?.photo ? 1 : 0);
+        if (saved + pending >= MAX_EVIDENCES_PER_ITEM) {
+            setErr(`You can attach up to ${MAX_EVIDENCES_PER_ITEM} files for this item.`);
+            clearFileInputs(itemId);
+            return;
+        }
+        // hold locally; upload later on Save/Preview/Send
+        setEdit(itemId, { photo: file, evidenceUrl: null, evidenceName: null, evidenceId: null });
     };
 
     const parseNum = (s?: string) => {
@@ -345,23 +538,24 @@ export default function WIRDocDis() {
     const buildEditsFromRow = (doc: WirDoc) => {
         const next: Record<string, EditBuf> = {};
         for (const it of doc.items ?? []) {
-            const lastRun = (it as any).runs?.[0]; // available after BE change
-            const savedValue =
-                lastRun?.valueNumber != null
-                    ? String(lastRun.valueNumber)
-                    : undefined;
-
+            const lastRun = (it as any).runs?.[0];
+            const lastEv = (it as any).evidences?.[0]; // newest first per your BE orderBy
             next[it.id] = {
-                value: savedValue ?? "",                       // measurement
-                remark: it.inspectorNote ?? "",                // saved remarks
-                status: it.inspectorStatus ?? undefined,       // PASS / FAIL / NA
+                value: lastRun?.valueNumber != null ? String(lastRun.valueNumber) : "",
+                remark: it.inspectorNote ?? "",
+                status: it.inspectorStatus ?? undefined,
                 photo: null,
+                evidenceUrl: lastEv?.url ?? null,
+                evidenceName: lastEv?.fileName ?? null,
+                evidenceId: lastEv?.id ?? null,
             };
         }
         return next;
     };
 
     const saveAllItems = useCallback(async () => {
+        // 0) First, upload any pending local attachments
+        await uploadAllPending();
         if (!row?.items?.length) return;
         const payloadItems: Array<{
             itemId: string;
@@ -505,7 +699,9 @@ export default function WIRDocDis() {
 
             // Evidence/Document required only if tag present
             if (needsEvidence) {
-                if (!(buf.evidenceUrl || buf.photo)) { // URL after upload OR pending local file
+                const savedCount = (it.evidences?.length || 0);
+                const pendingCount = (buf.evidenceUrl ? 1 : 0) + (buf.photo ? 1 : 0);
+                if ((savedCount + pendingCount) === 0) {
                     missing.push({ id: it.id, name: it.name || it.code || "Item (evidence/document)" });
                     continue;
                 }
@@ -1045,42 +1241,6 @@ export default function WIRDocDis() {
     }, [finalizeOutcome, finalizeNote, projectId, wirId, fetchWir
         , row?.inspectorRecommendation]);
 
-    const uploadEvidence = useCallback(async (itemId: string, file: File) => {
-        // mark uploading
-        setEdit(itemId, { uploading: true, evidenceUrl: null, evidenceName: null });
-        try {
-            const fd = new FormData();
-            fd.append("files", file);
-            const meta = [{ idx: 0, itemId, kind: detectKind(file) }];
-            fd.append("meta", JSON.stringify(meta));
-            const { data } = await api.post(
-                `/projects/${projectId}/wir/${wirId}/runner/attachments`,
-                fd,
-                { headers: { "Content-Type": "multipart/form-data" } }
-            );
-            // normalize response
-            const list: any[] =
-                Array.isArray(data) ? data :
-                    Array.isArray((data || {}).attachments) ? data.attachments :
-                        Array.isArray((data || {}).created) ? data.created : [];
-            const first = list[0] || {};
-            const url = first.url || first.fileUrl || first.link || null;
-            const name = first.fileName || file.name || baseName(url) || null;
-
-            setEdit(itemId, {
-                photo: null,                     // consumed
-                evidenceUrl: url,
-                evidenceName: name,
-                uploading: false
-            });
-        } catch (e: any) {
-            setErr(e?.response?.data?.error || e?.message || "Upload failed.");
-            setEdit(itemId, { uploading: false });
-            // clear inputs so user can retry
-            clearFileInputs(itemId);
-        }
-    }, [projectId, wirId]);
-
     // Load Inspector name (from inspectorId) when modal opens OR when row changes
     useEffect(() => {
         let alive = true;
@@ -1539,64 +1699,111 @@ export default function WIRDocDis() {
                                                             Inspector Observation
                                                         </div>
 
-                                                        {/* Evidence: allow camera capture OR pick any photo/document */}
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            {/* Take Photo (opens camera on supported mobiles) */}
-                                                            <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
-                                                                Take Photo
-                                                                <input
-                                                                    type="file"
-                                                                    accept="image/*"
-                                                                    capture="environment"
-                                                                    className="hidden"
-                                                                    ref={registerFileRef(it.id, 0)}
-                                                                    onChange={(e) => onPickPhoto(it.id, e.target.files?.[0] || null)}
-                                                                />
-                                                            </label>
+                                                        {/* Attachments list (Saved + Staged) */}
+                                                        <div className="space-y-2">
+                                                            {/* Saved evidences */}
+                                                            {(it.evidences?.length || 0) > 0 && (
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {it.evidences!.map(ev => (
+                                                                        <span key={ev.id} className="inline-flex items-center gap-2 max-w-[320px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                            <a href={ev.url} target="_blank" rel="noreferrer" className="underline truncate">
+                                                                                {ev.fileName || baseName(ev.url) || ev.kind}
+                                                                            </a>
+                                                                            <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700">{ev.kind}</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => deleteSavedEvidence(it.id, ev.id)}
+                                                                                className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                                title="Remove this file"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
 
-                                                            {/* Add Photo/Document (file picker for images & common docs) */}
-                                                            <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
-                                                                Add Photo/Document
-                                                                <input
-                                                                    type="file"
-                                                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                                                                    className="hidden"
-                                                                    ref={registerFileRef(it.id, 1)}
-                                                                    onChange={(e) => onPickPhoto(it.id, e.target.files?.[0] || null)}
-                                                                />
-                                                            </label>
+                                                            {/* Uploader row (hide when cap reached) */}
+                                                            {(() => {
+                                                                const savedCount = (it.evidences?.length || 0);
+                                                                const staged = edits[it.id]?.pendingFiles || [];
+                                                                const total = savedCount + staged.length;
+                                                                const canAdd = total < MAX_EVIDENCES_PER_ITEM;
 
-                                                            {/* Selected file name + Remove */}
-                                                            {buf.uploading ? (
-                                                                <span className="inline-flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800">
-                                                                    Uploading…
-                                                                </span>
-                                                            ) : buf.evidenceUrl ? (
-                                                                <span className="inline-flex items-center gap-2 max-w-[320px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
-                                                                    <a href={buf.evidenceUrl} target="_blank" rel="noreferrer" className="underline truncate">
-                                                                        {buf.evidenceName || baseName(buf.evidenceUrl) || "Attachment"}
-                                                                    </a>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => onRemovePhoto(it.id)}
-                                                                        className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
-                                                                        title="Remove attached file"
-                                                                    >
-                                                                        ✕
-                                                                    </button>
-                                                                </span>
-                                                            ) : buf.photo ? (<span className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
-                                                                <span className="truncate" title={buf.photo.name}>{buf.photo.name}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => onRemovePhoto(it.id)}
-                                                                    className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
-                                                                    title="Remove selected file"
-                                                                >
-                                                                    ✕
-                                                                </button>
-                                                            </span>
-                                                            ) : null}
+                                                                return (
+                                                                    <div className="flex flex-col gap-2">
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            {canAdd ? (
+                                                                                <>
+                                                                                    {/* Take Photo (camera) */}
+                                                                                    <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                                                                        Take Photo
+                                                                                        <input
+                                                                                            type="file"
+                                                                                            accept="image/*"
+                                                                                            capture="environment"
+                                                                                            multiple
+                                                                                            className="hidden"
+                                                                                            ref={registerFileRef(it.id, 0)}
+                                                                                            onChange={(e) => {
+                                                                                                if (!e.target.files) return;
+                                                                                                addPendingFiles(it.id, e.target.files);
+                                                                                                // clear the input so selecting the same file again is possible
+                                                                                                e.currentTarget.value = "";
+                                                                                            }}
+                                                                                        />
+                                                                                    </label>
+
+                                                                                    {/* Add Photo/Document (gallery/doc picker) */}
+                                                                                    <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                                                                        Add Document
+                                                                                        <input
+                                                                                            type="file"
+                                                                                            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                                                                            multiple
+                                                                                            className="hidden"
+                                                                                            ref={registerFileRef(it.id, 1)}
+                                                                                            onChange={(e) => {
+                                                                                                if (!e.target.files) return;
+                                                                                                addPendingFiles(it.id, e.target.files);
+                                                                                                e.currentTarget.value = "";
+                                                                                            }}
+                                                                                        />
+                                                                                    </label>
+                                                                                </>
+                                                                            ) : (
+                                                                                <span className="text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                                    Max {MAX_EVIDENCES_PER_ITEM} attachments reached
+                                                                                </span>
+                                                                            )}
+                                                                            {/* Tiny counter */}
+                                                                            <span className="text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-800">
+                                                                                {total} / {MAX_EVIDENCES_PER_ITEM}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        {/* Staged (local, not uploaded) list */}
+                                                                        {staged.length > 0 && (
+                                                                            <div className="flex flex-wrap gap-2">
+                                                                                {staged.map((f, idx) => (
+                                                                                    <span key={`${f.name}-${idx}`} className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                                        <span className="truncate" title={f.name}>{f.name}</span>
+                                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700">Pending</span>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => removePendingFile(it.id, idx)}
+                                                                                            className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                                            title="Remove from selection"
+                                                                                        >
+                                                                                            ✕
+                                                                                        </button>
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
 
                                                         {/* Measurement input field */}
@@ -1654,9 +1861,10 @@ export default function WIRDocDis() {
                                             );
                                         })}
                                     </div>
-                                )}
+                                )
+                                }
                                 {/* Recommendation tile (bottom) */}
-                                <div className="mt-4 rounded-2xl border dark:border-neutral-800 p-3">
+                                < div className="mt-4 rounded-2xl border dark:border-neutral-800 p-3" >
                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                         Recommendation
                                     </div>
@@ -2175,7 +2383,10 @@ export default function WIRDocDis() {
                                         const req = (it.spec || "").trim();
                                         const isMandatory = /^mandatory$/i.test(req);
                                         const isOptional = /^optional$/i.test(req);
-
+                                        // PATCH: per-item evidence helpers
+                                        const MAX_EVIDENCES = 5;
+                                        const savedCount = (it.evidences?.length || 0);
+                                        const canAddEvidence = savedCount < MAX_EVIDENCES;
                                         return (
                                             <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3 space-y-3">
                                                 {/* Item meta (same header info as runner card) */}
@@ -2264,10 +2475,33 @@ export default function WIRDocDis() {
                                                     </div>
 
                                                     <div className="text-sm">
-                                                        <b>Attachment:</b>{" "}
-                                                        {buf.evidenceUrl ? (buf.evidenceName || baseName(buf.evidenceUrl)) :
-                                                            (buf.photo?.name ? buf.photo.name : "—")}
+                                                        <b>Attachments:</b>{" "}
+                                                        {((it.evidences?.length || 0) === 0 && !buf.evidenceUrl && !buf.photo)
+                                                            ? "—"
+                                                            : (
+                                                                <div className="mt-1 flex flex-col gap-1">
+                                                                    {(it.evidences || []).map(ev => (
+                                                                        <div key={ev.id} className="text-[12px]">
+                                                                            • <a className="underline" href={ev.url} target="_blank" rel="noreferrer">
+                                                                                {ev.fileName || baseName(ev.url) || ev.kind}
+                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">{ev.kind}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {buf.evidenceUrl && (
+                                                                        <div className="text-[12px]">
+                                                                            • <a className="underline" href={buf.evidenceUrl} target="_blank" rel="noreferrer">
+                                                                                {buf.evidenceName || baseName(buf.evidenceUrl) || "Attachment"}
+                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">Pending</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {buf.photo && !buf.evidenceUrl && (
+                                                                        <div className="text-[12px]">• {buf.photo.name} <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">Pending</span></div>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        }
                                                     </div>
+
                                                 </div>
                                             </div>
                                         );
@@ -2382,7 +2616,8 @@ export default function WIRDocDis() {
                                         setRecSubmitting(hodPlannedPatch.inspectorRecommendation);
                                         setHodReviewOpen(false);
 
-                                        // 1) Save all runner entries first (existing behavior)
+                                        // 1) Upload pending attachments, then save runner entries
+                                        await uploadAllPending();
                                         await saveAllItems();
 
                                         // 2) Apply header patch in one go (hodId, bicUserId, status, version, contractorId)

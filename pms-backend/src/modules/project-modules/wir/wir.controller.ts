@@ -173,6 +173,15 @@ export class WirController {
 
   }
 
+  @Delete(':wirId/runner/attachments/:evidenceId')
+  async deleteRunnerAttachment(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    return this.service.deleteRunnerAttachment(projectId, wirId, evidenceId);
+  }
+
   @Post(':wirId/runner/inspector-save')
   async inspectorSave(
     @Param('projectId') projectId: string,

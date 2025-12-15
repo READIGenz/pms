@@ -1,8 +1,21 @@
 // pms-frontend/src/views/home/modules/WIR/InspRecoInspRunner.tsx
 import React, { useMemo } from "react";
+import { api } from "../../../../api/client";
 
 /* ---------- Local minimal types (kept narrow & read-only friendly) ---------- */
 type RunnerStatus = "OK" | "NCR" | "Pending" | null;
+
+type Evidence = {
+  id: string;
+  kind?: string | null;        // "Photo" | "Document" | ...
+  url: string;
+  thumbUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  capturedAt?: string | null;
+  createdAt?: string | null;
+};
 
 type WirItem = {
   id: string;
@@ -29,6 +42,9 @@ type WirItem = {
     comment: string | null;
     createdAt: string; // ISO
   }> | null;
+
+  /* -------- PATCH: read-only evidences on item -------- */
+  evidences?: Evidence[] | null;
 };
 
 type WirDoc = {
@@ -96,6 +112,67 @@ const fmtDateTime = (iso?: string | null) => {
   } catch {
     return iso;
   }
+};
+
+/* -------- PATCH: tiny, read-only evidence gallery -------- */
+const toAbsUrl = (u?: string | null) => {
+  if (!u) return "";
+  if (/^https?:\/\//i.test(u)) return u;
+  const base =
+    (((api as any)?.baseURL) || ((api as any)?.defaults?.baseURL) || "").toString().replace(/\/$/, "");
+  return `${base}${u}`;
+};
+
+const EvidenceGallery: React.FC<{ evidences: Evidence[] }> = ({ evidences }) => {
+  if (!Array.isArray(evidences) || evidences.length === 0) return null;
+
+  const icon = (ev: Evidence) => {
+    const k = (ev.kind || "").toLowerCase();
+    const mt = (ev.mimeType || "").toLowerCase();
+    if (k.includes("photo") || mt.startsWith("image/")) return "📷";
+    if (k.includes("video") || mt.startsWith("video/")) return "🎥";
+    return "📄";
+  };
+
+  const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString("en-IN") : "");
+
+  return (
+    <div className="mt-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Evidence
+      </div>
+
+      <ul className="mt-2 space-y-1">
+        {evidences.map((ev) => {
+          const href = toAbsUrl(ev.url);
+          return (
+            <li
+              key={ev.id}
+              className="text-sm flex items-center gap-2 rounded-lg border dark:border-neutral-800 px-2 py-1"
+              title={ev.fileName || href}
+            >
+              <span aria-hidden>{icon(ev)}</span>
+
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate underline decoration-dotted hover:decoration-solid"
+                style={{ maxWidth: "60%" }}
+              >
+                {ev.fileName || "file"}
+              </a>
+
+              <span className="ml-auto text-[11px] text-gray-500 dark:text-gray-400">
+                {(ev.mimeType || ev.kind || "file") +
+                  ((ev.createdAt || ev.capturedAt) ? ` • ${fmt(ev.createdAt || ev.capturedAt)}` : "")}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 };
 
 /* ---------- Component ---------- */
@@ -232,6 +309,12 @@ export default function InspRecoInspRunner({ wir, onClose }: Props) {
                         {lastRun?.createdAt ? `Recorded at ${fmtDateTime(lastRun.createdAt)}` : ""}
                       </div>
                     </div>
+
+                    {/* -------- Render read-only evidences (if any) -------- */}
+                    {Array.isArray(it.evidences) && it.evidences.length > 0 ? (
+                      <EvidenceGallery evidences={it.evidences as Evidence[]} />
+                    ) : null}
+
                   </div>
                 );
               })}
