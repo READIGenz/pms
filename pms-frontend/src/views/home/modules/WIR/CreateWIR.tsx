@@ -202,14 +202,32 @@ type ActivityLite = {
 };
 
 // UI type for the Compliance modal rows
+// type UiComplianceItem = {
+//     id: string;
+//     text: string;
+//     refId: string;
+//     code: string | null;
+//     requirement: string | null;
+//     required: boolean | null;
+//     critical: boolean | null;
+//     tags: string[];
+//     units: string | null;
+//     tolOp: string | null;
+//     base: number | null;
+//     plus: number | null;
+//     minus: number | null;
+//     refCode: string | null;
+//     refTitle: string | null;
+// };
+// UI type for the Compliance modal rows (also reused for Follow-up viewer)
 type UiComplianceItem = {
     id: string;
     text: string;
-    refId: string;
+    refId: string | null;
     code: string | null;
     requirement: string | null;
     required: boolean | null;
-    critical: boolean | null;
+    critical: boolean;
     tags: string[];
     units: string | null;
     tolOp: string | null;
@@ -220,6 +238,47 @@ type UiComplianceItem = {
     refTitle: string | null;
 };
 
+type WirItemLike = {
+    id: string;
+    name?: string | null;
+    spec?: string | null;
+    tolerance?: string | null;
+    unit?: string | null;
+    base?: string | number | null;
+    plus?: string | number | null;
+    minus?: string | number | null;
+    code?: string | null;
+    tags?: string[] | null;
+    critical?: boolean | null;
+    checklistId?: string | null;
+    sourceChecklistId?: string | null;
+};
+
+type ChecklistMetaMap = Record<string, { code?: string | null; title?: string | null }>;
+
+function mapWirItemToUiComplianceItem(it: WirItemLike, checklistMap: ChecklistMetaMap): UiComplianceItem {
+    const refId = it.checklistId || it.sourceChecklistId || null;
+    const ref = refId ? checklistMap[refId] : undefined;
+
+    return {
+        id: it.id,
+        text: it.name || "—",
+        refId,
+        code: it.code ?? null,
+        // drives Mandatory / Optional pills
+        requirement: it.spec ?? null,
+        required: null,
+        critical: !!it.critical,
+        tags: Array.isArray(it.tags) ? it.tags : [],
+        units: it.unit ?? null,
+        tolOp: it.tolerance ?? null,
+        base: it.base != null ? Number(it.base) : null,
+        plus: it.plus != null ? Number(it.plus) : null,
+        minus: it.minus != null ? Number(it.minus) : null,
+        refCode: ref?.code ?? null,
+        refTitle: ref?.title ?? null,
+    };
+}
 function normalizeArrayish(payload: any): any[] {
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
@@ -519,29 +578,37 @@ export default function CreateWIR() {
     const ensureActivitiesRef = useRef(ensureActivities);
     useEffect(() => { ensureActivitiesRef.current = ensureActivities; }, [ensureActivities]);
 
+    // // PATCH: follow-up viewer state (near other useState/useRef)
+    // const editWirRef = useRef<any>(null);
+
+    // type FailedUiItem = {
+    //     id: string;
+    //     text: string;
+    //     code: string | null;
+    //     refCode: string | null;   // checklist code
+    //     refTitle: string | null;  // checklist title
+    //     inspectorStatus: string | null;
+    //     status: string | null;
+    //     lastRunStatus: string | null;
+    //     units: string | null;
+    //     tolOp: string | null;
+    //     base: number | null;
+    //     plus: number | null;
+    //     minus: number | null;
+    // };
+
+    // const [fuOpen, setFuOpen] = useState(false);
+    // const [fuLoading, setFuLoading] = useState(false);
+    // const [fuErr, setFuErr] = useState<string | null>(null);
+    // const [fuItems, setFuItems] = useState<FailedUiItem[]>([]);
+
     // PATCH: follow-up viewer state (near other useState/useRef)
     const editWirRef = useRef<any>(null);
-
-    type FailedUiItem = {
-        id: string;
-        text: string;
-        code: string | null;
-        refCode: string | null;   // checklist code
-        refTitle: string | null;  // checklist title
-        inspectorStatus: string | null;
-        status: string | null;
-        lastRunStatus: string | null;
-        units: string | null;
-        tolOp: string | null;
-        base: number | null;
-        plus: number | null;
-        minus: number | null;
-    };
 
     const [fuOpen, setFuOpen] = useState(false);
     const [fuLoading, setFuLoading] = useState(false);
     const [fuErr, setFuErr] = useState<string | null>(null);
-    const [fuItems, setFuItems] = useState<FailedUiItem[]>([]);
+    const [fuItems, setFuItems] = useState<UiComplianceItem[]>([]);
 
     // Edit-loader effect
     useEffect(() => {
@@ -971,7 +1038,55 @@ export default function CreateWIR() {
         }
     };
 
-    // PATCH: open Failed Items viewer for follow-up edit
+    // // PATCH: open Failed Items viewer for follow-up edit
+    // const openViewFailed = async () => {
+    //     setFuErr(null);
+    //     setFuLoading(true);
+    //     setFuOpen(true);
+
+    //     try {
+    //         const row = editWirRef.current || {};
+    //         const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
+    //         const byChecklistId = new Map(
+    //             checklists.map((c: any) => [
+    //                 String(c?.checklistId ?? c?.id ?? ""),
+    //                 {
+    //                     code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+    //                     title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
+    //                 },
+    //             ])
+    //         );
+
+    //         const items: Array<any> = Array.isArray(row.items) ? row.items : [];
+    //         const list: FailedUiItem[] = items.map((it: any) => {
+    //             const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
+    //             const meta = byChecklistId.get(cid) || { code: null, title: null };
+    //             return {
+    //                 id: String(it?.id ?? crypto.randomUUID()),
+    //                 text: String(it?.name ?? it?.text ?? it?.title ?? "—"),
+    //                 code: (it?.code ?? null) as string | null,
+    //                 refCode: meta.code,
+    //                 refTitle: meta.title,
+    //                 inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
+    //                 status: (it?.status ?? null) as string | null,
+    //                 lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
+    //                 units: (it?.unit ?? null) as string | null,
+    //                 tolOp: (it?.tolerance ?? null) as string | null,
+    //                 base: (it?.base ?? null) as number | null,
+    //                 plus: (it?.plus ?? null) as number | null,
+    //                 minus: (it?.minus ?? null) as number | null,
+    //             };
+    //         });
+
+    //         setFuItems(list);
+    //     } catch (e: any) {
+    //         setFuErr(e?.response?.data?.error || e?.message || "Failed to load follow-up items.");
+    //     } finally {
+    //         setFuLoading(false);
+    //     }
+    // };
+
+    // PATCH: open Failed Items viewer for follow-up edit (reuse UiComplianceItem mapper)
     const openViewFailed = async () => {
         setFuErr(null);
         setFuLoading(true);
@@ -980,36 +1095,19 @@ export default function CreateWIR() {
         try {
             const row = editWirRef.current || {};
             const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
-            const byChecklistId = new Map(
-                checklists.map((c: any) => [
-                    String(c?.checklistId ?? c?.id ?? ""),
-                    {
-                        code: (c?.checklistCode ?? c?.code ?? null) as string | null,
-                        title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
-                    },
-                ])
-            );
 
-            const items: Array<any> = Array.isArray(row.items) ? row.items : [];
-            const list: FailedUiItem[] = items.map((it: any) => {
-                const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
-                const meta = byChecklistId.get(cid) || { code: null, title: null };
-                return {
-                    id: String(it?.id ?? crypto.randomUUID()),
-                    text: String(it?.name ?? it?.text ?? it?.title ?? "—"),
-                    code: (it?.code ?? null) as string | null,
-                    refCode: meta.code,
-                    refTitle: meta.title,
-                    inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
-                    status: (it?.status ?? null) as string | null,
-                    lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
-                    units: (it?.unit ?? null) as string | null,
-                    tolOp: (it?.tolerance ?? null) as string | null,
-                    base: (it?.base ?? null) as number | null,
-                    plus: (it?.plus ?? null) as number | null,
-                    minus: (it?.minus ?? null) as number | null,
+            const checklistMap: ChecklistMetaMap = {};
+            for (const c of checklists) {
+                const cid = String(c?.checklistId ?? c?.id ?? "");
+                if (!cid) continue;
+                checklistMap[cid] = {
+                    code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+                    title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
                 };
-            });
+            }
+
+            const items: Array<WirItemLike> = Array.isArray(row.items) ? row.items : [];
+            const list: UiComplianceItem[] = items.map((it) => mapWirItemToUiComplianceItem(it, checklistMap));
 
             setFuItems(list);
         } catch (e: any) {
@@ -1914,33 +2012,20 @@ export default function CreateWIR() {
                             <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {fuItems.map((it) => {
-                                        const op = it.tolOp === "+-" ? "±" : it.tolOp;
-                                        const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
+                                        const tol = tolPillOf(it);
                                         const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
-
-                                        const statusBadge = (label: string | null, tone: "rose" | "amber" | "gray" = "gray") =>
-                                            label ? (
-                                                <span
-                                                    className={
-                                                        "text-[11px] px-2 py-1 rounded-full border " +
-                                                        (tone === "rose"
-                                                            ? "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
-                                                            : tone === "amber"
-                                                                ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
-                                                                : "dark:border-neutral-800 text-gray-600 dark:text-gray-300")
-                                                    }
-                                                >
-                                                    {label}
-                                                </span>
-                                            ) : null;
+                                        const req = (it.requirement || "").toString().trim();
+                                        const isMandatory = it.required === true || /^mandatory$/i.test(req);
+                                        const isOptional = it.required === false || /^optional$/i.test(req);
 
                                         return (
                                             <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-                                                {/* Title + tolerance (exact like Compliance) */}
+                                                {/* Title + tolerance (like Compliance) */}
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <div className="text-sm font-semibold dark:text-white">
-                                                            {it.text || "Untitled"}{tol ? ` — ${tol}` : ""}
+                                                            {it.text || "Untitled"}
+                                                            {tol ? ` — ${tol}` : ""}
                                                         </div>
                                                         {codeLine && (
                                                             <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
@@ -1948,11 +2033,26 @@ export default function CreateWIR() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {/* Compliance has a right-side Critical pill; Follow-up schema lacks it, so keep empty */}
+
+                                                    {it.critical && (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                                            Critical
+                                                        </span>
+                                                    )}
                                                 </div>
 
-                                                {/* Pills row (Mandatory/Optional omitted — not available in Follow-up); keep Unit/Tolerance like Compliance */}
+                                                {/* Pills row (Mandatory/Optional + Unit/Tolerance) */}
                                                 <div className="mt-2 flex flex-wrap gap-2">
+                                                    {isMandatory && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Mandatory
+                                                        </span>
+                                                    )}
+                                                    {isOptional && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Optional
+                                                        </span>
+                                                    )}
                                                     {it.units && (
                                                         <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
                                                             Unit: {it.units}
@@ -1965,11 +2065,23 @@ export default function CreateWIR() {
                                                     )}
                                                 </div>
 
-                                                {/* Compliance shows tags row; Follow-up has no tags — omit for visual parity */}
+                                                {/* Tags row (if any) */}
+                                                {(it.tags?.length || 0) > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                        {it.tags!.map((t, i) => (
+                                                            <span
+                                                                key={i}
+                                                                className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
+                                                            >
+                                                                {t}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
-                                </div> {/* ← close the new grid wrapper */}
+                                </div>
                             </div>
                         )}
                         {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
