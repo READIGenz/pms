@@ -1441,6 +1441,44 @@ export class WirService {
     return results;
   }
 
+  async deleteRunnerAttachment(
+    projectId: string,
+    wirId: string,
+    evidenceId: string,
+  ) {
+    // Ensure the WIR belongs to this project
+    await this.ensureWir(projectId, wirId);
+
+    // Find evidence under this WIR
+    const evidence = await this.prisma.wirItemEvidence.findFirst({
+      where: { id: evidenceId, wirId },
+      select: { id: true, itemId: true },
+    });
+
+    // Idempotent: if not found, treat as deleted
+    if (!evidence) return { ok: true };
+
+    // Delete evidence row
+    await this.prisma.wirItemEvidence.delete({
+      where: { id: evidenceId },
+    });
+
+    // Recompute photoCount for the item (count only Photos)
+    const photos = await this.prisma.wirItemEvidence.count({
+      where: { wirId, itemId: evidence.itemId, kind: 'Photo' },
+    });
+
+    // Guard the update so id is a string (not null/undefined)
+if (evidence.itemId) {
+  await this.prisma.wirItem.update({
+    where: { id: evidence.itemId },
+    data: { photoCount: photos },
+  });
+}
+
+    return { ok: true, removedId: evidenceId, itemId: evidence.itemId, photoCount: photos };
+  }
+
   async inspectorSave(projectId: string, wirId: string, dto: InspectorSaveDto, user: any) {
     // (optional) verify the WIR belongs to projectId and user can act
     await this.prisma.$transaction(async (tx) => {
