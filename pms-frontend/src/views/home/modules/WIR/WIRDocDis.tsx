@@ -364,6 +364,9 @@ export default function WIRDocDis() {
     const [pendingRec, setPendingRec] =
         useState<WirDoc["inspectorRecommendation"] | null>(null);
 
+    // Header-level Inspector remarks (for recommendation tile)
+    const [pendingRemark, setPendingRemark] = useState<string>("");
+
     // --- PATCH: keep showing ALL saved evidences without waiting for a refetch ---
     const uploadEvidence = useCallback(async (itemId: string, file: File) => {
         // mark uploading
@@ -774,6 +777,11 @@ export default function WIRDocDis() {
     }, [row?.wirId, row?.updatedAt]);
 
     useEffect(() => {
+        if (!row) return;
+        setPendingRemark(row.inspectorRemarks ?? "");
+    }, [row?.wirId, row?.updatedAt, row?.inspectorRemarks]);
+
+    useEffect(() => {
         const lock = computeCriticalFail();
         setRecLockedReject(lock);
         if (lock) setPendingRec("REJECT");
@@ -1118,8 +1126,24 @@ export default function WIRDocDis() {
         [row?.evidences]
     );
 
-    // click handler used by the button
     const onSendToHodClick = useCallback(async () => {
+        // NEW: Guard – one recommendation must be selected
+        const currentRec: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null =
+            recLockedReject
+                ? "REJECT"
+                : ((pendingRec ?? row?.inspectorRecommendation) ?? null);
+
+        if (!currentRec) {
+            setSendWarnList([
+                {
+                    id: "inspectorRecommendation",
+                    name: "Select an Inspector Recommendation (Approve / Approve w/ Comments / Reject) before sending to HOD.",
+                },
+            ]);
+            setSendWarnOpen(true);
+            return;
+        }
+
         const res = validateAllRunnerFields();
         if (!res.ok) {
             setSendWarnList(res.missing);
@@ -1131,10 +1155,18 @@ export default function WIRDocDis() {
             }
             return;
         }
-        setHodSelectedUserId(null);           // <— reset selection for a fresh open
+
+        setHodSelectedUserId(null);           // reset selection for a fresh open
         setHodConfirmOpen(true);
         loadHodDerived();
-    }, [validateAllRunnerFields, inputRefs, loadHodDerived]);
+    }, [
+        validateAllRunnerFields,
+        inputRefs,
+        loadHodDerived,
+        recLockedReject,
+        pendingRec,
+        row?.inspectorRecommendation,
+    ]);
 
     // onRunnerClick to show dialog when not allowed to open editable runner
     const onRunnerClick = useCallback(() => {
@@ -1956,6 +1988,23 @@ export default function WIRDocDis() {
                                         </button>
 
                                     </div>
+                                    {/* Header-level Inspector Remarks (saved with recommendation) */}
+                                    <div className="mt-3">
+                                        <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">
+                                            Inspector Remarks (max 200 chars)
+                                        </label>
+                                        <textarea
+                                            value={pendingRemark}
+                                            onChange={(e) => setPendingRemark(e.target.value.slice(0, 200))}
+                                            rows={3}
+                                            className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                            placeholder="Write a brief summary for HOD…"
+                                        />
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
+                                            {pendingRemark.length}/200
+                                        </div>
+                                    </div>
+
                                 </div>
                                 {/* Bottom action bar */}
                                 <div className="mt-3 flex flex-wrap gap-2 justify-end">
@@ -2677,9 +2726,15 @@ export default function WIRDocDis() {
                                         await api.patch(`/projects/${projectId}/wir/${wirId}`, hodPlannedPatch);
 
                                         // 3) Persist the recommendation via BE endpoint (keeps audit/version parity)
+                                        const remark =
+                                            (pendingRemark || "").slice(0, 200).trim() || null;
+
                                         await api.post(
                                             `/projects/${projectId}/wir/${wirId}/runner/inspector-recommend`,
-                                            { action: hodPlannedPatch.inspectorRecommendation, comment: null }
+                                            {
+                                                action: hodPlannedPatch.inspectorRecommendation,
+                                                comment: remark,
+                                            }
                                         );
 
                                         // 4) Refresh
@@ -2739,10 +2794,12 @@ export default function WIRDocDis() {
                     <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Missing required fields</div>
                         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                            All <b>Mandatory</b> items must have:
-                            <b>Pass/Fail</b> status, a numeric <b>Measurement</b> if tagged <i>measurement</i>,
-                            and an attached <b>Photo/Document</b> if tagged <i>evidence/document</i>.
+                            All <b>Mandatory</b> items must have a <b>Pass/Fail</b> status,
+                            a numeric <b>Measurement</b> if tagged <i>measurement</i>,
+                            an attached <b>Photo/Document</b> if tagged <i>evidence/document</i>,
+                            and one <b>Recommendation</b> (Approve / Approve w/ Comments / Reject) selected.
                         </div>
+
                         {sendWarnList.length > 0 && (
                             <ul className="mt-3 text-sm list-disc pl-5 max-h-48 overflow-auto">
                                 {sendWarnList.map(it => (
