@@ -201,6 +201,28 @@ type ActivityLite = {
     discipline?: string | null;
 };
 
+// Header documents (WIR-level, not item runners)
+type HeaderDocsState = {
+    drawings?: File[];
+    itp?: File[];
+    other?: File[];
+    photos?: File[];
+    material?: File[];
+    safety?: File[];
+};
+
+function extractWirIdFromResponse(res: any): string | null {
+    if (!res) return null;
+    const data = res.data ?? res;
+    const id =
+        data?.data?.wirId ??
+        data?.wir?.wirId ??
+        data?.wirId ??
+        data?.id ??
+        null;
+    return id ? String(id) : null;
+}
+
 // UI type for the Compliance modal rows
 // type UiComplianceItem = {
 //     id: string;
@@ -448,8 +470,8 @@ export default function CreateWIR() {
     // Section 2:
     const [workInspection, setWorkInspection] = useState<string>(""); // 200 chars
 
-    // Section 3: (tiles) – placeholders for now
-    const [docs, setDocs] = useState<{ drawings?: File[]; itp?: File[]; other?: File[]; photos?: File[]; material?: File[]; safety?: File[] }>({});
+    // Section 3: header-level documents (WIR header, not item runner)
+    const [docs, setDocs] = useState<HeaderDocsState>({});
 
     // Section 4/5:
     const [refLoading, setRefLoading] = useState<boolean>(false);
@@ -1126,6 +1148,34 @@ export default function CreateWIR() {
         return isFollowupMode ? baseOk : Boolean(baseOk && selectedRefIds.length > 0);
     }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds, isFollowupMode]);
 
+    // Upload WIR header documents to:
+    // POST /projects/:projectId/wir/:wirId/documents (multipart/form-data, files[])
+    async function uploadHeaderDocs(projectId: string, wirId: string, docsState: HeaderDocsState) {
+        if (!projectId || !wirId) return;
+
+        const allFiles: File[] = [];
+        (["drawings", "itp", "other", "photos", "material", "safety"] as const).forEach((key) => {
+            const arr = docsState[key];
+            if (arr && arr.length) allFiles.push(...arr);
+        });
+
+        if (!allFiles.length) return;
+
+        const form = new FormData();
+        for (const f of allFiles) {
+            form.append("files", f);
+        }
+
+        try {
+            await api.post(`/projects/${projectId}/wir/${wirId}/documents`, form, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+        } catch (err) {
+            // keep business flow unchanged; just log for now
+            console.warn("[WIR] header docs upload failed:", err);
+        }
+    }
+
     // Build the exact draft payload (same keys you already send in saveDraft)
     function buildDraftPayload(isPatch = false) {
         const dtISO = composeDateTimeISO(dateISO, hh, mm, ampm) || undefined;
@@ -1230,6 +1280,12 @@ export default function CreateWIR() {
                 logWir("saveDraft:verify <- GET", check?.data);
             }
 
+            // Header docs upload (if any)
+            const wirId = extractWirIdFromResponse(res) || (isPatch ? editId : null);
+            if (wirId) {
+                await uploadHeaderDocs(projectId, wirId, docs);
+            }
+
             // Keep checklist sync (non-blocking)
             //if (isPatch && selectedRefIds.length) {
             if (isPatch && selectedRefIds.length && !isFollowupMode) {
@@ -1291,10 +1347,17 @@ export default function CreateWIR() {
                 }
             }
 
+            let res;
             if (isEdit && editId) {
-                await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
+                res = await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
             } else {
-                await api.post(`/projects/${projectId}/wir`, payload);
+                res = await api.post(`/projects/${projectId}/wir`, payload);
+            }
+
+            // Header docs upload (if any)
+            const wirId = extractWirIdFromResponse(res) || (isEdit ? editId : null);
+            if (wirId) {
+                await uploadHeaderDocs(projectId, wirId, docs);
             }
 
             backToWirList();
@@ -1322,20 +1385,27 @@ export default function CreateWIR() {
             const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
             logWir("autoSaveDraft <- response", res?.data);
 
+            // // Extract a stable wirId from common API shapes
+            // const newId =
+            //     String(
+            //         res?.data?.data?.wirId ??
+            //         res?.data?.wir?.wirId ??
+            //         res?.data?.wirId ??
+            //         res?.data?.id ??
+            //         ""
+            //     ) || wirIdForModal;
+
+            // if (newId) setWirIdForModal(newId);
             // Extract a stable wirId from common API shapes
-            const newId =
-                String(
-                    res?.data?.data?.wirId ??
-                    res?.data?.wir?.wirId ??
-                    res?.data?.wirId ??
-                    res?.data?.id ??
-                    ""
-                ) || wirIdForModal;
-
-            if (newId) setWirIdForModal(newId);
-
+            const newId = extractWirIdFromResponse(res) || wirIdForModal;
+            if (newId) {
+                setWirIdForModal(newId);
+                // Header docs upload (if any) before opening dispatch modal
+                await uploadHeaderDocs(projectId, newId, docs);
+            }
             // open the dispatch modal now that we’re sure a draft exists
             setDispatchOpen(true);
+
         } catch (e: any) {
             const err = e?.response?.data || e?.message || e;
             console.error("[WIR] autoSaveDraft error:", err);
@@ -1595,7 +1665,9 @@ export default function CreateWIR() {
                                 </label>
                             ))}
                         </div>
-                        <Note className="mt-2">Uploading to server can be wired later; this records user selection in state now.</Note>
+                        <Note className="mt-2">
+                            Files are grouped here and uploaded to the WIR header when you Save Draft or Submit.
+                        </Note>
                     </div>
 
                     {/* Section 4 — Checklist Library */}
@@ -1767,6 +1839,13 @@ export default function CreateWIR() {
                                             ? await api.patch(path, payload)
                                             : await api.post(path, payload);
                                         logWir("saveDraft(confirm) <- response", res?.data);
+
+                                        // Header docs upload (if any)
+                                        const wirId = extractWirIdFromResponse(res) || (saveMethodRef.current === "PATCH" ? editId : null);
+                                        if (wirId) {
+                                            await uploadHeaderDocs(projectId, wirId, docs);
+                                        }
+
                                         setSaveDlgBusy(false);
                                         setSaveDlgOpen(false);
                                         backToWirList();

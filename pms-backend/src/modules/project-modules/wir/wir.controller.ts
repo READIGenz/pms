@@ -100,6 +100,37 @@ export class WirController {
     return this.service.deleteWir(projectId, wirId);
   }
 
+  // ========= Header-level WIR documents (multipart) =========
+  // form-data:
+  //   files: (multiple) binary
+  //
+  // These are WIR-level documents/evidences (not tied to any item/run).
+  @Post(':wirId/documents')
+  @UseInterceptors(
+    FilesInterceptor('files', 20, {
+      limits: { fileSize: 10 * 1024 * 1024 }, // same as runner attachments for now
+      fileFilter: (_req, file, cb) => {
+        // Reuse the same whitelist as runner attachments for consistency
+        const ok = /^(image\/(jpeg|png|webp)|video\/mp4|application\/pdf)$/.test(
+          file.mimetype,
+        );
+        cb(ok ? null : new BadRequestException('Unsupported file type'), ok);
+      },
+    }),
+  )
+  async uploadWirDocuments(
+    @Param('projectId') projectId: string,
+    @Param('wirId') wirId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: any,
+  ) {
+    const actor = {
+      userId: getAuthUserId(req),
+      fullName: req?.user?.fullName ?? null,
+    };
+    return this.service.createWirDocuments(projectId, wirId, files, actor);
+  }
+
   // wir.controller.ts
   @Post(':wirId/dispatch')
   async dispatchWir(
