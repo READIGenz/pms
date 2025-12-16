@@ -26,11 +26,12 @@ const ROLE_OPTIONS = [
   "PMC",
   "Supplier",
 ] as const;
-const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : (r ?? ""));
-const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : (r ?? ""));
 
-type CompanyStatus = typeof STATUS_OPTIONS[number];
-type CompanyRole = typeof ROLE_OPTIONS[number];
+const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : r ?? "");
+const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : r ?? "");
+
+type CompanyStatus = (typeof STATUS_OPTIONS)[number];
+type CompanyRole = (typeof ROLE_OPTIONS)[number];
 
 /* Prefix mapping for companyCode */
 const ROLE_PREFIX: Record<CompanyRole, string> = {
@@ -82,7 +83,9 @@ export default function EditCompany() {
     const payload = decodeJwtPayload(token);
     const isAdmin = !!(
       payload &&
-      (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin")
+      (payload.isSuperAdmin ||
+        payload.role === "Admin" ||
+        payload.userRole === "Admin")
     );
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
@@ -120,6 +123,7 @@ export default function EditCompany() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showNote, setShowNote] = useState(false);
 
   /* ========================= load reference data ========================= */
   useEffect(() => {
@@ -132,7 +136,9 @@ export default function EditCompany() {
       } catch (e: any) {
         setStatesRef([]);
         setRefsErr(
-          e?.response?.data?.error || e?.message || "Failed to load reference data."
+          e?.response?.data?.error ||
+            e?.message ||
+            "Failed to load reference data."
         );
       }
     })();
@@ -171,9 +177,7 @@ export default function EditCompany() {
         const { data } = await api.get(`/admin/companies/${companyId}`);
         const c = Array.isArray(data) ? data[0] : data?.company || data;
 
-        // Handle both flat and nested (include) shapes from backend:
-        const stateId =
-          c?.stateId || c?.state?.stateId || c?.state?.id || "";
+        const stateId = c?.stateId || c?.state?.stateId || c?.state?.id || "";
         const districtId =
           c?.districtId || c?.district?.districtId || c?.district?.id || "";
 
@@ -205,7 +209,9 @@ export default function EditCompany() {
         const msg =
           s === 404
             ? "Company not found."
-            : e?.response?.data?.error || e?.message || "Failed to load company.";
+            : e?.response?.data?.error ||
+              e?.message ||
+              "Failed to load company.";
         setErr(msg);
       } finally {
         setLoading(false);
@@ -218,14 +224,12 @@ export default function EditCompany() {
     setForm((f) => ({ ...f, [key]: val }));
 
   const normalize = (payload: Record<string, any>) => {
-    if (payload.pan)
-      payload.pan = String(payload.pan).toUpperCase().trim();
+    if (payload.pan) payload.pan = String(payload.pan).toUpperCase().trim();
     if (payload.gstin)
       payload.gstin = String(payload.gstin).toUpperCase().trim();
     if (payload.contactMobile)
       payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
-    if (payload.pin)
-      payload.pin = String(payload.pin).replace(/\D+/g, "");
+    if (payload.pin) payload.pin = String(payload.pin).replace(/\D+/g, "");
     if (payload.website) {
       const w = String(payload.website).trim();
       payload.website = /^https?:\/\//i.test(w) ? w : w ? `https://${w}` : "";
@@ -270,15 +274,14 @@ export default function EditCompany() {
     return `${prefix}-${String(next).padStart(4, "0")}`;
   };
 
-  // For edit: keep existing companyCode unless role changed *and*
-  // you want to auto-regenerate. We'll regenerate only if code is
-  // empty or its prefix no longer matches the role.
   const fetchAndMaybeRegenerateCode = async (
     role: CompanyRole,
     existingCode: string
   ): Promise<string> => {
     const prefix = ROLE_PREFIX[role];
-    const hasPrefix = new RegExp(`^${prefix}-\\d{4}$`, "i").test(existingCode || "");
+    const hasPrefix = new RegExp(`^${prefix}-\\d{4}$`, "i").test(
+      existingCode || ""
+    );
     if (existingCode && hasPrefix) return existingCode.toUpperCase();
 
     try {
@@ -299,21 +302,6 @@ export default function EditCompany() {
     }
   };
 
-  // If role changes, ensure code is valid for that role
-  // useEffect(() => {
-  //   (async () => {
-  //     if (!form.companyRole) return;
-  //     const code = await fetchAndMaybeRegenerateCode(
-  //       form.companyRole as CompanyRole,
-  //       form.companyCode
-  //     );
-  //     if (code !== form.companyCode) {
-  //       setForm((f) => ({ ...f, companyCode: code }));
-  //     }
-  //   })();
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [form.companyRole]);
-
   /* ========================= submit (PATCH) ========================= */
   const onSubmit = async () => {
     if (!companyId) return;
@@ -328,7 +316,6 @@ export default function EditCompany() {
       normalize(payload);
       validate(payload);
 
-      // Do not send empty IDs as strings; backend expects null to clear
       if (!payload.stateId) payload.stateId = null;
       if (!payload.districtId) payload.districtId = null;
 
@@ -339,7 +326,9 @@ export default function EditCompany() {
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to update company.";
+          : e?.response?.data?.error ||
+            e?.message ||
+            "Failed to update company.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -356,31 +345,46 @@ export default function EditCompany() {
 
   /* ========================= ui ========================= */
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Edit Company</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Update company details and save changes.
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Edit Company
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
+              <span>
+                Update company details in the sections below, then save.
+              </span>
+
+              {/* Info icon (replaces Note button functionality) */}
+              <button
+                type="button"
+                onClick={() => setShowNote(true)}
+                aria-label="Info"
+                title="Info"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              >
+                i
+              </button>
             </p>
-            {(refsErr || err) && (
+            {refsErr && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr || err}
+                {refsErr}
               </p>
             )}
           </div>
           <div className="flex gap-2">
             <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/companies")}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={onSubmit}
               disabled={!canSubmit}
             >
@@ -390,20 +394,20 @@ export default function EditCompany() {
         </div>
 
         {loading ? (
-          <div className="mb-4 p-3 rounded-lg text-sm text-gray-700 bg-white dark:bg-neutral-900 border dark:border-neutral-800">
+          <div className="mb-4 rounded-xl border border-slate-200/80 bg-white/95 p-3 text-sm text-slate-700 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200">
             Loading company…
           </div>
         ) : null}
 
         {err && (
-          <div className="mb-4 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
         {/* ============ Summary ============ */}
         <Section title="Summary">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label="Company Name"
               value={form.name}
@@ -419,13 +423,15 @@ export default function EditCompany() {
               placeholder="Select status"
             />
             <SelectStrict
-              label="Primary Specialisation (Role). Can not be changed."
+              label="Primary Specialisation (Role) — cannot be changed"
               value={form.companyRole}
-              onChange={/* no-op since it's disabled */ (() => {}) as any}
-              options={ROLE_OPTIONS.map((r) => ({ value: r, label: prettyRole(r) }))}
+              onChange={(() => {}) as any}
+              options={ROLE_OPTIONS.map((r) => ({
+                value: r,
+                label: prettyRole(r),
+              }))}
               placeholder="Select role"
-              /** prevent dropdown opening but keep the same visual style */
-              lockOpen
+              disabled
             />
             <Input
               label="Website"
@@ -439,7 +445,7 @@ export default function EditCompany() {
 
         {/* ============ Registration & Contact ============ */}
         <Section title="Registration and Contact">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Input
               label="GSTIN"
               value={form.gstin}
@@ -459,7 +465,7 @@ export default function EditCompany() {
               placeholder="L12345DL2010PLC123456"
             />
           </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Input
               label="Primary Contact"
               value={form.primaryContact}
@@ -492,7 +498,7 @@ export default function EditCompany() {
               placeholder="Flat / Building, Street, Area"
             />
           </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <SelectStrict
               label="State / UT"
               value={form.stateId}
@@ -511,7 +517,9 @@ export default function EditCompany() {
                 value: d.districtId,
                 label: d.name || d.districtId,
               }))}
-              placeholder={form.stateId ? "Select district" : "Select state first"}
+              placeholder={
+                form.stateId ? "Select district" : "Select state first"
+              }
               disabled={!form.stateId}
             />
             <Input
@@ -534,40 +542,129 @@ export default function EditCompany() {
           />
         </Section>
 
-        {/* ---- Bottom action bar (sticky) ---- */}
-        <div className="sticky bottom-0 mt-6">
-          <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
-            <div className="mx-auto max-w-5xl px-4 py-3">
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  onClick={() => nav("/admin/companies")}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
-                  onClick={onSubmit}
-                  disabled={!canSubmit}
-                >
-                  {submitting ? "Saving…" : "Save"}
-                </button>
+        {/* ---- Bottom action buttons (no sticky, no box) ---- */}
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => nav("/admin/companies")}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            onClick={onSubmit}
+            disabled={!canSubmit}
+          >
+            {submitting ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Note modal */}
+      {showNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowNote(false)}
+          />
+
+          {/* Dialog */}
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-neutral-800">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                Note for Admins — Editing a Company
+              </h2>
+              <button
+                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 p-5 text-sm leading-6 text-gray-800 dark:text-gray-100">
+              <div>
+                <b>Required to save:</b> Company Name, Status, and Primary
+                Specialisation (Role).
               </div>
+
+              <div>
+                <b>Primary Specialisation (Role):</b> is locked on edit to keep
+                company identity consistent across the system.
+              </div>
+
+              <div>
+                <b>Optional but useful:</b> Website, Address, State, District,
+                PIN, Registration IDs (GSTIN, PAN, CIN), and a short
+                Note/description.
+              </div>
+
+              <div>
+                <b>Basic checks we do for you:</b>
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  <li>
+                    Mobile must be a 10-digit number; Email must look valid.
+                  </li>
+                  <li>PIN must be 6 digits.</li>
+                  <li>
+                    GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10
+                    characters (ABCDE1234F).
+                  </li>
+                  <li>
+                    Website is auto-cleaned to start with <code>https://</code>{" "}
+                    if you miss it.
+                  </li>
+                  <li>
+                    GSTIN/PAN are auto-capitalised; numbers strip symbols.
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <b>After a successful save:</b> you’ll be taken back to the
+                Companies page.
+              </div>
+
+              <div>
+                <b>Cancel:</b> takes you back to the Companies list without
+                saving.
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-neutral-800">
+              <button
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                onClick={() => setShowNote(false)}
+                type="button"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
-        {/* ---- /Bottom action bar ---- */}
-      </div>
+      )}
     </div>
   );
 }
 
 /* ========================= small UI bits ========================= */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-3">
+    <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
         {title}
       </div>
       {children}
@@ -592,12 +689,12 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
         {required ? " *" : ""}
       </span>
       <input
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -623,11 +720,11 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <textarea
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring resize-y"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -644,8 +741,6 @@ function SelectStrict({
   options,
   placeholder = "Select…",
   disabled = false,
-  /** When true, keep normal styling but prevent the dropdown from opening */
-  lockOpen = false,
 }: {
   label: string;
   value: string;
@@ -653,32 +748,17 @@ function SelectStrict({
   options: Array<{ value: string; label: string }>;
   placeholder?: string;
   disabled?: boolean;
-  lockOpen?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <select
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring disabled:opacity-60"
+        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        aria-disabled={lockOpen || undefined}
-        onMouseDown={(e) => {
-          if (lockOpen) {
-            e.preventDefault(); // block the native dropdown from opening
-            // optional: remove focus so it doesn't show focus ring
-            (e.currentTarget as HTMLSelectElement).blur();
-          }
-        }}
-        onKeyDown={(e) => {
-          if (lockOpen) {
-            const keys = [" ", "Enter", "ArrowUp", "ArrowDown"];
-            if (keys.includes(e.key)) e.preventDefault();
-          }
-        }}
       >
         <option value="">{placeholder}</option>
         {options.map((opt) => (

@@ -24,18 +24,18 @@ const ROLE_OPTIONS = [
   "Contractor",
   "Consultant",
   "PMC",
-  "Supplier"
+  "Supplier",
 ] as const;
 
-const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : (r ?? ""));
-const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : (r ?? ""));
+const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : r ?? "");
+const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : r ?? "");
 
-type CompanyStatus = typeof STATUS_OPTIONS[number];
-type CompanyRole = typeof ROLE_OPTIONS[number];
+type CompanyStatus = (typeof STATUS_OPTIONS)[number];
+type CompanyRole = (typeof ROLE_OPTIONS)[number];
 
 /* Prefix mapping for companyCode */
 const ROLE_PREFIX: Record<CompanyRole, string> = {
-  "IH_PMT": "PMT",
+  IH_PMT: "PMT",
   Contractor: "CON",
   Consultant: "CNS",
   PMC: "PMC",
@@ -75,9 +75,17 @@ export default function CompanyCreate() {
   /* ---- Admin gate ---- */
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) { nav("/login", { replace: true }); return; }
+    if (!token) {
+      nav("/login", { replace: true });
+      return;
+    }
     const payload = decodeJwtPayload(token);
-    const isAdmin = !!(payload && (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin"));
+    const isAdmin = !!(
+      payload &&
+      (payload.isSuperAdmin ||
+        payload.role === "Admin" ||
+        payload.userRole === "Admin")
+    );
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
 
@@ -115,39 +123,44 @@ export default function CompanyCreate() {
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
 
-
   /* ========================= load reference data ========================= */
   useEffect(() => {
     (async () => {
       setRefsErr(null);
       try {
         const { data: sResp } = await api.get("/admin/states");
-        const s: any[] = Array.isArray(sResp) ? sResp : (sResp?.states || []);
+        const s: any[] = Array.isArray(sResp) ? sResp : sResp?.states || [];
         setStatesRef(s);
       } catch (e: any) {
         setStatesRef([]);
         setRefsErr(
           e?.response?.data?.error ||
-          e?.message ||
-          "Failed to load reference data."
+            e?.message ||
+            "Failed to load reference data."
         );
       }
     })();
   }, []);
 
   useEffect(() => {
-    if (!form.stateId) { setDistrictsRef([]); setForm(f => ({ ...f, districtId: "" })); return; }
+    if (!form.stateId) {
+      setDistrictsRef([]);
+      setForm((f) => ({ ...f, districtId: "" }));
+      return;
+    }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", { params: { stateId: form.stateId } });
-        const dlist = Array.isArray(data) ? data : (data?.districts || []);
+        const { data } = await api.get("/admin/districts", {
+          params: { stateId: form.stateId },
+        });
+        const dlist = Array.isArray(data) ? data : data?.districts || [];
         setDistrictsRef(dlist);
         if (!dlist.some((d: DistrictRef) => d.districtId === form.districtId)) {
-          setForm(f => ({ ...f, districtId: "" }));
+          setForm((f) => ({ ...f, districtId: "" }));
         }
       } catch {
         setDistrictsRef([]);
-        setForm(f => ({ ...f, districtId: "" }));
+        setForm((f) => ({ ...f, districtId: "" }));
       }
     })();
   }, [form.stateId]);
@@ -158,21 +171,25 @@ export default function CompanyCreate() {
 
   const normalize = (payload: Record<string, any>) => {
     if (payload.pan) payload.pan = String(payload.pan).toUpperCase().trim();
-    if (payload.gstin) payload.gstin = String(payload.gstin).toUpperCase().trim();
-    if (payload.contactMobile) payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
+    if (payload.gstin)
+      payload.gstin = String(payload.gstin).toUpperCase().trim();
+    if (payload.contactMobile)
+      payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
     if (payload.pin) payload.pin = String(payload.pin).replace(/\D+/g, "");
     if (payload.website) {
       const w = String(payload.website).trim();
-      payload.website = /^https?:\/\//i.test(w) ? w : (w ? `https://${w}` : "");
+      payload.website = /^https?:\/\//i.test(w) ? w : w ? `https://${w}` : "";
     }
-    if (payload.companyCode) payload.companyCode = String(payload.companyCode).toUpperCase().trim();
+    if (payload.companyCode)
+      payload.companyCode = String(payload.companyCode).toUpperCase().trim();
     return payload;
   };
 
   const validate = (p: Record<string, any>) => {
     if (!p.name) throw new Error("Company Name is required.");
     if (!p.status) throw new Error("Status is required.");
-    if (!p.companyRole) throw new Error("Primary Specialisation (Role) is required.");
+    if (!p.companyRole)
+      throw new Error("Primary Specialisation (Role) is required.");
     // companyCode is internal; we won't block the user if it's missing—onSubmit ensures it exists.
 
     if (p.contactEmail && !/^\S+@\S+\.\S+$/.test(p.contactEmail))
@@ -200,7 +217,7 @@ export default function CompanyCreate() {
       const n = parseSeq(String(code), prefix);
       if (n != null && n > maxSeq) maxSeq = n;
     }
-    const next = (maxSeq + 1);
+    const next = maxSeq + 1;
     return `${prefix}-${String(next).padStart(4, "0")}`;
   };
 
@@ -208,13 +225,21 @@ export default function CompanyCreate() {
     const prefix = ROLE_PREFIX[role];
     try {
       // If backend supports filter by role, pass it; otherwise fetch all and filter here.
-      const { data } = await api.get("/admin/companies", { params: { companyRole: role } }).catch(async () => {
-        const fallback = await api.get("/admin/companies");
-        return { data: fallback.data };
-      });
+      const { data } = await api
+        .get("/admin/companies", { params: { companyRole: role } })
+        .catch(async () => {
+          const fallback = await api.get("/admin/companies");
+          return { data: fallback.data };
+        });
 
-      const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.companies) ? data.companies : []);
-      const roleList = list.filter((c) => String(c?.companyRole ?? "").trim() === role);
+      const list: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.companies)
+        ? data.companies
+        : [];
+      const roleList = list.filter(
+        (c) => String(c?.companyRole ?? "").trim() === role
+      );
       return nextCodeFromList(role, roleList);
     } catch {
       // If anything fails, start sequence at 0001 for the role
@@ -226,7 +251,9 @@ export default function CompanyCreate() {
   useEffect(() => {
     (async () => {
       if (!form.companyRole) return;
-      const proposed = await fetchAndGenerateCode(form.companyRole as CompanyRole);
+      const proposed = await fetchAndGenerateCode(
+        form.companyRole as CompanyRole
+      );
       setForm((f) => ({ ...f, companyCode: proposed.toUpperCase() }));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,7 +267,9 @@ export default function CompanyCreate() {
       // Ensure companyCode exists even if role just got selected and generation hasn't finished yet
       let code = form.companyCode;
       if (!code && form.companyRole) {
-        code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
+        code = (
+          await fetchAndGenerateCode(form.companyRole as CompanyRole)
+        ).toUpperCase();
         setForm((f) => ({ ...f, companyCode: code }));
       }
 
@@ -265,25 +294,32 @@ export default function CompanyCreate() {
           const msg = e?.response?.data?.error || e?.message || "";
           const isUniqueFail =
             status === 409 ||
-            (status === 400 && /unique|duplicate|Company_companyCode_key/i.test(msg)) ||
+            (status === 400 &&
+              /unique|duplicate|Company_companyCode_key/i.test(msg)) ||
             /unique|duplicate|Company_companyCode_key/i.test(msg);
 
           if (isUniqueFail && form.companyRole && attempts === 0) {
             attempts += 1;
-            code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
+            code = (
+              await fetchAndGenerateCode(form.companyRole as CompanyRole)
+            ).toUpperCase();
             setForm((f) => ({ ...f, companyCode: code }));
             continue;
           }
           throw e;
         }
       }
-      throw new Error("Could not assign a unique Company Code. Please try again.");
+      throw new Error(
+        "Could not assign a unique Company Code. Please try again."
+      );
     } catch (e: any) {
       const s = e?.response?.status;
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to create company.";
+          : e?.response?.data?.error ||
+            e?.message ||
+            "Failed to create company.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -301,37 +337,47 @@ export default function CompanyCreate() {
 
   /* ========================= ui ========================= */
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Create Company</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Enter company details in the sections below, then save.
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Create Company
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
+              <span>
+                Enter company details in the sections below, then save.
+              </span>
+
+              {/* Info icon (replaces Note button functionality) */}
+              <button
+                type="button"
+                onClick={() => setShowNote(true)}
+                aria-label="Info"
+                title="Info"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              >
+                i
+              </button>
             </p>
+
             {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{refsErr}</p>
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {refsErr}
+              </p>
             )}
           </div>
           <div className="flex gap-2">
-            {/* Note button */}
             <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-              type="button"
-              onClick={() => setShowNote(true)}
-            >
-              Note
-            </button>
-            <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/companies")}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={onSubmit}
               disabled={!canSubmit}
             >
@@ -341,14 +387,14 @@ export default function CompanyCreate() {
         </div>
 
         {err && (
-          <div className="mb-4 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
         {/* ============ Summary ============ */}
         <Section title="Summary">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label="Company Name"
               value={form.name}
@@ -360,15 +406,17 @@ export default function CompanyCreate() {
               label="Status"
               value={form.status}
               onChange={(v) => set("status", v as CompanyStatus)}
-              options={STATUS_OPTIONS.map(s => ({ value: s, label: s }))}
+              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
               placeholder="Select status"
             />
             <SelectStrict
               label="Primary Specialisation (Role)"
               value={form.companyRole}
               onChange={(v) => set("companyRole", v as CompanyRole)}
-              //options={ROLE_OPTIONS.map(r => ({ value: r, label: r }))}
-              options={ROLE_OPTIONS.map(r => ({ value: r, label: prettyRole(r) }))}
+              options={ROLE_OPTIONS.map((r) => ({
+                value: r,
+                label: prettyRole(r),
+              }))}
               placeholder="Select role"
             />
             <Input
@@ -383,15 +431,46 @@ export default function CompanyCreate() {
 
         {/* ============ Registration & Contact ============ */}
         <Section title="Registration and Contact">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input label="GSTIN" value={form.gstin} onChange={(v) => set("gstin", v.toUpperCase())} placeholder="15-digit GSTIN" />
-            <Input label="PAN" value={form.pan} onChange={(v) => set("pan", v.toUpperCase())} placeholder="ABCDE1234F" />
-            <Input label="CIN" value={form.cin} onChange={(v) => set("cin", v.toUpperCase())} placeholder="L12345DL2010PLC123456" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Input
+              label="GSTIN"
+              value={form.gstin}
+              onChange={(v) => set("gstin", v.toUpperCase())}
+              placeholder="15-digit GSTIN"
+            />
+            <Input
+              label="PAN"
+              value={form.pan}
+              onChange={(v) => set("pan", v.toUpperCase())}
+              placeholder="ABCDE1234F"
+            />
+            <Input
+              label="CIN"
+              value={form.cin}
+              onChange={(v) => set("cin", v.toUpperCase())}
+              placeholder="L12345DL2010PLC123456"
+            />
           </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input label="Primary Contact" value={form.primaryContact} onChange={(v) => set("primaryContact", v)} placeholder="Full name" />
-            <Input label="Contact Mobile" value={form.contactMobile} onChange={(v) => set("contactMobile", v.replace(/\D+/g, ""))} placeholder="10-digit mobile" />
-            <Input label="Contact Email" value={form.contactEmail} onChange={(v) => set("contactEmail", v)} placeholder="name@company.com" type="email" />
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Input
+              label="Primary Contact"
+              value={form.primaryContact}
+              onChange={(v) => set("primaryContact", v)}
+              placeholder="Full name"
+            />
+            <Input
+              label="Contact Mobile"
+              value={form.contactMobile}
+              onChange={(v) => set("contactMobile", v.replace(/\D+/g, ""))}
+              placeholder="10-digit mobile"
+            />
+            <Input
+              label="Contact Email"
+              value={form.contactEmail}
+              onChange={(v) => set("contactEmail", v)}
+              placeholder="name@company.com"
+              type="email"
+            />
           </div>
         </Section>
 
@@ -405,23 +484,36 @@ export default function CompanyCreate() {
               placeholder="Flat / Building, Street, Area"
             />
           </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <SelectStrict
               label="State / UT"
               value={form.stateId}
               onChange={(v) => set("stateId", v)}
-              options={statesRef.map((s) => ({ value: s.stateId, label: s.name || s.code || s.stateId }))}
+              options={statesRef.map((s) => ({
+                value: s.stateId,
+                label: s.name || s.code || s.stateId,
+              }))}
               placeholder="Select state"
             />
             <SelectStrict
               label="District"
               value={form.districtId}
               onChange={(v) => set("districtId", v)}
-              options={districtsRef.map((d) => ({ value: d.districtId, label: d.name || d.districtId }))}
-              placeholder={form.stateId ? "Select district" : "Select state first"}
+              options={districtsRef.map((d) => ({
+                value: d.districtId,
+                label: d.name || d.districtId,
+              }))}
+              placeholder={
+                form.stateId ? "Select district" : "Select state first"
+              }
               disabled={!form.stateId}
             />
-            <Input label="PIN" value={form.pin} onChange={(v) => set("pin", v.replace(/\D+/g, ""))} placeholder="6-digit PIN" />
+            <Input
+              label="PIN"
+              value={form.pin}
+              onChange={(v) => set("pin", v.replace(/\D+/g, ""))}
+              placeholder="6-digit PIN"
+            />
           </div>
         </Section>
 
@@ -435,31 +527,26 @@ export default function CompanyCreate() {
             rows={4}
           />
         </Section>
-        {/* ---- Bottom action bar (sticky) ---- */}
-        <div className="sticky bottom-0 mt-6">
-          <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 border-t dark:border-neutral-800">
-            <div className="mx-auto max-w-5xl px-4 py-3">
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  onClick={() => nav("/admin/companies")}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
-                  onClick={onSubmit}
-                  disabled={!canSubmit}
-                >
-                  {submitting ? "Saving…" : "Save"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
+        {/* ---- Bottom action buttons (no sticky, no box) ---- */}
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => nav("/admin/companies")}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            onClick={onSubmit}
+            disabled={!canSubmit}
+          >
+            {submitting ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
+
       {/* Note modal */}
       {showNote && (
         <div
@@ -474,13 +561,13 @@ export default function CompanyCreate() {
           />
 
           {/* Dialog */}
-          <div className="relative z-10 w-full max-w-xl mx-4 rounded-2xl border bg-white dark:bg-neutral-900 dark:border-neutral-800 shadow-xl">
-            <div className="p-5 border-b dark:border-neutral-800 flex items-center justify-between">
-              <h2 className="text-base font-semibold dark:text-white">
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-neutral-800">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 Note for Admins — Creating a New Company
               </h2>
               <button
-                className="text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
                 onClick={() => setShowNote(false)}
                 aria-label="Close"
               >
@@ -488,48 +575,66 @@ export default function CompanyCreate() {
               </button>
             </div>
 
-            <div className="p-5 text-sm leading-6 text-gray-800 dark:text-gray-100 space-y-3">
+            <div className="space-y-3 p-5 text-sm leading-6 text-gray-800 dark:text-gray-100">
               <div>
-                <b>Required to save:</b> Company Name, Status, and Primary Specialisation (Role).
+                <b>Required to save:</b> Company Name, Status, and Primary
+                Specialisation (Role).
               </div>
 
               <div>
-                <b>Company Code:</b> generated automatically based on the selected Role (e.g., PMT-0001, CON-0001).
-                You don’t have to type it; the system picks the next number for that role.
+                <b>Company Code:</b> generated automatically based on the
+                selected Role (e.g., PMT-0001, CON-0001). You don’t have to type
+                it; the system picks the next number for that role.
               </div>
 
               <div>
-                <b>Optional but useful:</b> Website, Address, State, District, PIN, Registration IDs (GSTIN, PAN, CIN),
-                and a short Note/description.
+                <b>Optional but useful:</b> Website, Address, State, District,
+                PIN, Registration IDs (GSTIN, PAN, CIN), and a short
+                Note/description.
               </div>
 
               <div>
                 <b>Basic checks we do for you:</b>
-                <ul className="list-disc pl-5 mt-1 space-y-1">
-                  <li>Mobile must be a 10-digit number; Email must look like a valid email.</li>
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  <li>
+                    Mobile must be a 10-digit number; Email must look like a
+                    valid email.
+                  </li>
                   <li>PIN must be 6 digits.</li>
-                  <li>GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10 characters (ABCDE1234F).</li>
-                  <li>Website is auto-cleaned to start with <code>https://</code> if you miss it.</li>
-                  <li>GSTIN/PAN are auto-capitalised; numbers strip spaces/symbols.</li>
+                  <li>
+                    GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10
+                    characters (ABCDE1234F).
+                  </li>
+                  <li>
+                    Website is auto-cleaned to start with <code>https://</code>{" "}
+                    if you miss it.
+                  </li>
+                  <li>
+                    GSTIN/PAN are auto-capitalised; numbers strip
+                    spaces/symbols.
+                  </li>
                 </ul>
               </div>
 
               <div>
-                <b>Duplicate company code:</b> If a generated code clashes, the system will make a fresh one and try again automatically.
+                <b>Duplicate company code:</b> If a generated code clashes, the
+                system will make a fresh one and try again automatically.
               </div>
 
               <div>
-                <b>After a successful save:</b> you’ll be taken back to the Companies page.
+                <b>After a successful save:</b> you’ll be taken back to the
+                Companies page.
               </div>
 
               <div>
-                <b>Cancel:</b> takes you back to the Companies list without saving.
+                <b>Cancel:</b> takes you back to the Companies list without
+                saving.
               </div>
             </div>
 
-            <div className="p-4 border-t dark:border-neutral-800 flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-neutral-800">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                 onClick={() => setShowNote(false)}
                 type="button"
               >
@@ -539,16 +644,21 @@ export default function CompanyCreate() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
 
 /* ========================= small UI bits ========================= */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-3">
+    <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
         {title}
       </div>
       {children}
@@ -557,7 +667,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Input({
-  label, value, onChange, placeholder, type = "text", required = false,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required = false,
 }: {
   label: string;
   value: string;
@@ -568,11 +683,12 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-        {label}{required ? " *" : ""}
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+        {required ? " *" : ""}
       </span>
       <input
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -584,7 +700,11 @@ function Input({
 }
 
 function TextArea({
-  label, value, onChange, placeholder, rows = 3,
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
 }: {
   label: string;
   value: string;
@@ -594,11 +714,11 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <textarea
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring resize-y"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -625,11 +745,11 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <select
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring disabled:opacity-60"
+        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}

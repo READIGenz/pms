@@ -297,177 +297,283 @@ export default function AdminPermUserOverrides() {
 
   /* ------------------------- render ------------------------- */
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">Modules & Permissions — User Overrides</h1>
-        <div className="flex flex-wrap items-center gap-3">
-
-
-          {/* Role + User (stick together) */}
-          <div className="flex items-center gap-2 flex-nowrap">
-            {/* Project selector */}
-            <select
-              className="border rounded-xl px-3 py-2"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              aria-label="Select Project"
-              disabled={!projects.length}
-            >
-              {!projects.length && <option value="">No projects</option>}
-              {projects.map((p) => {
-                const tip = [
-                  p.code ? `Code: ${p.code}` : null,
-                  `Title: ${p.title}`,
-                  `Distt: ${p.distt ?? '-'}`,
-                  `Type: ${p.type ?? '-'}`,
-                ].filter(Boolean).join(' | ');
-
-                return (
-                  <option key={p.projectId} value={p.projectId} title={tip}>
-                    {p.title}
-                  </option>
-                );
-              })}
-            </select>
-            {/* Role filter */}
-            <select
-              className="border rounded-xl px-3 py-2"
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as RoleKey | 'All')}
-              aria-label="Filter by Role"
-              disabled={!projects.length}
-              title="Filter the users list by role on this project"
-            >
-              <option value="All">All Roles</option>
-              {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-
-            {/* User selector — ONLY assigned users, label shows <code - full name (role)> */}
-            <select
-              className="border rounded-xl px-3 py-2"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              aria-label="Select User"
-              disabled={!assignedUsers.length}
-            >
-              {!assignedUsers.length && <option value="">No assigned users</option>}
-              {assignedUsers.map((u) => {
-                const code = (u.code ?? '').toString().trim();
-                const name = (u.name ?? '').toString().trim();
-
-                const rawRole = (u.role ?? '').toString().trim();
-                const rolePretty = rawRole === 'IH_PMT' ? 'IH-PMT' : rawRole;
-
-                const left = [code, name].filter(Boolean).join(' - ');
-                const right = roleFilter === 'All' && rolePretty ? ` (${rolePretty})` : '';
-                const label = `${left}${right}`;
-                return (
-                  <option key={u.userId} value={u.userId}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header */}
+        <header className="space-y-4">
+          <div>
+            <h1 className="text-2xl font-semibold dark:text-white">
+              Modules &amp; Permissions — User Overrides
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Fine-tune module permissions for specific users.
+            </p>
           </div>
 
+          {/* Controls row */}
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            {/* Left: project / role / user selects */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Project selector */}
+              <div className="relative inline-flex items-center min-w-48">
+                <select
+                  className="h-9 w-full rounded-full border border-emerald-300/70 bg-white/90 px-3 pr-8 text-xs font-medium text-slate-800 shadow-[0_0_0_1px_rgba(16,185,129,0.12)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent appearance-none dark:bg-neutral-900 dark:text-white dark:border-emerald-500/70 dark:shadow-[0_0_0_1px_rgba(45,212,191,0.25)]"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  aria-label="Select Project"
+                  disabled={!projects.length}
+                >
+                  {!projects.length && <option value="">No projects</option>}
+                  {projects.length > 0 && !projectId && (
+                    <option value="">— Select a project —</option>
+                  )}
+                  {projects.map((p) => {
+                    const tip = [
+                      p.code ? `Code: ${p.code}` : null,
+                      `Title: ${p.title}`,
+                      `Distt: ${p.distt ?? '-'}`,
+                      `Type: ${p.type ?? '-'}`,
+                    ].filter(Boolean).join(' | ');
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-2xl px-4 py-2 bg-indigo-600 text-white disabled:opacity-50"
-              onClick={onSave}
-              disabled={!canSave}
-            >
-              {saving ? 'Saving…' : 'Save Overrides'}
-            </button>
-            <button
-              className="rounded-2xl px-4 py-2 border"
-              onClick={onReset}
-              disabled={!projectId || !userId || loading}
-            >
-              Clear all to Inherit
-            </button>
+                    return (
+                      <option key={p.projectId} value={p.projectId} title={tip}>
+                        {p.title}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span className="pointer-events-none absolute right-2 text-emerald-500/80 dark:text-emerald-300/80">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 8l5 5 5-5" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Role filter */}
+              <div className="relative inline-flex items-center min-w-32">
+                <select
+                  className="h-9 w-full rounded-full border border-slate-200 bg-white/90 px-3 pr-8 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent appearance-none dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as RoleKey | 'All')}
+                  aria-label="Filter by Role"
+                  disabled={!projects.length}
+                  title="Filter the users list by role on this project"
+                >
+                  <option value="All">All Roles</option>
+                  {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <span className="pointer-events-none absolute right-2 text-slate-400 dark:text-slate-500">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 8l5 5 5-5" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* User selector — ONLY assigned users */}
+              <div className="relative inline-flex items-center min-w-56">
+                <select
+                  className="h-9 w-full rounded-full border border-slate-200 bg-white/90 px-3 pr-8 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent appearance-none dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  aria-label="Select User"
+                  disabled={!assignedUsers.length}
+                >
+                  {!assignedUsers.length && <option value="">No assigned users</option>}
+                  {assignedUsers.map((u) => {
+                    const code = (u.code ?? '').toString().trim();
+                    const name = (u.name ?? '').toString().trim();
+
+                    const rawRole = (u.role ?? '').toString().trim();
+                    const rolePretty = rawRole === 'IH_PMT' ? 'IH-PMT' : rawRole;
+
+                    const left = [code, name].filter(Boolean).join(' - ');
+                    const right = roleFilter === 'All' && rolePretty ? ` (${rolePretty})` : '';
+                    const label = `${left}${right}`;
+                    return (
+                      <option key={u.userId} value={u.userId}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span className="pointer-events-none absolute right-2 text-slate-400 dark:text-slate-500">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 8l5 5 5-5" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+
+            {/* Right: actions */}
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              <button
+                className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                onClick={onSave}
+                disabled={!canSave}
+              >
+                {saving ? 'Saving…' : 'Save Overrides'}
+              </button>
+              <button
+                className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                onClick={onReset}
+                disabled={!projectId || !userId || loading}
+              >
+                Clear all to Inherit
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {toast && <div className="text-sm text-emerald-700">{toast}</div>}
+        {/* Toast */}
+        {toast && (
+          <div className="rounded-full border border-emerald-200/70 bg-emerald-50/90 px-3 py-2 text-xs text-emerald-800 shadow-sm dark:border-emerald-800/70 dark:bg-emerald-900/40 dark:text-emerald-200">
+            {toast}
+          </div>
+        )}
 
-      {/* Grid */}
-      <section className="overflow-auto rounded-2xl border">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 sticky top-0">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">Module</th>
-              {ACTIONS.map((a) => (
-                <th key={a} className="px-3 py-3 font-medium text-center capitalize">
-                  {a}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {MODULES.map((m) => (
-              <tr key={m} className="border-t">
-                <td className="px-4 py-3 font-medium">{MODULE_LABELS[m]}</td>
-                {ACTIONS.map((a) => (
-                  <td key={a} className="px-3 py-3 text-center">
-                    {m === 'LTR' && (a === 'review' || a === 'approve') ? (
-                      <span className="text-xs text-gray-400">—</span>
-                    ) : (
-                      <div className="inline-flex items-center gap-3">
-                        {/* EXISTING RADIO BUTTONS (inherit / deny) */}
-                        <div className="inline-flex items-center gap-2">
-                          {/* Read-only base value for this project/role */}
-                          <span
-                            className={
-                              "text-[10px] rounded px-1.5 py-0.5 border " +
-                              (baseAllow[m][a] ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                                : "bg-gray-50 border-gray-200 text-gray-600")
-                            }
-                            title={`Project/Role matrix value: ${baseAllow[m][a] ? 'Yes' : 'No'}`}
-                          >
-                            {baseAllow[m][a] ? 'Yes' : 'No'}
-                          </span>
+        {/* Grid + explanation */}
+        <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 overflow-hidden">
+          <div className="overflow-x-auto thin-scrollbar">
+            <table className="min-w-full text-[13px] border-separate border-spacing-0">
+              <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wide text-slate-600 border-b border-slate-200 dark:text-slate-200 dark:border-neutral-700">
+                    Module
+                  </th>
+                  {ACTIONS.map((a) => (
+                    <th
+                      key={a}
+                      className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wide text-slate-600 text-center border-b border-slate-200 dark:text-slate-200 dark:border-neutral-700"
+                    >
+                      {a}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {MODULES.map((m) => (
+                  <tr
+                    key={m}
+                    className="border-b border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                      {MODULE_LABELS[m]}
+                    </td>
+                    {ACTIONS.map((a) => (
+                      <td
+                        key={a}
+                        className="px-3 py-2.5 text-center align-middle"
+                      >
+                        {m === 'LTR' && (a === 'review' || a === 'approve') ? (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        ) : (
+                          <div className="inline-flex items-center gap-3">
+                            {/* Base allow chip */}
+                            <span
+                              className={
+                                'text-[10px] rounded-full px-2 py-0.5 border ' +
+                                (baseAllow[m][a]
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-200'
+                                  : 'bg-gray-50 border-gray-200 text-gray-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-300')
+                              }
+                              title={`Project/role matrix value: ${baseAllow[m][a] ? 'Yes' : 'No'}`}
+                            >
+                              {baseAllow[m][a] ? 'Yes' : 'No'}
+                            </span>
 
-                          {/* Existing radios (unchanged behavior) */}
-                          {DENY_OPTIONS.map((opt) => {
-                            const checked = safeGet(matrix, m, a) === opt;
-                            const id = `${m}-${a}-${opt}`;
-                            return (
-                              <label key={opt} htmlFor={id} className="inline-flex items-center gap-1 cursor-pointer">
-                                <input
-                                  id={id}
-                                  type="radio"
-                                  name={`${m}-${a}`}
-                                  value={opt}
-                                  checked={checked}
-                                  onChange={() => onChangeCell(m, a, opt)}
-                                  aria-label={`${MODULE_LABELS[m]} ${a} ${opt}`}
-                                />
-                                <span className="text-xs capitalize">{opt}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-
-                      </div>
-                    )}
-                  </td>
-
-
+                            {/* Inherit / Deny radios */}
+                            <div className="inline-flex items-center gap-2">
+                              {DENY_OPTIONS.map((opt) => {
+                                const checked = safeGet(matrix, m, a) === opt;
+                                const id = `${m}-${a}-${opt}`;
+                                return (
+                                  <label
+                                    key={opt}
+                                    htmlFor={id}
+                                    className="inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <input
+                                      id={id}
+                                      type="radio"
+                                      name={`${m}-${a}`}
+                                      value={opt}
+                                      checked={checked}
+                                      onChange={() => onChangeCell(m, a, opt)}
+                                      aria-label={`${MODULE_LABELS[m]} ${a} ${opt}`}
+                                      className="h-3.5 w-3.5 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <span className="text-[11px] capitalize text-slate-700 dark:text-slate-200">
+                                      {opt}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+              </tbody>
+            </table>
+          </div>
 
-      <p className="text-xs text-gray-500">
-        User overrides are <b>deny-only</b>. Leaving a cell as <i>inherit</i> keeps the role template/project override
-        in effect. Letters (LTR) cannot be set to <b>review</b> or <b>approve</b>.
-      </p>
+          {/* Explanation line at the bottom, after table */}
+          <div className="border-t border-slate-200 dark:border-neutral-800 px-4 py-2.5">
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              User overrides are deny-only. Leaving a cell as inherit keeps the role template/project override in effect. Letters (LTR) cannot be set to review or approve.
+            </p>
+          </div>
+        </section>
+
+        {/* Thin scrollbar styling for this page (for horizontal scroll) */}
+        <style>
+          {`
+            .thin-scrollbar::-webkit-scrollbar {
+              height: 6px;
+              width: 6px;
+            }
+            .thin-scrollbar::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .thin-scrollbar::-webkit-scrollbar-thumb {
+              background-color: rgba(148, 163, 184, 0.7);
+              border-radius: 999px;
+            }
+            .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+              background-color: rgba(100, 116, 139, 0.9);
+            }
+          `}
+        </style>
+      </div>
     </div>
   );
 }

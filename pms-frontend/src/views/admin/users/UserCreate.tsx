@@ -10,26 +10,53 @@ type ProjectOpt = { projectId: string; title: string; code?: string | null };
 type CompanyOpt = {
   companyId: string;
   name: string;
-  companyRole?: "IH_PMT" | "IH-PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
+  companyRole?:
+    | "IH_PMT"
+    | "IH-PMT"
+    | "Contractor"
+    | "Consultant"
+    | "PMC"
+    | "Supplier"
+    | null;
 };
 
 /** Enums from prisma schema */
-const preferredLanguages = ["en", "hi", "bn", "ta", "te", "mr", "pa", "or", "gu", "kn", "ml"] as const;
+const preferredLanguages = [
+  "en",
+  "hi",
+  "bn",
+  "ta",
+  "te",
+  "mr",
+  "pa",
+  "or",
+  "gu",
+  "kn",
+  "ml",
+] as const;
 const zones = ["NCR", "North", "South", "East", "West", "Central"] as const;
 const statuses = ["Active", "Inactive"] as const;
-const companyRoles = ["IH_PMT", "Contractor", "Consultant", "PMC", "Supplier"] as const;
+const companyRoles = [
+  "IH_PMT",
+  "Contractor",
+  "Consultant",
+  "PMC",
+  "Supplier",
+] as const;
 
 export default function UserCreate() {
   const nav = useNavigate();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // ---------- CURRENT USER (who is creating) ----------
-  // Only show admin-privilege controls if the creator is Super Admin.
   const currentUser = (() => {
-    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
   })();
   const canGrantAdmin = !!currentUser?.isSuperAdmin;
-
 
   // ---------- Identity ----------
   const [firstName, setFirstName] = useState("");
@@ -65,21 +92,20 @@ export default function UserCreate() {
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
-  // compute the filtered list based on dropdown selection
   const filteredCompanies = useMemo(() => {
-    // normalize underscores/hyphens/case and accept server's "IH-PMT"
     const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
-    const filter = companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
+    const filter =
+      companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
     const f = normalize(filter || "");
-    return companies.filter(c => {
-      if (!f) return true; // no filter -> show all
+    return companies.filter((c) => {
+      if (!f) return true;
       return normalize(String(c.companyRole ?? "")) === f;
     });
   }, [companies, companyRoleFilter]);
+
   // ---------- UI ----------
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // Note modal
   const [showNote, setShowNote] = useState(false);
 
   // --- Auth gate simple check ---
@@ -94,7 +120,6 @@ export default function UserCreate() {
       try {
         const [{ data: s }, { data: p }, { data: c }] = await Promise.all([
           api.get("/admin/states"),
-          // api.get("/admin/projects", { params: { status: "Active" } }),
           api.get("/admin/projects"),
           api.get("/admin/companies-brief"),
         ]);
@@ -116,7 +141,9 @@ export default function UserCreate() {
     }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", { params: { stateId } });
+        const { data } = await api.get("/admin/districts", {
+          params: { stateId },
+        });
         setDistricts(Array.isArray(data) ? data : data?.districts || []);
       } catch (e: any) {
         setErr(e?.response?.data?.error || "Failed to load districts.");
@@ -132,27 +159,14 @@ export default function UserCreate() {
   const phoneClean = phone.replace(/\D/g, "");
   const pinClean = pin.replace(/\D/g, "");
 
-  const canSave =
-    firstName.trim().length > 0 &&
-    phoneClean.length >= 10; // basic India mobile check (10 digits)
+  const canSave = firstName.trim().length > 0 && phoneClean.length >= 10;
 
-  // const onPickCompanies = (e: React.ChangeEvent<HTMLSelectElement>) => {
-  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-  //   setSelectedCompanyIds(values);
-  // };
-
-  // const onPickProjects = (e: React.ChangeEvent<HTMLSelectElement>) => {
-  //   const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-  //   setSelectedProjectIds(values);
-  // };
   const normalizeDigits = (v: any) => String(v ?? "").replace(/\D/g, "");
   const pickUserByPhone = (list: any[], desiredDigits: string) => {
     if (!Array.isArray(list)) return null;
-    // try strict phone match first
     const exact = list.find((u) => normalizeDigits(u?.phone) === desiredDigits);
     if (exact) return exact;
 
-    // sometimes APIs keep countryCode separate; accept +91 + phone or countryCode "91"
     const exactWithCCode = list.find((u) => {
       const cc = normalizeDigits(u?.countryCode);
       const ph = normalizeDigits(u?.phone);
@@ -168,26 +182,22 @@ export default function UserCreate() {
       return;
     }
 
-    // Affiliation must be Client and/or Service Provider (not neither)
     if (!isClient && !isServiceProvider) {
       window.alert(
         "Affiliation required.\n\n" +
-        "Please mark the user as a Client and/or a Service Partner before creating."
+          "Please mark the user as a Client and/or a Service Partner before creating."
       );
-      return; // stop submit
+      return;
     }
 
-    //  If user is marked as a Service Provider but no companies are selected, warn & abort
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-        "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+          "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
-      return; // stop submit
+      return;
     }
 
-
-    // 1) Create user
     try {
       setSaving(true);
 
@@ -198,29 +208,21 @@ export default function UserCreate() {
         email: email || undefined,
         countryCode: "+91",
         phone: phoneClean,
-        preferredLanguage: preferredLanguage || undefined, // enum PreferredLanguage
-        userStatus: userStatus || "Active",               // enum UserStatus
-        profilePhoto: undefined as string | undefined,    // backend may ignore if we upload separately
-
-        // location:
+        preferredLanguage: preferredLanguage || undefined,
+        userStatus: userStatus || "Active",
+        profilePhoto: undefined as string | undefined,
         stateId: stateId || undefined,
         districtId: districtId || undefined,
         cityTown: cityTown || undefined,
         pin: pinClean || undefined,
-        operatingZone: operatingZone || undefined,        // enum OperatingZone
+        operatingZone: operatingZone || undefined,
         address: address || undefined,
-
-        // flags (top-level convenience):
         isClient,
         isServiceProvider,
-        ...(canGrantAdmin && makeSuperAdmin ? { isSuperAdmin: true as const } : {}),
-
+        ...(canGrantAdmin && makeSuperAdmin
+          ? { isSuperAdmin: true as const }
+          : {}),
       };
-
-      // Only a Super Admin can set this, backend enforces too.
-      // if (canGrantAdmin && makeSuperAdmin) {
-      //   createPayload.isSuperAdmin = true;
-      // }
 
       const createRes = await api.post("/admin/users", createPayload);
       if (!createRes?.data?.ok || !createRes?.data?.user?.userId) {
@@ -228,7 +230,6 @@ export default function UserCreate() {
       }
       const userId: string = createRes.data.user.userId;
 
-      // 2) Optional: upload profile photo
       if (profileFile) {
         const fd = new FormData();
         fd.append("file", profileFile);
@@ -237,12 +238,10 @@ export default function UserCreate() {
             headers: { "Content-Type": "multipart/form-data" },
           });
         } catch (e: any) {
-          // Photo upload failing should not block user creation — show a soft error
           console.warn("Profile photo upload failed:", e?.response?.data || e);
         }
       }
 
-      // 3) Affiliations (projects & companies)
       try {
         await api.post(`/admin/users/${userId}/affiliations`, {
           isClient,
@@ -254,7 +253,6 @@ export default function UserCreate() {
         console.warn("Affiliations save failed:", e?.response?.data || e);
       }
 
-      // 4) Grant Global Admin role if toggled (super admin only)
       if (canGrantAdmin && makeGlobalAdmin) {
         try {
           await api.post(`/admin/users/${userId}/roles`, {
@@ -264,76 +262,93 @@ export default function UserCreate() {
             canApprove: true,
           });
         } catch (e: any) {
-          // Do not block user creation; surface a soft notice
-          setRoleWarn(e?.response?.data?.error || "User created, but failed to grant Global Admin role.");
+          setRoleWarn(
+            e?.response?.data?.error ||
+              "User created, but failed to grant Global Admin role."
+          );
         }
       }
 
       nav("/admin/users", { replace: true });
     } catch (e: any) {
-      // Handle "existing phone" gracefully
       const httpStatus = e?.response?.status;
       const serverMsg = e?.response?.data?.error || e?.message || "";
 
       const looksLikeDuplicate =
-        httpStatus === 500 || httpStatus === 409 || /duplicate|exists/i.test(serverMsg);
+        httpStatus === 500 ||
+        httpStatus === 409 ||
+        /duplicate|exists/i.test(serverMsg);
 
       if (looksLikeDuplicate) {
         try {
-          const targetDigits = phoneClean; // already digits-only in your code
+          const targetDigits = phoneClean;
           let u: any | null = null;
 
-          // 1) Try /admin/users?phone=XXXXX (prefer exact match in results)
           try {
-            const res = await api.get("/admin/users", { params: { phone: targetDigits } });
-            const list = Array.isArray(res?.data) ? res.data : (res?.data?.users || []);
+            const res = await api.get("/admin/users", {
+              params: { phone: targetDigits },
+            });
+            const list = Array.isArray(res?.data)
+              ? res.data
+              : res?.data?.users || [];
             u = pickUserByPhone(list, targetDigits);
-          } catch { /* noop */ }
+          } catch {}
 
-          // 2) Lookup route
           if (!u) {
             try {
-              const res = await api.get("/admin/users/lookup", { params: { phone: targetDigits } });
+              const res = await api.get("/admin/users/lookup", {
+                params: { phone: targetDigits },
+              });
               const candidate = res?.data?.user;
-              if (candidate && normalizeDigits(candidate.phone) === targetDigits) {
+              if (
+                candidate &&
+                normalizeDigits(candidate.phone) === targetDigits
+              ) {
                 u = candidate;
               }
-            } catch { /* noop */ }
+            } catch {}
           }
 
-          // 3) Generic search, but STILL pick by exact phone digits
           if (!u) {
             try {
-              const res = await api.get("/admin/users", { params: { search: targetDigits } });
-              const list = Array.isArray(res?.data) ? res.data : (res?.data?.users || []);
+              const res = await api.get("/admin/users", {
+                params: { search: targetDigits },
+              });
+              const list = Array.isArray(res?.data)
+                ? res.data
+                : res?.data?.users || [];
               u = pickUserByPhone(list, targetDigits);
-            } catch { /* noop */ }
+            } catch {}
           }
 
           if (u?.userId) {
-            const fullName = [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ");
+            const fullName = [u.firstName, u.middleName, u.lastName]
+              .filter(Boolean)
+              .join(" ");
             const codeLine = u.userCode ? `Code: ${u.userCode}\n` : "";
-            const phoneLine = `Phone: +91 ${normalizeDigits(u.phone) || targetDigits}`;
+            const phoneLine = `Phone: +91 ${
+              normalizeDigits(u.phone) || targetDigits
+            }`;
 
             const proceedToEdit = window.confirm(
               "A user with this mobile number already exists.\n\n" +
-              `${codeLine}Name: ${fullName || "(no name)"}\n${phoneLine}\n\n` +
-              "Press OK to open that user's Edit page.\n" +
-              "Press Cancel to stay here — the save will be canceled."
+                `${codeLine}Name: ${
+                  fullName || "(no name)"
+                }\n${phoneLine}\n\n` +
+                "Press OK to open that user's Edit page.\n" +
+                "Press Cancel to stay here — the save will be canceled."
             );
 
             if (proceedToEdit) {
               nav(`/admin/users/${u.userId}/edit`, { replace: true });
             }
-            // Either way, stop this create flow.
             return;
           }
 
-          // If no exact match found, warn but don't redirect to a wrong user
           const openList = window.confirm(
             "A user with this mobile number already exists, but we couldn't fetch an exact match automatically.\n\n" +
-            `Phone: +91 ${targetDigits}\n\n` +
-            "Press OK to open the Users list, or Cancel to stay here (save canceled)."
+              `Phone: +91 ${targetDigits}\n\n` +
+              "Press OK to open the Users list, or Cancel to stay here (save canceled)."
           );
           if (openList) nav("/admin/users");
           return;
@@ -342,40 +357,47 @@ export default function UserCreate() {
         }
       }
 
-      // Default error handling (non-duplicate case)
       setErr(serverMsg || "Failed to create user");
       setSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Create User</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Fill the details below and save. First Name and Mobile number are mandatory fields.
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Create User
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
+              <span>
+                Fill the details below and save. First Name and Mobile number are mandatory fields.
+              </span>
+
+              {/* Info icon (replaces Note button functionality) */}
+              <button
+                type="button"
+                onClick={() => setShowNote(true)}
+                aria-label="Info"
+                title="Info"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              >
+                i
+              </button>
             </p>
           </div>
           <div className="flex gap-2">
-            {/* Note button (opens modal) */}
             <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-              onClick={() => setShowNote(true)}
-              type="button"
-            >
-              Note
-            </button>
-            <button
-              className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/users")}
+              type="button"
             >
               Cancel
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={submit}
               disabled={!canSave || saving}
             >
@@ -384,18 +406,36 @@ export default function UserCreate() {
           </div>
         </div>
 
-        {err && <div className="mb-3 text-sm text-red-700 dark:text-red-400">{err}</div>}
+        {err && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            {err}
+          </div>
+        )}
 
         {/* ========== Identity Block ========== */}
         <Section title="Identity">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Text label="First Name" value={firstName} setValue={setFirstName} required />
-            <Text label="Middle Name" value={middleName} setValue={setMiddleName} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Text
+              label="First Name"
+              value={firstName}
+              setValue={setFirstName}
+              required
+            />
+            <Text
+              label="Middle Name"
+              value={middleName}
+              setValue={setMiddleName}
+            />
             <Text label="Last Name" value={lastName} setValue={setLastName} />
-            <Text label="Email (optional)" type="email" value={email} setValue={setEmail} />
+            <Text
+              label="Email (optional)"
+              type="email"
+              value={email}
+              setValue={setEmail}
+            />
 
-            <div className="grid grid-cols-[5rem,1fr] gap-2">
-              <Text label="Code" value="+91" setValue={() => { }} disabled />
+            <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
+              <Text label="Code" value="+91" setValue={() => {}} disabled />
               <Text
                 label="Mobile (India)"
                 value={phone}
@@ -420,18 +460,21 @@ export default function UserCreate() {
 
             {/* Profile Photo Upload */}
             <div className="md:col-span-2">
-              <span className="block text-sm text-gray-700 dark:text-gray-300 mb-1">Profile Photo</span>
-              <div className="flex items-center gap-3">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Profile Photo
+              </span>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   ref={fileRef}
                   type="file"
                   accept="image/*"
                   onChange={(e) => setProfileFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border file:bg-white dark:file:bg-neutral-900 file:text-sm file:border-gray-300 dark:file:border-neutral-800"
+                  className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
                 />
                 {profileFile && (
                   <span className="text-xs text-gray-600 dark:text-gray-400">
-                    {profileFile.name} ({Math.round(profileFile.size / 1024)} KB)
+                    {profileFile.name} ({Math.round(profileFile.size / 1024)}{" "}
+                    KB)
                   </span>
                 )}
               </div>
@@ -439,24 +482,42 @@ export default function UserCreate() {
           </div>
 
           <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-            Name preview: <b className="dark:text-white">{namePreview || "(empty)"}</b>
+            Name preview:{" "}
+            <b className="text-slate-900 dark:text-white">
+              {namePreview || "(empty)"}
+            </b>
           </div>
         </Section>
 
         {/* ========== Location Block ========== */}
         <Section title="Location">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Select
               label="State / UT"
               value={stateId}
-              setValue={(v) => { setStateId(v); setDistrictId(""); }}
-              options={["", ...states.map(s => ({ value: s.stateId, label: `${s.name} (${s.code})` }))]}
+              setValue={(v) => {
+                setStateId(v);
+                setDistrictId("");
+              }}
+              options={[
+                "",
+                ...states.map((s) => ({
+                  value: s.stateId,
+                  label: `${s.name} (${s.code})`,
+                })),
+              ]}
             />
             <Select
               label="District"
               value={districtId}
               setValue={setDistrictId}
-              options={["", ...districts.map(d => ({ value: d.districtId, label: d.name }))]}
+              options={[
+                "",
+                ...districts.map((d) => ({
+                  value: d.districtId,
+                  label: d.name,
+                })),
+              ]}
               disabled={!stateId}
             />
             <Text label="City/Town" value={cityTown} setValue={setCityTown} />
@@ -476,7 +537,6 @@ export default function UserCreate() {
           </div>
         </Section>
 
-
         {/* ========== Affiliations Block ========== */}
         <Section title="Affiliations">
           <div className="space-y-6">
@@ -488,7 +548,6 @@ export default function UserCreate() {
                 </span>
                 <ToggleYN value={isClient} setValue={setIsClient} />
               </div>
-              {/* Project selection intentionally hidden */}
             </div>
 
             {/* Service Partner Companies */}
@@ -497,10 +556,12 @@ export default function UserCreate() {
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   Are you working for any of our Service Partner?
                 </span>
-                <ToggleYN value={isServiceProvider} setValue={setIsServiceProvider} />
+                <ToggleYN
+                  value={isServiceProvider}
+                  setValue={setIsServiceProvider}
+                />
               </div>
 
-              {/* Show company choices only when isServiceProvider = true */}
               {isServiceProvider && (
                 <div className="mt-3 space-y-3">
                   <div className="max-w-xs">
@@ -522,7 +583,11 @@ export default function UserCreate() {
                   <CheckboxGroup
                     label={
                       companyRoleFilter
-                        ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter}`
+                        ? `Select Company(ies) — ${
+                            companyRoleFilter === "IH_PMT"
+                              ? "IH-PMT"
+                              : companyRoleFilter
+                          }`
                         : "Select Company(ies)"
                     }
                     items={filteredCompanies.map((c) => ({
@@ -540,26 +605,33 @@ export default function UserCreate() {
                   )}
                 </div>
               )}
-
             </div>
           </div>
         </Section>
 
-        {/* ========== NEW: Admin Privileges (only Super Admin sees this) ========== */}
+        {/* ========== Admin Privileges (Super Admin only) ========== */}
         {canGrantAdmin && (
           <Section title="Admin Privileges (Super Admin only)">
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">Super Admin</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Super Admin
+                </span>
                 <ToggleYN value={makeSuperAdmin} setValue={setMakeSuperAdmin} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">Admin (Global)</span>
-                <ToggleYN value={makeGlobalAdmin} setValue={setMakeGlobalAdmin} />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Admin (Global)
+                </span>
+                <ToggleYN
+                  value={makeGlobalAdmin}
+                  setValue={setMakeGlobalAdmin}
+                />
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Super Admin has full platform access, including toggling audit logging and assigning roles.
-                Admin (Global) receives a global <code>Admin</code> role via role membership.
+                Super Admin has full platform access, including toggling audit
+                logging and assigning roles. Admin (Global) receives a global{" "}
+                <code>Admin</code> role via role membership.
               </p>
             </div>
           </Section>
@@ -568,13 +640,14 @@ export default function UserCreate() {
         {/* Footer actions */}
         <div className="mt-6 flex justify-end gap-2">
           <button
-            className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
             onClick={() => nav("/admin/users")}
+            type="button"
           >
             Cancel
           </button>
           <button
-            className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
             onClick={submit}
             disabled={!canSave || saving}
           >
@@ -582,17 +655,21 @@ export default function UserCreate() {
           </button>
         </div>
       </div>
+
       {/* NOTE MODAL */}
       {showNote && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           role="dialog"
           aria-modal="true"
           aria-labelledby="note-modal-title"
         >
-          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b dark:border-neutral-800">
-              <h2 id="note-modal-title" className="text-base font-semibold dark:text-white">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
+              <h2
+                id="note-modal-title"
+                className="text-base font-semibold text-slate-900 dark:text-white"
+              >
                 Note for Admins — Creating a New User
               </h2>
               <button
@@ -604,42 +681,77 @@ export default function UserCreate() {
               </button>
             </div>
 
-            <div className="px-5 py-4 text-sm space-y-3 text-gray-800 dark:text-gray-100">
-              <p><b>Required to save:</b> First Name and a 10-digit Indian mobile number.</p>
+            <div className="space-y-3 px-5 py-4 text-sm leading-6 text-gray-800 dark:text-gray-100">
+              <p>
+                <b>Required to save:</b> First Name and a 10-digit Indian mobile
+                number.
+              </p>
 
-              <p><b>Affiliation is mandatory:</b> Mark the person as Client and/or Service Partner.
-                (At least one must be selected.)</p>
+              <p>
+                <b>Affiliation is mandatory:</b> Mark the person as Client
+                and/or Service Partner. (At least one must be selected.)
+              </p>
 
-              <p>If you choose <b>Service Partner = Yes</b>, you must also pick at least one company from the list.</p>
+              <p>
+                If you choose <b>Service Partner = Yes</b>, you must also pick
+                at least one company from the list.
+              </p>
 
-              <p><b>Location fields</b> (State, District, City, PIN, Address) are helpful but optional.</p>
+              <p>
+                <b>Location fields</b> (State, District, City, PIN, Address) are
+                helpful but optional.
+              </p>
 
-              <p><b>Photo</b> upload is optional. If it fails, the user can still be created.</p>
+              <p>
+                <b>Photo</b> upload is optional. If it fails, the user can still
+                be created.
+              </p>
 
               <div className="space-y-2">
-                <p><b>If the mobile number already belongs to someone:</b></p>
-                <ul className="list-disc ml-5 space-y-1">
+                <p>
+                  <b>If the mobile number already belongs to someone:</b>
+                </p>
+                <ul className="ml-5 list-disc space-y-1">
                   <li>You’ll see a message with that person’s details.</li>
-                  <li><b>OK</b> takes you straight to that person’s <b>Edit</b> page so you can update them.</li>
-                  <li><b>Cancel</b> keeps you on this page and stops the save (no duplicate will be created).</li>
-                  <li>If we can’t clearly find the exact person, you can choose <b>OK</b> to open the Users list and search, or <b>Cancel</b> to stay here (save is canceled).</li>
+                  <li>
+                    <b>OK</b> takes you straight to that person’s <b>Edit</b>{" "}
+                    page so you can update them.
+                  </li>
+                  <li>
+                    <b>Cancel</b> keeps you on this page and stops the save (no
+                    duplicate will be created).
+                  </li>
+                  <li>
+                    If we can’t clearly find the exact person, you can choose{" "}
+                    <b>OK</b> to open the Users list and search, or{" "}
+                    <b>Cancel</b> to stay here (save is canceled).
+                  </li>
                 </ul>
               </div>
 
               <div className="space-y-2">
-                <p><b>For Super Admins only:</b></p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li>You’ll see extra switches for <b>Super Admin</b> and <b>Admin (Global)</b> access. Turning these on gives broader access; turning them off does not block creating the user.</li>
+                <p>
+                  <b>For Super Admins only:</b>
+                </p>
+                <ul className="ml-5 list-disc space-y-1">
+                  <li>
+                    You’ll see extra switches for <b>Super Admin</b> and{" "}
+                    <b>Admin (Global)</b> access. Turning these on gives broader
+                    access; turning them off does not block creating the user.
+                  </li>
                 </ul>
               </div>
 
-              <p><b>After a successful save:</b> you’ll be taken back to the Users page.</p>
+              <p>
+                <b>After a successful save:</b> you’ll be taken back to the
+                Users page.
+              </p>
             </div>
 
-            <div className="px-5 py-3 border-t dark:border-neutral-800 flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-neutral-800">
               <button
                 onClick={() => setShowNote(false)}
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                 type="button"
               >
                 Close
@@ -648,7 +760,6 @@ export default function UserCreate() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -657,17 +768,24 @@ export default function UserCreate() {
 
 const roleMatches = (value: string | null | undefined, filter: string) => {
   if (!filter) return true;
-  // normalize underscores/hyphens/case; also accept server's "IH-PMT"
   const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
   const filterApi = filter === "IH_PMT" ? "IH-PMT" : filter;
   return normalize(String(value ?? "")) === normalize(filterApi);
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mb-5">
-      <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-white">{title}</div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-5">
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+          {title}
+        </div>
         {children}
       </div>
     </section>
@@ -675,53 +793,95 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Text({
-  label, value, setValue, type = "text", required = false, placeholder, disabled = false
-}: { label: string; value: string; setValue: (v: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) {
+  label,
+  value,
+  setValue,
+  type = "text",
+  required = false,
+  placeholder,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">
-        {label}{required && <span className="text-red-600"> *</span>}
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+        {required && <span className="text-red-500"> *</span>}
       </span>
       <input
-        className="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
-        type={type} placeholder={placeholder} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        type={type}
+        placeholder={placeholder}
+        disabled={disabled}
       />
     </label>
   );
 }
 
 function TextArea({
-  label, value, setValue
-}: { label: string; value: string; setValue: (v: string) => void }) {
+  label,
+  value,
+  setValue,
+}: {
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+}) {
   return (
-    <label className="flex flex-col gap-1 md:col-span-2">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block md:col-span-2">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <textarea
-        className="border rounded px-3 py-2 min-h-[84px] dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} onChange={e => setValue(e.target.value)}
+        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
       />
     </label>
   );
 }
 
 function Select({
-  label, value, setValue, options, disabled = false
+  label,
+  value,
+  setValue,
+  options,
+  disabled = false,
 }: {
-  label: string; value: string; setValue: (v: string) => void; options: (string | { value: string; label: string })[]; disabled?: boolean
+  label: string;
+  value: string;
+  setValue: (v: string) => void;
+  options: (string | { value: string; label: string })[];
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
       <select
-        className="border rounded px-2 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        value={value} disabled={disabled}
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        value={value}
+        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
       >
         {options.map((o, i) => {
           const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? (o || "—") : o.label;
-          return <option key={v || `empty-${i}`} value={v}>{l || "—"}</option>;
+          const l = typeof o === "string" ? o || "—" : o.label;
+          return (
+            <option key={v || `empty-${i}`} value={v}>
+              {l || "—"}
+            </option>
+          );
         })}
       </select>
     </label>
@@ -748,11 +908,11 @@ function CheckboxGroup({
   };
 
   return (
-    <fieldset className="border rounded-2xl p-4 dark:border-neutral-800">
-      <legend className="text-sm text-gray-700 dark:text-gray-300 px-1">
+    <fieldset className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
         {label}
       </legend>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         {items.map((it) => (
           <label
             key={it.value}
@@ -760,7 +920,7 @@ function CheckboxGroup({
           >
             <input
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               checked={selected.includes(it.value)}
               onChange={() => toggle(it.value)}
             />
@@ -769,7 +929,7 @@ function CheckboxGroup({
         ))}
       </div>
       {items.length === 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           No options available.
         </div>
       )}
@@ -777,15 +937,23 @@ function CheckboxGroup({
   );
 }
 
-function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) => void }) {
+function ToggleYN({
+  value,
+  setValue,
+}: {
+  value: boolean;
+  setValue: (v: boolean) => void;
+}) {
   return (
-    <div className="inline-flex rounded-lg border dark:border-neutral-800 overflow-hidden">
+    <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-xs shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
       <button
         type="button"
         onClick={() => setValue(true)}
         className={
-          "px-3 py-1 text-sm " +
-          (value ? "bg-emerald-600 text-white" : "bg-white dark:bg-neutral-900")
+          "px-4 py-1.5 text-xs font-medium transition-colors " +
+          (value
+            ? "bg-emerald-600 text-white"
+            : "bg-transparent text-slate-700 dark:text-neutral-100")
         }
       >
         Yes
@@ -794,8 +962,10 @@ function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) 
         type="button"
         onClick={() => setValue(false)}
         className={
-          "px-3 py-1 text-sm " +
-          (!value ? "bg-emerald-600 text-white" : "bg-white dark:bg-neutral-900")
+          "px-4 py-1.5 text-xs font-medium transition-colors " +
+          (!value
+            ? "bg-emerald-600 text-white"
+            : "bg-transparent text-slate-700 dark:text-neutral-100")
         }
       >
         No
@@ -803,7 +973,7 @@ function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) 
     </div>
   );
 }
+
 function setRoleWarn(arg0: any) {
   throw new Error("Function not implemented.");
 }
-

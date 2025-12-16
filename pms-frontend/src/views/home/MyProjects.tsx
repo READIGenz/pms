@@ -1,5 +1,5 @@
 // pms-frontend/src/views/home/MyProjects.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../hooks/useAuth';
@@ -44,45 +44,45 @@ const normalizeRole = (raw?: string) => {
 
 // --- Role → WIR path resolver ---
 const wirPathForRole = (role: string, projectId: string) => {
-  switch (normalizeRole(role)) {
-    case 'Contractor': return `/home/contractor/projects/${projectId}/wir`;
-    case 'PMC':        return `/home/pmc/projects/${projectId}/wir`;
-    case 'IH-PMT':     return `/home/ihpmt/projects/${projectId}/wir`;
-    case 'Client':     return `/home/client/projects/${projectId}/wir`;     
-    default:           return `/home/projects/${projectId}/wir`;            
-  }
+    switch (normalizeRole(role)) {
+        case 'Contractor': return `/home/contractor/projects/${projectId}/wir`;
+        case 'PMC':        return `/home/pmc/projects/${projectId}/wir`;
+        case 'IH-PMT':     return `/home/ihpmt/projects/${projectId}/wir`;
+        case 'Client':     return `/home/client/projects/${projectId}/wir`;
+        default:           return `/home/projects/${projectId}/wir`;
+    }
 };
 
 const gotoWir = (
-  navigate: ReturnType<typeof useNavigate>,
-  role: string,
-  proj: Project
+    navigate: ReturnType<typeof useNavigate>,
+    role: string,
+    proj: Project
 ) => {
-  const path = wirPathForRole(role, proj.projectId);
-  navigate(path, {
-    state: {
-      role: normalizeRole(role),
-      project: {
-        projectId: proj.projectId,
-        code: proj.code,
-        title: proj.title,
-      },
-    },
-    replace: false,
-  });
+    const path = wirPathForRole(role, proj.projectId);
+    navigate(path, {
+        state: {
+            role: normalizeRole(role),
+            project: {
+                projectId: proj.projectId,
+                code: proj.code,
+                title: proj.title,
+            },
+        },
+        replace: false,
+    });
 };
 
 const projectRouteForRole = (role?: string, projectId?: string) => {
     const r = normalizeRole(role);
     switch (r) {
-        case 'Admin': return `/admin/projects/${projectId}`;
-        case 'Client': return `/client/projects/${projectId}`;
-        case 'IH-PMT': return `/ihpmt/projects/${projectId}`;
+        case 'Admin':      return `/admin/projects/${projectId}`;
+        case 'Client':     return `/client/projects/${projectId}`;
+        case 'IH-PMT':     return `/ihpmt/projects/${projectId}`;
         case 'Contractor': return `/contractor/projects/${projectId}`;
         case 'Consultant': return `/consultant/projects/${projectId}`;
-        case 'Supplier': return `/supplier/projects/${projectId}`;
-        case 'PMC': return `/pmc/projects/${projectId}`;
-        default: return `/projects/${projectId}`;
+        case 'Supplier':   return `/supplier/projects/${projectId}`;
+        case 'PMC':        return `/pmc/projects/${projectId}`;
+        default:           return `/projects/${projectId}`;
     }
 };
 
@@ -112,30 +112,53 @@ function Badge({ kind, value }: { kind: "status" | "health"; value?: string | nu
     let cls = "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700";
     if (kind === "status") {
         const map: Record<string, string> = {
-            Draft: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
-            Active: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-            OnHold: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+            Draft:     "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+            Active:    "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+            OnHold:    "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
             Completed: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
-            Archived: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
+            Archived:  "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
         };
         cls = map[v] || cls;
     } else {
         const map: Record<string, string> = {
-            Green: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-            Amber: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-            Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+            Green:   "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+            Amber:   "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+            Red:     "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
             Unknown: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
         };
         cls = map[v] || cls;
     }
 
-    return <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>{v}</span>;
+    return <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${cls}`}>{v}</span>;
 }
+
+/** Filter UI state (only visual right now) */
+type FilterState = {
+    status: string[];
+    stage: string[];
+    city: string[];
+    pm: string[];
+    health: string[];
+    schedule: string;
+    openForms: string;
+};
+type MultiFilterKey = 'status' | 'stage' | 'city' | 'pm' | 'health';
+
+const initialFilters: FilterState = {
+    status: [],
+    stage: [],
+    city: [],
+    pm: [],
+    health: [],
+    schedule: 'Any',
+    openForms: 'Any',
+};
 
 export default function MyProjects() {
     const { user, claims } = useAuth();
     const navigate = useNavigate();
 
+    // --- Profile display for top-right avatar & drawer ---
     const role =
         normalizeRole(
             (user as any)?.role ??
@@ -144,6 +167,27 @@ export default function MyProjects() {
             (claims as any)?.roleName ??
             ''
         );
+
+    const displayName =
+        (user as any)?.fullName ||
+        [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(' ') ||
+        (claims as any)?.name ||
+        role ||
+        'User';
+
+    const displayEmail =
+        (user as any)?.email ||
+        (claims as any)?.email ||
+        '';
+
+    const initials =
+        displayName
+            .split(' ')
+            .filter(Boolean)
+            .map((p: string) => p[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || 'U';
 
     const userId =
         (user as any)?.userId ??
@@ -157,6 +201,26 @@ export default function MyProjects() {
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
 
+    // UI-only state for group & quick chips
+    const [activeGroup, setActiveGroup] = useState<"None" | "Stage" | "City" | "PM">("None");
+    const [activeQuick, setActiveQuick] = useState<string | null>(null);
+
+    // Bottom sheet filter state
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [filters, setFilters] = useState<FilterState>(initialFilters);
+
+    // Profile drawer state
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [darkModePref, setDarkModePref] = useState(false);
+    const [language, setLanguage] = useState('English');
+    const [unitSystem, setUnitSystem] = useState<'SI' | 'Imperial'>('Imperial');
+
+    const handleSignOut = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        location.assign('/login');
+    };
+
     // ---- KPIs (computed from ALL projects, not the filtered list) ----
     const kpis = useMemo(() => {
         const total = all.length;
@@ -164,10 +228,10 @@ export default function MyProjects() {
 
         for (const p of all) {
             switch (canonicalStatus(p.status)) {
-                case 'Active': active++; break;
-                case 'OnHold': onHold++; break;
+                case 'Active':    active++;    break;
+                case 'OnHold':    onHold++;    break;
                 case 'Completed': completed++; break;
-                default: break; // ignore Draft/Archived/unknown for KPI strip
+                default: break;
             }
         }
 
@@ -237,7 +301,6 @@ export default function MyProjects() {
                         slice.map(async (p) => {
                             const { data: ares } = await api.get(`/admin/projects/${p.projectId}/assignments`);
                             const rows: any[] = Array.isArray(ares) ? ares : (ares?.assignments || []);
-                            // show only assignments that match the CHOSEN role (except Admin)
                             const chosen = normalizeRole(role);
                             const userHasRole = rows.some(r =>
                                 String(r.userId) === String(userId) &&
@@ -278,13 +341,9 @@ export default function MyProjects() {
                     if (i + CONCURRENCY < projectList.length) await sleep(50);
                 }
 
-                // Choose pool based on chosen role:
-                // - Client => clientProjects only
-                // - Admin / service-provider roles => svcProjects (already role-filtered above)
                 const chosen = normalizeRole(role);
                 const pool = chosen === 'Client' ? clientProjects : svcProjects;
 
-                // De-dupe (prefer enriched object with status and other fields if available)
                 const map = new Map<string, Project>();
                 pool.forEach(p => {
                     if (!p?.projectId) return;
@@ -340,115 +399,575 @@ export default function MyProjects() {
         });
     }, [all, search]);
 
+    const handleOpenProject = (p: Project) => {
+        gotoWir(navigate, role, p);
+    };
+
+    // ---- Filter helpers (UI only) ----
+    const toggleMultiFilter = (field: MultiFilterKey, value: string) => {
+        setFilters(prev => {
+            const exists = prev[field].includes(value);
+            const nextArr = exists
+                ? prev[field].filter(v => v !== value)
+                : [...prev[field], value];
+            return { ...prev, [field]: nextArr };
+        });
+    };
+
+    const setSingleFilter = (field: 'schedule' | 'openForms', value: string) => {
+        setFilters(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleClearFilters = () => {
+        setFilters(initialFilters);
+    };
+
+    const handleApplyFilters = () => {
+        // In future you can wire filters into `filtered` useMemo.
+        setIsFilterOpen(false);
+    };
+
+    // Options used in filter sheet (purely visual for now)
+    const STATUS_OPTIONS = ["Ongoing", "Completed"];
+    const STAGE_OPTIONS = ["Construction", "Fitout", "Design"];
+    const CITY_OPTIONS = ["Delhi", "Mumbai", "Goa", "Bengaluru", "Hyderabad", "Chennai"];
+    const PM_OPTIONS = ["Priya Sharma", "Arun Gupta", "Meera Iyer", "Rahul Verma", "Riya Sen", "Sanjay Rao"];
+    const HEALTH_OPTIONS = ["Good", "At Risk", "Delayed"];
+    const SCHEDULE_OPTIONS = ["Any", "Overdue", "Due in ≤7d", "Future (>7d)"];
+    const OPEN_FORM_OPTIONS = ["Any", "With forms", "No forms"];
+
     return (
-        <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-                <h1 className="text-lg sm:text-xl md:text-2xl font-semibold dark:text-white">My Projects</h1>
-                <button
-                    onClick={() => navigate(-1)}
-                    className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                >
-                    Back
-                </button>
-            </div>
+        <section className="bg-transparent">
+            <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-5">
 
+                {/* Header row: role + title + back + avatar */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {role || 'Contractor'}
+                            </p>
+                            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+                                My Projects
+                            </h1>
+                        </div>
+                    </div>
 
-            {/* ---- KPI strip ---- */}
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KPI label="Total" value={loading ? '—' : kpis.total} />
-                <KPI label="Active" value={loading ? '—' : kpis.active} tone="info" />
-                <KPI label="On Hold" value={loading ? '—' : kpis.onHold} tone="warn" />
-                <KPI label="Completed" value={loading ? '—' : kpis.completed} />
-            </div>
-
-            <div className="mt-4">
-                <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Search by code, title, client, city/state…"
-                    className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                />
-            </div>
-
-            {loading && (
-                <div className="mt-4 text-sm text-gray-700 dark:text-gray-300">Loading your projects…</div>
-            )}
-
-            {err && !loading && (
-                <div className="mt-4 text-sm text-red-700 dark:text-red-400">{err}</div>
-            )}
-
-            {!loading && !err && filtered.length === 0 && (
-                <div className="mt-6 text-sm text-gray-600 dark:text-gray-400">
-                    No projects yet. If you believe this is incorrect, contact your administrator.
-                </div>
-            )}
-
-            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filtered.map((p) => (
+                    {/* Profile avatar button */}
                     <button
-                        key={p.projectId}
-                        onClick={() => gotoWir(navigate, role, p)}   // <-- open WIR with state
-                        className="group text-left rounded-2xl border dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 sm:p-5 shadow-sm hover:shadow-md transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                        type="button"
+                        onClick={() => setProfileOpen(true)}
+                        className="h-9 w-9 rounded-full bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 shadow-sm flex items-center justify-center text-xs font-semibold text-slate-700 dark:text-neutral-100 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                        title={displayEmail || 'Account'}
                     >
-                        <div className="flex items-start gap-3 min-w-0">
-                            <div className="h-10 w-10 flex-shrink-0 rounded-xl grid place-items-center bg-emerald-100 text-emerald-700 dark:bg-neutral-800 dark:text-emerald-300">
-                                <svg width="20" height="20" viewBox="0 0 24 24" className="fill-current" aria-hidden="true">
-                                    <path d="M3 21h18v-2H3v2z" />
-                                    <path d="M5 19h14V8H5v11z" />
-                                    <path d="M9 10h2v2H9zM9 14h2v2H9zM13 10h2v2h-2zM13 14h2v2h-2z" />
-                                    <path d="M11 17h2v2h-2z" />
-                                </svg>
-                            </div>
-                            <div className="min-w-0">
-                                <div className="text-base sm:text-lg font-semibold dark:text-white truncate">
-                                    {p.code ? `${p.code} — ${p.title}` : p.title}
+                        {initials}
+                    </button>
+                </div>
+
+                {/* KPI cards row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <KPI label="Total" value={loading ? '—' : kpis.total} />
+                    <KPI label="Active" value={loading ? '—' : kpis.active} tone="info" />
+                    <KPI label="On Hold" value={loading ? '—' : kpis.onHold} tone="warn" />
+                    <KPI label="Completed" value={loading ? '—' : kpis.completed} />
+                </div>
+
+                {/* Search + Sort / Filter */}
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch">
+                    <div className="flex-1">
+                        <input
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Search project, code, title, client, city/state…"
+                            className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                        />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                        <button
+                            type="button"
+                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                        >
+                            Sort
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsFilterOpen(true)}
+                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                        >
+                            Filter
+                        </button>
+                    </div>
+                </div>
+
+                {/* Group & Quick chips (UI-only for now) */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Group</span>
+                        <div className="flex flex-wrap gap-2">
+                            {["None", "Stage", "City", "PM"].map(label => (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                        activeGroup === label
+                                            ? "bg-slate-900 text-white"
+                                            : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                                    }`}
+                                    onClick={() => setActiveGroup(label as any)}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Quick</span>
+                        <div className="flex flex-wrap gap-2">
+                            {["At Risk", "Delayed", "Ongoing", "Completed", "On Hold"].map(label => (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                        activeQuick === label
+                                            ? "bg-emerald-500 text-white"
+                                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
+                                    }`}
+                                    onClick={() => setActiveQuick(prev => prev === label ? null : label)}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Messages + Projects list */}
+                <div className="space-y-3 pt-1">
+                    {loading && (
+                        <div className="text-sm text-slate-500 dark:text-slate-300">
+                            Loading your projects…
+                        </div>
+                    )}
+
+                    {err && !loading && (
+                        <div className="text-sm text-rose-600 dark:text-rose-400">
+                            {err}
+                        </div>
+                    )}
+
+                    {!loading && !err && filtered.length === 0 && (
+                        <div className="text-sm text-slate-500 dark:text-slate-300">
+                            No projects yet. If you believe this is incorrect, contact your administrator.
+                        </div>
+                    )}
+
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        All Projects · {filtered.length}
+                    </p>
+
+                    {filtered.map((p) => (
+                        <div
+                            key={p.projectId}
+                            className="rounded-3xl bg-white dark:bg-neutral-900 shadow-sm border border-slate-100 dark:border-neutral-800 px-4 py-3 space-y-2"
+                        >
+                            {/* Top row: title + status/health */}
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                        {p.title}
+                                    </h3>
+                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                        {p.code ? `${p.code} · ` : ""}{p.clientCompanyName || ''}
+                                    </p>
                                 </div>
-                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                <div className="flex flex-col items-end gap-1">
                                     <Badge kind="status" value={p.status} />
                                     <Badge kind="health" value={p.health} />
                                 </div>
                             </div>
+
+                            {/* Middle row: chips */}
+                            <div className="flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                                {p.stage && (
+                                    <span className="rounded-full bg-slate-100 dark:bg-neutral-800 px-2 py-0.5">
+                                        Stage: {p.stage}
+                                    </span>
+                                )}
+                                {[p.cityTown, p.stateName].some(Boolean) && (
+                                    <span className="rounded-full bg-slate-100 dark:bg-neutral-800 px-2 py-0.5">
+                                        {[p.cityTown, p.stateName].filter(Boolean).join(", ")}
+                                    </span>
+                                )}
+                                {(p.startDate || p.plannedCompletionDate) && (
+                                    <span className="rounded-full bg-slate-100 dark:bg-neutral-800 px-2 py-0.5">
+                                        {fmtDate(p.startDate) || "—"} → {fmtDate(p.plannedCompletionDate) || "—"}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Bottom row: Open button */}
+                            <div className="pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenProject(p)}
+                                    className="w-full rounded-full border border-slate-200 dark:border-neutral-700 bg-slate-50 dark:bg-neutral-800 py-1.5 text-xs font-medium text-slate-800 dark:text-neutral-100 hover:bg-slate-100 dark:hover:bg-neutral-700"
+                                >
+                                    Open
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Bottom-sheet Filters panel */}
+            {isFilterOpen && (
+                <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30">
+                    <div className="w-full max-w-md rounded-t-3xl bg-slate-50 dark:bg-neutral-900 shadow-2xl border-t border-slate-100 dark:border-neutral-800">
+                        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-300/70 dark:bg-neutral-700" />
+                        <div className="px-4 pt-3 pb-4 max-h-[70vh] overflow-y-auto space-y-4">
+                            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                                Filters
+                            </h2>
+
+                            {/* Status */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Status</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {STATUS_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.status.includes(label)
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => toggleMultiFilter('status', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Stage */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Stage</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {STAGE_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.stage.includes(label)
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => toggleMultiFilter('stage', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* City */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">City</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {CITY_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.city.includes(label)
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => toggleMultiFilter('city', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Project Manager */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Project Manager</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {PM_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.pm.includes(label)
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => toggleMultiFilter('pm', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Health */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Health</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {HEALTH_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.health.includes(label)
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => toggleMultiFilter('health', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Schedule */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Schedule</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {SCHEDULE_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.schedule === label
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => setSingleFilter('schedule', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Open Forms */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Open Forms</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {OPEN_FORM_OPTIONS.map(label => (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                                filters.openForms === label
+                                                    ? "bg-slate-900 text-white"
+                                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                            }`}
+                                            onClick={() => setSingleFilter('openForms', label)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Summary rows (compact, mirrors modal Summary + key location/dates) */}
-                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs sm:text-[13px]">
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Stage</span>
-                                <span className="font-medium dark:text-white">{p.stage || "—"}</span>
-                            </div>
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Type</span>
-                                <span className="font-medium dark:text-white">{p.projectType || "—"}</span>
-                            </div>
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Structure</span>
-                                <span className="font-medium dark:text-white">{p.structureType || "—"}</span>
-                            </div>
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Contract</span>
-                                <span className="font-medium dark:text-white">{p.contractType || "—"}</span>
-                            </div>
-                            <div className="flex gap-2 sm:col-span-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Client</span>
-                                <span className="font-medium dark:text-white">{p.clientCompanyName || "—"}</span>
-                            </div>
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">City/State</span>
-                                <span className="font-medium dark:text-white">
-                                    {[p.cityTown, p.stateName].filter(Boolean).join(", ") || "—"}
-                                </span>
-                            </div>
-                            <div className="flex gap-2">
-                                <span className="text-gray-500 dark:text-gray-400 w-28">Dates</span>
-                                <span className="font-medium dark:text-white">
-                                    {fmtDate(p.startDate) || "—"} → {fmtDate(p.plannedCompletionDate) || "—"}
-                                </span>
+                        {/* Footer buttons */}
+                        <div className="flex gap-3 border-t border-slate-200 dark:border-neutral-800 px-4 py-3 bg-slate-50/80 dark:bg-neutral-900/90 rounded-b-3xl">
+                            <button
+                                type="button"
+                                onClick={handleClearFilters}
+                                className="flex-1 rounded-full border border-slate-200 bg-white py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                            >
+                                Clear
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleApplyFilters}
+                                className="flex-1 rounded-full bg-slate-900 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Profile drawer (same style family as Admin) */}
+            {profileOpen && (
+                <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
+                    <div className="h-full w-full max-w-sm bg-white dark:bg-neutral-900 rounded-l-3xl shadow-2xl flex flex-col">
+                        {/* Header card */}
+                        <div className="relative p-4 pb-5">
+                            <div className="h-24 w-full rounded-3xl bg-gradient-to-r from-sky-500 to-indigo-500" />
+                            <button
+                                type="button"
+                                onClick={() => setProfileOpen(false)}
+                                className="absolute top-4 right-4 h-7 w-7 rounded-full bg-white/90 flex items-center justify-center text-slate-700 shadow"
+                            >
+                                ✕
+                            </button>
+                            <div className="absolute left-6 top-10 flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-full bg-white/95 flex items-center justify-center text-xs font-semibold text-slate-800 shadow">
+                                    {initials}
+                                </div>
+                                <div className="text-white">
+                                    <div className="text-sm font-semibold">{displayName}</div>
+                                    {displayEmail && (
+                                        <div className="text-[11px] opacity-90">{displayEmail}</div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </button>
-                ))}
-            </div>
+
+                        {/* Menu items */}
+                        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 text-sm text-slate-800 dark:text-neutral-100">
+                            <DrawerItem
+                                icon="👤"
+                                label="Profile"
+                                description="View & edit your details"
+                            />
+                            <DrawerItem
+                                icon="🔔"
+                                label="Notifications"
+                                description="Alerts, reminders & approvals"
+                                badge="5"
+                            />
+                            <DrawerItem
+                                icon="💳"
+                                label="Payments"
+                                description="Billing, invoices & receipts"
+                            />
+                            <DrawerItem
+                                icon="🎨"
+                                label="Customization"
+                                description="Theme, home KPIs & layout"
+                            />
+
+                            <div className="pt-3">
+                                <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                    Preferences
+                                </p>
+                            </div>
+
+                            {/* Dark Mode toggle (UI only) */}
+                            <div className="flex items-center justify-between rounded-2xl px-3 py-2">
+                                <div className="flex items-center gap-3">
+                                    <IconBubble>🌙</IconBubble>
+                                    <div>
+                                        <div className="text-sm font-medium">Dark Mode</div>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setDarkModePref(v => !v)}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                                        darkModePref ? 'bg-slate-900' : 'bg-slate-300'
+                                    }`}
+                                >
+                                    <span
+                                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+                                            darkModePref ? 'translate-x-5' : 'translate-x-1'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
+
+                            {/* Language selector */}
+                            <div className="flex items-center justify-between rounded-2xl px-3 py-2">
+                                <div className="flex items-center gap-3">
+                                    <IconBubble>🌐</IconBubble>
+                                    <div>
+                                        <div className="text-sm font-medium">Language</div>
+                                        <div className="text-xs text-slate-500">Current: {language}</div>
+                                    </div>
+                                </div>
+                                <select
+                                    value={language}
+                                    onChange={e => setLanguage(e.target.value)}
+                                    className="text-xs rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm focus:outline-none"
+                                >
+                                    <option>English</option>
+                                    <option>Hindi</option>
+                                </select>
+                            </div>
+
+                            {/* Units toggle */}
+                            <div className="flex items-center justify-between rounded-2xl px-3 py-2">
+                                <div className="flex items-center gap-3">
+                                    <IconBubble>📏</IconBubble>
+                                    <div>
+                                        <div className="text-sm font-medium">Units</div>
+                                        <div className="text-xs text-slate-500">SI / Imperial</div>
+                                    </div>
+                                </div>
+                                <div className="inline-flex rounded-full bg-slate-100 p-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setUnitSystem('SI')}
+                                        className={`px-3 py-1 text-xs rounded-full ${
+                                            unitSystem === 'SI'
+                                                ? 'bg-white shadow text-slate-900'
+                                                : 'text-slate-500'
+                                        }`}
+                                    >
+                                        SI
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setUnitSystem('Imperial')}
+                                        className={`px-3 py-1 text-xs rounded-full ${
+                                            unitSystem === 'Imperial'
+                                                ? 'bg-white shadow text-slate-900'
+                                                : 'text-slate-500'
+                                        }`}
+                                    >
+                                        Imperial
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Legal & settings */}
+                            <div className="pt-3">
+                                <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                    Legal &amp; Settings
+                                </p>
+                            </div>
+                            <DrawerItem
+                                icon="⚙️"
+                                label="Settings"
+                                description="App & security preferences"
+                            />
+                            <DrawerItem
+                                icon="🛡️"
+                                label="Privacy Policy"
+                                description="Data usage & permissions"
+                            />
+                            <DrawerItem
+                                icon="📄"
+                                label="Disclaimer"
+                                description="Legal disclaimer & terms"
+                            />
+
+                            {/* Sign out button */}
+                            <button
+                                type="button"
+                                onClick={handleSignOut}
+                                className="mt-4 w-full rounded-full border border-rose-200 bg-rose-50 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                            >
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
@@ -465,17 +984,61 @@ function KPI({
 }) {
     const toneClasses =
         tone === 'info'
-            ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+            ? 'border-sky-100 bg-white text-sky-700 shadow-sm dark:bg-neutral-900 dark:border-sky-900/40 dark:text-sky-300'
             : tone === 'warn'
-                ? 'bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
+                ? 'border-amber-100 bg-white text-amber-700 shadow-sm dark:bg-neutral-900 dark:border-amber-900/40 dark:text-amber-300'
                 : tone === 'alert'
-                    ? 'bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200'
-                    : 'bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200';
+                    ? 'border-rose-100 bg-white text-rose-700 shadow-sm dark:bg-neutral-900 dark:border-rose-900/40 dark:text-rose-300'
+                    : 'border-slate-100 bg-white text-slate-800 shadow-sm dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-200';
 
     return (
-        <div className={`rounded-xl border dark:border-neutral-800 p-3 sm:p-4 ${toneClasses}`}>
-            <div className="text-xs sm:text-sm opacity-80">{label}</div>
-            <div className="text-xl sm:text-2xl font-semibold mt-1">{value}</div>
+        <div className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 ${toneClasses}`}>
+            <div className="text-[11px] sm:text-xs opacity-80">{label}</div>
+            <div className="text-lg sm:text-xl font-semibold mt-1">{value}</div>
         </div>
+    );
+}
+
+/* --- Small circular icon bubble (used in drawer) --- */
+function IconBubble({ children }: { children: ReactNode }) {
+    return (
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 text-sm">
+            {children}
+        </span>
+    );
+}
+
+/* --- Drawer row with leading icon (used in profile drawer) --- */
+function DrawerItem({
+    label,
+    description,
+    badge,
+    icon,
+}: {
+    label: string;
+    description: string;
+    badge?: string;
+    icon: ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-800"
+        >
+            <div className="flex items-center gap-3">
+                <IconBubble>{icon}</IconBubble>
+                <div className="text-left">
+                    <div className="text-sm font-medium">{label}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {description}
+                    </div>
+                </div>
+            </div>
+            {badge && (
+                <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+                    {badge}
+                </span>
+            )}
+        </button>
     );
 }

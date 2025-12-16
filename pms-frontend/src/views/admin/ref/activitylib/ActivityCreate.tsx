@@ -35,7 +35,7 @@ export type RefActivity = {
   nature: string[];
   method: string[];
   version: number;
-    versionLabel?: string | null; // NEW
+  versionLabel?: string | null; // NEW
   notes: string | null;
   status: ActivityStatus;
   updatedAt: string; // ISO
@@ -164,7 +164,7 @@ export default function ActivityCreate() {
     nature: [],
     method: [],
     version: 1,
-      versionLabel: "1.0.0",
+    versionLabel: "1.0.0",
     notes: "",
     status: "Draft",
     updatedAt: new Date().toISOString(),
@@ -185,58 +185,59 @@ export default function ActivityCreate() {
     setSaving(true);
     try {
       const out: any = {};
-const copyFields = [
-  "code",
-  "title",
-  "discipline",
-  "stageLabel",
-  "phase",
-  "element",
-  "system",
-  "nature",
-  "method",
-  "notes",
-  "status",
-] as const;
-copyFields.forEach((k) => (out[k] = (form as any)[k]));
+      const copyFields = [
+        "code",
+        "title",
+        "discipline",
+        "stageLabel",
+        "phase",
+        "element",
+        "system",
+        "nature",
+        "method",
+        "notes",
+        "status",
+      ] as const;
+      copyFields.forEach((k) => (out[k] = (form as any)[k]));
 
-["system", "nature", "method", "phase", "element"].forEach((k) => {
-  out[k] = Array.isArray(out[k]) ? out[k] : [];
-});
-["code", "title", "stageLabel", "notes"].forEach((k) => {
-  if (out[k] != null) out[k] = String(out[k]).trim();
-});
+      ["system", "nature", "method", "phase", "element"].forEach((k) => {
+        out[k] = Array.isArray(out[k]) ? out[k] : [];
+      });
+      ["code", "title", "stageLabel", "notes"].forEach((k) => {
+        if (out[k] != null) out[k] = String(out[k]).trim();
+      });
 
-// --- NEW: prefer versionLabel; keep legacy version as fallback if you want ---
-const vLabel = (form as any).versionLabel;
-out.versionLabel =
-  typeof vLabel === "string"
-    ? vLabel.trim()
-    : (form.version != null ? String(form.version) : null);
+      // --- NEW: prefer versionLabel; keep legacy version as fallback if you want ---
+      const vLabel = (form as any).versionLabel;
+      out.versionLabel =
+        typeof vLabel === "string"
+          ? vLabel.trim()
+          : form.version != null
+          ? String(form.version)
+          : null;
 
-// Optional legacy numeric (harmless for backend; can remove if you like)
-const vNum = Number((form as any).version);
-out.version = Number.isFinite(vNum) ? vNum : 1;
+      // Optional legacy numeric (harmless for backend; can remove if you like)
+      const vNum = Number((form as any).version);
+      out.version = Number.isFinite(vNum) ? vNum : 1;
 
-// Normalize empties
-if (out.code === "") out.code = null;
-if (out.stageLabel === "") out.stageLabel = null;
-if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
+      // Normalize empties
+      if (out.code === "") out.code = null;
+      if (out.stageLabel === "") out.stageLabel = null;
+      if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
 
-// Validate semver format for 1 / 1.2 / 1.2.3
-const problems: string[] = [];
-const v = out.versionLabel?.trim();
-if (v && !/^\d+(?:\.\d+){0,2}$/.test(v)) {
-  problems.push("Version must be 1, 1.2, or 1.2.3.");
-}
-if (!out.title) problems.push("Title is required.");
-if (!out.discipline) problems.push("Discipline is required.");
-if (problems.length) {
-  setErr(problems.join(" "));
-  setSaving(false);
-  return;
-}
-
+      // Validate semver format for 1 / 1.2 / 1.2.3
+      const problems: string[] = [];
+      const v = out.versionLabel?.trim();
+      if (v && !/^\d+(?:\.\d+){0,2}$/.test(v)) {
+        problems.push("Version must be 1, 1.2, or 1.2.3.");
+      }
+      if (!out.title) problems.push("Title is required.");
+      if (!out.discipline) problems.push("Discipline is required.");
+      if (problems.length) {
+        setErr(problems.join(" "));
+        setSaving(false);
+        return;
+      }
 
       await api.post(`/admin/ref/activities`, out);
       nav("/admin/ref/activitylib", { replace: true, state: { refresh: true } });
@@ -245,7 +246,9 @@ if (problems.length) {
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to create activity.";
+          : e?.response?.data?.error ||
+            e?.message ||
+            "Failed to create activity.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -257,28 +260,29 @@ if (problems.length) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-50 to-indigo-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
       <div className="mx-auto max-w-4xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Create Activity
             </h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              {form.code ? `${form.code} • ` : ""}{form.title || "New activity"}
+              {form.code ? `${form.code} • ` : ""}
+              {form.title || "New activity"}
             </p>
           </div>
           <div className="flex gap-2">
             <button
-              className="px-3 py-2 rounded border text-sm hover:bg-gray-50 dark:border-neutral-800 dark:hover:bg-neutral-800"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/ref/activitylib")}
               type="button"
             >
               Back
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm disabled:opacity-60"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
               onClick={handleSave}
               type="button"
               disabled={!canSave || !!saving}
@@ -290,7 +294,7 @@ if (problems.length) {
 
         {/* Flash error */}
         {err && (
-          <div className="mb-4 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
@@ -306,11 +310,14 @@ if (problems.length) {
                 placeholder="e.g., RCC-610"
               />
               <Input
-  label="Version (e.g., 1, 1.2, 1.2.3)"
-  value={(form.versionLabel ?? (form.version != null ? String(form.version) : "")) as string}
-  onChange={(v) => setField("versionLabel", v as any)}
-  placeholder="1.2.3"
-/>
+                label="Version (e.g., 1, 1.2, 1.2.3)"
+                value={
+                  (form.versionLabel ??
+                    (form.version != null ? String(form.version) : "")) as string
+                }
+                onChange={(v) => setField("versionLabel", v as any)}
+                placeholder="1.2.3"
+              />
 
               <SelectStrict
                 label="Status"
@@ -319,6 +326,7 @@ if (problems.length) {
                 options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
               />
               <div />
+
               <Input
                 label="Title"
                 value={form.title ?? ""}
@@ -335,7 +343,10 @@ if (problems.length) {
                 label="Stage"
                 value={form.stageLabel ?? ""}
                 onChange={(v) => setField("stageLabel", (v || "") as any)}
-                options={["", ...(form.discipline ? stageOptions : [])].map((s) => ({
+                options={[
+                  "",
+                  ...(form.discipline ? stageOptions : []),
+                ].map((s) => ({
                   value: s,
                   label: s || "—",
                 }))}
@@ -400,13 +411,19 @@ if (problems.length) {
 }
 
 /* ========================= Small UI bits ========================= */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mb-2">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-2">
-        {title}
-      </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+          {title}
+        </div>
         {children}
       </div>
     </section>
@@ -430,11 +447,11 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <input
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -460,11 +477,11 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <textarea
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring resize-y"
+        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -489,11 +506,11 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <select
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -521,6 +538,7 @@ function TagPicker({
 }) {
   const norm = (s: string) => s.trim().toLowerCase();
   const selectedSet = new Set(selected.map(norm));
+
   const toggle = (v: string) => {
     const has = selectedSet.has(norm(v));
     const next = has
@@ -528,26 +546,30 @@ function TagPicker({
       : [...selected, v];
     onChange(next);
   };
+
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {label}
       </div>
       <div className="flex flex-wrap gap-2">
-        {all.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => toggle(v)}
-            className={`px-2 py-1 rounded-full border text-xs ${
-              selectedSet.has(norm(v))
-                ? "bg-neutral-900 text-white border-neutral-800 dark:bg-white dark:text-neutral-900"
-                : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:border-neutral-800"
-            }`}
-          >
-            {v}
-          </button>
-        ))}
+        {all.map((v) => {
+          const active = selectedSet.has(norm(v));
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => toggle(v)}
+              className={
+                active
+                  ? "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                  : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              }
+            >
+              {v}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

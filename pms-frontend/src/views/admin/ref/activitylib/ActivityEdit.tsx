@@ -172,18 +172,23 @@ export default function ActivityEdit() {
           system: Array.isArray(data?.system) ? [...data.system] : [],
           nature: Array.isArray(data?.nature) ? [...data.nature] : [],
           method: Array.isArray(data?.method) ? [...data.method] : [],
-            versionLabel: data?.versionLabel ?? (data?.version != null ? String(data.version) : "1.0.0"),
-
+          versionLabel:
+            data?.versionLabel ??
+            (data?.version != null ? String(data.version) : "1.0.0"),
         });
       } catch (e: any) {
         // Like the other file: show error; do not force logout on 401 during GET
-        setErr(e?.response?.data?.error || e?.message || "Failed to load activity.");
+        setErr(
+          e?.response?.data?.error || e?.message || "Failed to load activity."
+        );
       } finally {
         if (alive) setLoading(false);
       }
     }
     run();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   const canSave = !!(form?.title && form?.discipline);
@@ -202,68 +207,74 @@ export default function ActivityEdit() {
     try {
       // Normalize like in ActivityLib.normalizeForSubmit
       const out: any = {};
-const copyFields = [
-  "code",
-  "title",
-  "discipline",
-  "stageLabel",
-  "phase",
-  "element",
-  "system",
-  "nature",
-  "method",
-  "notes",
-  "status",
-] as const;
-copyFields.forEach((k) => (out[k] = (form as any)[k]));
+      const copyFields = [
+        "code",
+        "title",
+        "discipline",
+        "stageLabel",
+        "phase",
+        "element",
+        "system",
+        "nature",
+        "method",
+        "notes",
+        "status",
+      ] as const;
+      copyFields.forEach((k) => (out[k] = (form as any)[k]));
 
-["system", "nature", "method", "phase", "element"].forEach((k) => {
-  out[k] = Array.isArray(out[k]) ? out[k] : [];
-});
-["code", "title", "stageLabel", "notes"].forEach((k) => {
-  if (out[k] != null) out[k] = String(out[k]).trim();
-});
+      ["system", "nature", "method", "phase", "element"].forEach((k) => {
+        out[k] = Array.isArray(out[k]) ? out[k] : [];
+      });
+      ["code", "title", "stageLabel", "notes"].forEach((k) => {
+        if (out[k] != null) out[k] = String(out[k]).trim();
+      });
 
-// --- NEW: prefer versionLabel; keep legacy numeric for compatibility ---
-const vLabel = (form as any).versionLabel;
-out.versionLabel =
-  typeof vLabel === "string"
-    ? vLabel.trim()
-    : (form.version != null ? String(form.version) : null);
+      // --- NEW: prefer versionLabel; keep legacy numeric for compatibility ---
+      const vLabel = (form as any).versionLabel;
+      out.versionLabel =
+        typeof vLabel === "string"
+          ? vLabel.trim()
+          : form.version != null
+          ? String(form.version)
+          : null;
 
-// Optional: keep sending numeric version (backend can ignore or use as legacy)
-const vNum = Number((form as any).version);
-out.version = Number.isFinite(vNum) ? vNum : 1;
+      // Optional: keep sending numeric version (backend can ignore or use as legacy)
+      const vNum = Number((form as any).version);
+      out.version = Number.isFinite(vNum) ? vNum : 1;
 
-// Normalize empties / status
-if (out.code === "") out.code = null;
-if (out.stageLabel === "") out.stageLabel = null;
-if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
+      // Normalize empties / status
+      if (out.code === "") out.code = null;
+      if (out.stageLabel === "") out.stageLabel = null;
+      if (!STATUS_OPTIONS.includes(out.status)) out.status = "Draft";
 
-// Validate semver label: allow 1 or 1.2 or 1.2.3
-const problems: string[] = [];
-const vl = out.versionLabel?.trim();
-if (vl && !/^\d+(?:\.\d+){0,2}$/.test(vl)) {
-  problems.push("Version must be 1, 1.2, or 1.2.3.");
-}
-if (!out.title) problems.push("Title is required.");
-if (!out.discipline) problems.push("Discipline is required.");
+      // Validate semver label: allow 1 or 1.2 or 1.2.3
+      const problems: string[] = [];
+      const vl = out.versionLabel?.trim();
+      if (vl && !/^\d+(?:\.\d+){0,2}$/.test(vl)) {
+        problems.push("Version must be 1, 1.2, or 1.2.3.");
+      }
+      if (!out.title) problems.push("Title is required.");
+      if (!out.discipline) problems.push("Discipline is required.");
 
-if (problems.length) {
-  setErr(problems.join(" "));
-  setSaving(false);
-  return;
-}
+      if (problems.length) {
+        setErr(problems.join(" "));
+        setSaving(false);
+        return;
+      }
 
       await api.patch(`/admin/ref/activities/${id}`, out);
-      nav("/admin/ref/activitylib", { replace: true, state: { refresh: true } });
+      nav("/admin/ref/activitylib", {
+        replace: true,
+        state: { refresh: true },
+      });
     } catch (e: any) {
-      
       const s = e?.response?.status;
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error || e?.message || "Failed to save activity.";
+          : e?.response?.data?.error ||
+            e?.message ||
+            "Failed to save activity.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -284,11 +295,12 @@ if (problems.length) {
   if (err) {
     return (
       <div className="p-6">
-        <div className="mb-3 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+        <div className="mb-3 p-3 rounded-xl text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
           {err}
         </div>
         <button
-          className="px-3 py-2 rounded border text-sm dark:border-neutral-800"
+          className="px-3 py-2 rounded-xl border text-sm bg-white hover:bg-gray-50 border-gray-200
+                     dark:bg-neutral-900 dark:border-neutral-800 dark:hover:bg-neutral-800"
           onClick={() => nav(-1)}
         >
           Back
@@ -299,12 +311,12 @@ if (problems.length) {
   if (!form) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-50 to-indigo-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-yellow-50 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
       <div className="mx-auto max-w-4xl">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
               Edit Activity
             </h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -313,14 +325,17 @@ if (problems.length) {
           </div>
           <div className="flex gap-2">
             <button
-              className="px-3 py-2 rounded border text-sm hover:bg-gray-50 dark:border-neutral-800 dark:hover:bg-neutral-800"
+              className="px-3.5 py-2 rounded-xl border text-sm font-medium
+                         bg-white hover:bg-gray-50 border-gray-200 hover:border-gray-300
+                         dark:bg-neutral-900 dark:border-neutral-800 dark:text-gray-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/ref/activitylib")}
               type="button"
             >
               Back
             </button>
             <button
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm disabled:opacity-60"
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium
+                         shadow-sm disabled:opacity-60 disabled:hover:bg-emerald-600"
               onClick={handleSave}
               type="button"
               disabled={!canSave || !!saving}
@@ -332,7 +347,7 @@ if (problems.length) {
 
         {/* Flash error */}
         {err && (
-          <div className="mb-4 p-3 rounded-lg text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+          <div className="mb-4 p-3 rounded-xl text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
             {err}
           </div>
         )}
@@ -348,11 +363,14 @@ if (problems.length) {
                 placeholder="e.g., RCC-610"
               />
               <Input
-  label="Version (e.g., 1, 1.2, 1.2.3)"
-  value={(form.versionLabel ?? (form.version != null ? String(form.version) : "")) as string}
-  onChange={(v) => setField("versionLabel", v as any)}
-  placeholder="1.2.3"
-/>
+                label="Version (e.g., 1, 1.2, 1.2.3)"
+                value={
+                  (form.versionLabel ??
+                    (form.version != null ? String(form.version) : "")) as string
+                }
+                onChange={(v) => setField("versionLabel", v as any)}
+                placeholder="1.2.3"
+              />
 
               <SelectStrict
                 label="Status"
@@ -377,10 +395,12 @@ if (problems.length) {
                 label="Stage"
                 value={form.stageLabel ?? ""}
                 onChange={(v) => setField("stageLabel", (v || "") as any)}
-                options={["", ...(form.discipline ? stageOptions : [])].map((s) => ({
-                  value: s,
-                  label: s || "—",
-                }))}
+                options={["", ...(form.discipline ? stageOptions : [])].map(
+                  (s) => ({
+                    value: s,
+                    label: s || "—",
+                  })
+                )}
                 placeholder="— Select Stage —"
               />
             </div>
@@ -442,13 +462,19 @@ if (problems.length) {
 }
 
 /* ========================= Small UI bits ========================= */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="mb-2">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-2">
         {title}
       </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-emerald-100/60 dark:border-neutral-800 p-4 sm:p-5">
         {children}
       </div>
     </section>
@@ -472,11 +498,15 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
         {label}
       </span>
       <input
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
+                   outline-none transition
+                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
+                   disabled:opacity-60
+                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -502,11 +532,14 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
         {label}
       </span>
       <textarea
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring resize-y"
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
+                   outline-none transition resize-y
+                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
+                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -531,11 +564,14 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
         {label}
       </span>
       <select
-        className="w-full px-3 py-2 rounded-md border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
+                   outline-none transition
+                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
+                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -570,26 +606,31 @@ function TagPicker({
       : [...selected, v];
     onChange(next);
   };
+
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
         {label}
       </div>
       <div className="flex flex-wrap gap-2">
-        {all.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => toggle(v)}
-            className={`px-2 py-1 rounded-full border text-xs ${
-              selectedSet.has(norm(v))
-                ? "bg-neutral-900 text-white border-neutral-800 dark:bg-white dark:text-neutral-900"
-                : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:border-neutral-800"
-            }`}
-          >
-            {v}
-          </button>
-        ))}
+        {all.map((v) => {
+          const active = selectedSet.has(norm(v));
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => toggle(v)}
+              className={[
+                "px-2.5 py-1 rounded-full border text-xs font-medium transition",
+                active
+                  ? "bg-neutral-900 text-white border-neutral-900 shadow-sm dark:bg-white dark:text-neutral-900 dark:border-white"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300 dark:bg-neutral-950 dark:text-gray-200 dark:border-neutral-800 dark:hover:bg-neutral-800",
+              ].join(" ")}
+            >
+              {v}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
