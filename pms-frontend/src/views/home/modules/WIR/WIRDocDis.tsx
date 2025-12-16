@@ -1599,6 +1599,10 @@ export default function WIRDocDis() {
                                                         Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
                                                     </span>
                                                 </div>
+                                                <div className="text-[12px] text-gray-700 dark:text-gray-300">
+                                                    <span className="font-medium">Inspector remarks:</span>{" "}
+                                                    {row.inspectorRemarks || "—"}
+                                                </div>
                                                 <div className="pt-1">
                                                     <button
                                                         onClick={() => setFinalizeOpen(true)}
