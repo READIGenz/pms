@@ -486,6 +486,7 @@ function ItemsEditor({
                 }
               >
                 <option value="<=">Less than Equal (≤)</option>
+                <option value=">=">Greater than Equal (≥)</option>
                 <option value="+-">Range (±)</option>
                 <option value="=">Equal (=)</option>
               </Select>

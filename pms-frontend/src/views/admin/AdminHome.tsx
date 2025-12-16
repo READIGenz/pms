@@ -1,6 +1,6 @@
 // pms-frontend/src/views/admin/AdminHome.tsx
-import { useEffect } from 'react';
-import { Outlet, useLocation, Navigate, NavLink } from 'react-router-dom';
+import { useEffect } from "react";
+import { Outlet, useLocation, Navigate, NavLink } from "react-router-dom";
 
 function decodeJwtPayload(token: string): any | null {
   try {
@@ -9,19 +9,26 @@ function decodeJwtPayload(token: string): any | null {
     const norm = b64.replace(/-/g, "+").replace(/_/g, "/");
     const pad = norm.length % 4 ? "=".repeat(4 - (norm.length % 4)) : "";
     return JSON.parse(atob(norm + pad));
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export default function AdminHome() {
   // client-side guard
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem("token");
   const loc = useLocation();
-const payload = token ? decodeJwtPayload(token) : null;
-const isSuperAdmin = !!payload?.isSuperAdmin;
+  const payload = token ? decodeJwtPayload(token) : null;
+  const isSuperAdmin = !!payload?.isSuperAdmin;
 
+  const handleSignOut = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    location.assign("/login");
+  };
 
   useEffect(() => {
-    document.title = 'Trinity PMS — Admin';
+    document.title = "Trinity PMS — Admin";
   }, []);
 
   if (!token) return <Navigate to="/login" state={{ from: loc }} replace />;
@@ -40,7 +47,11 @@ const isSuperAdmin = !!payload?.isSuperAdmin;
       end={end}
       className={({ isActive }) =>
         `w-full text-left px-3 py-2 rounded text-sm transition flex items-center gap-2
-        ${isActive ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-50 dark:hover:bg-neutral-800'}`
+        ${
+          isActive
+            ? "bg-emerald-600 text-white"
+            : "hover:bg-emerald-50 dark:hover:bg-neutral-800"
+        }`
       }
     >
       {/* tiny pill icon to keep visual rhythm */}
@@ -57,28 +68,43 @@ const isSuperAdmin = !!payload?.isSuperAdmin;
           {/* Brand */}
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 grid place-items-center shadow">
-              <svg width="22" height="22" viewBox="0 0 24 24" role="img" aria-hidden="true">
-                <path d="M12 2C9 6 7 8.5 7 11a5 5 0 1 0 10 0c0-2.5-2-5-5-9z" className="fill-white/95" />
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                role="img"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 2C9 6 7 8.5 7 11a5 5 0 1 0 10 0c0-2.5-2-5-5-9z"
+                  className="fill-white/95"
+                />
               </svg>
             </div>
             <div>
-              <div className="text-xl font-bold tracking-tight dark:text-white">Trinity PMS — Admin</div>
-              <div className="text-xs text-gray-600 dark:text-gray-300">Empowering Projects</div>
+              <div className="text-xl font-bold tracking-tight dark:text-white">
+                Trinity PMS — Admin
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-300">
+                Empowering Projects
+              </div>
             </div>
           </div>
 
           {/* Right actions */}
           <div className="flex items-center gap-3">
             <button
-              className="px-3 py-2 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-              onClick={() => {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                location.assign('/login');
-              }}
+              type="button"
+              onClick={handleSignOut}
               title="Sign out"
+              className="inline-flex items-center gap-2 rounded-full 
+               bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300
+               px-4 py-1.5 text-xs font-semibold text-black shadow-sm
+               hover:brightness-105 active:scale-[0.98]
+               focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-400/70
+               dark:focus:ring-offset-neutral-900"
             >
-              Sign out
+              <span>Sign out</span>
             </button>
           </div>
         </div>
@@ -99,14 +125,19 @@ const isSuperAdmin = !!payload?.isSuperAdmin;
                 <SideLink to="users" label="Users" />
                 <SideLink to="projects" label="Projects" />
                 <SideLink to="assignments" label="Assignments" />
-                <SideLink to="permissions" label="Role Templates and Project Overrides" />
-                <SideLink to="permission-explorer" label="User Permission Explorer" />
+                <SideLink
+                  to="permissions"
+                  label="Role Templates and Project Overrides"
+                />
+                <SideLink
+                  to="permission-explorer"
+                  label="User Permission Explorer"
+                />
                 <SideLink to="ref/activitylib" label="Activity Library" />
                 <SideLink to="ref/materiallib" label="Material Library" />
                 <SideLink to="ref/checklistlib" label="Checklist Library" />
                 <SideLink to="module-settings" label="Module Settings" />
                 {isSuperAdmin && <SideLink to="audit" label="Audit" />}
-
               </div>
             </div>
           </aside>

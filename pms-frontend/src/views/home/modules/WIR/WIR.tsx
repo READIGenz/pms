@@ -119,7 +119,7 @@ function KPI({
           : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
 
   return (
-    <div className={`rounded-xl border dark:border-neutral-800 p-3 sm:p-4 ${toneClasses}`}>
+    <div className={`rounded-3xl border border-slate-200/80 dark:border-neutral-800 px-4 py-3 sm:px-5 sm:py-4 ${toneClasses}`}>
       <div className="text-xs sm:text-sm opacity-80">{label}</div>
       <div className="text-xl sm:text-2xl font-semibold mt-1">{value}</div>
     </div>
@@ -139,8 +139,8 @@ type WirLite = {
   updatedAt?: string | null;
   lastActivity?: string | null;
   submittedAt?: string | null;
-  version?: number | null;   // <-- ADD THIS LINE
-  createdById?: string | null;  // <-- ADD: used to hide others' drafts
+  version?: number | null;
+  createdById?: string | null;
   forDate?: string | null;
   forTime?: string | null;
   bicUserId?: string | null;
@@ -328,7 +328,7 @@ export default function WIR() {
         updatedAt: r.updatedAt ?? r.updated_on ?? r.updatedAtUtc ?? null,
         lastActivity: r.lastActivity ?? r.latestActivityAt ?? null,
         submittedAt: r.submittedAt ?? null,
-        version: r.version ?? r.wirVersion ?? null,   // <-- ADD THIS LINE
+        version: r.version ?? r.wirVersion ?? null,
         createdById:
           (r.createdById ??
             r.created_by_id ??
@@ -615,11 +615,11 @@ export default function WIR() {
   };
 
   return (
-    <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
+    <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 md:p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-lg sm:text-xl md:text-2xl font-semibold dark:text-white">
+          <div className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
             Work Inspection Requests
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
@@ -631,11 +631,21 @@ export default function WIR() {
         <div className="flex items-center gap-2">
           <button
             onClick={backToMyProjects}
-            className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-            title="Back"
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+                       hover:bg-slate-50 hover:border-slate-300
+                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            title="Back to My Projects"
           >
-            Back
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M14.707 5.293 9 11l5.707 5.707-1.414 1.414L6.172 11l7.121-7.121z"
+                className="fill-current"
+              />
+            </svg>
+            <span>Back</span>
           </button>
+
           {canCreate && (
             <button
               onClick={createWir}
@@ -648,14 +658,16 @@ export default function WIR() {
                   canCreate,
                 })
               }
-              className="text-sm px-3 py-2 rounded-lg border bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-xs sm:text-sm font-medium text-white shadow-sm
+                         hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 dark:border-emerald-700"
               title="Create WIR"
               data-debug-cancreate={String(canCreate)}
             >
-              + New WIR
+              <span className="text-base leading-none">+</span>
+              <span>New WIR</span>
             </button>
           )}
-
         </div>
       </div>
 
@@ -669,12 +681,25 @@ export default function WIR() {
 
       {/* Search */}
       <div className="mt-4">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by code, title, or status…"
-          className="w-full text-sm border rounded-lg px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-        />
+        <div className="relative w-full sm:max-w-md">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M10 4a6 6 0 014.472 9.938l3.795 3.795-1.414 1.414-3.795-3.795A6 6 0 1110 4zm0 2a4 4 0 100 8 4 4 0 000-8z"
+                className="fill-current"
+              />
+            </svg>
+          </span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by code, title, or status…"
+            className="w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-gray-900
+                       outline-none transition
+                       focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
+                       dark:bg-neutral-900 dark:border-neutral-800 dark:text-white"
+          />
+        </div>
       </div>
 
       {/* Loading / Error / Empty */}
@@ -711,7 +736,6 @@ export default function WIR() {
           const itemsDisp =
             typeof w.itemsCount === "number" ? w.itemsCount : "—";
 
-          // Full heading (for tooltip) uses full code; display uses shortCode for layout
           const headingDisplay = [
             shortCode(w.code) || undefined,
             (w.title || w.wirId || undefined),
@@ -719,7 +743,7 @@ export default function WIR() {
           ].filter(Boolean).join(" — ");
 
           const headingFull = [
-            (w.code || undefined), // full code in tooltip
+            (w.code || undefined),
             (w.title || w.wirId || undefined),
             (typeof w.version === "number" ? `v${w.version}` : undefined),
           ].filter(Boolean).join(" — ");
@@ -730,8 +754,10 @@ export default function WIR() {
           const reschedTimeDisp = fmtTime12(reschedTimeRaw);
 
           const reschedTip = isRescheduled
-            ? `Rescheduled → ${w.rescheduleForDate ? new Date(w.rescheduleForDate).toLocaleDateString() : "—"
-            } • ${reschedTimeDisp || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+            ? `Rescheduled → ${
+              w.rescheduleForDate ? new Date(w.rescheduleForDate).toLocaleDateString() : "—"
+            } • ${reschedTimeDisp || "—"}${
+              w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
             }`
             : "";
 
@@ -741,34 +767,27 @@ export default function WIR() {
               ref={isHL ? setHlEl : undefined}
               onClick={() => !busy && openWirDetail(w)}
               disabled={busy}
-              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""} ${isHL ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 rounded-2xl" : ""
-                }`}
+              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""} ${
+                isHL
+                  ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 rounded-2xl"
+                  : ""
+              }`}
               title={isHL ? "New follow-up created" : undefined}
             >
               <div
-                className="
-      h-full rounded-2xl border dark:border-neutral-800
-      p-4 sm:p-5
-      bg-white dark:bg-neutral-900
-      transition
-      hover:bg-gray-50 dark:hover:bg-neutral-800
-    "
+                className="h-full rounded-2xl border border-slate-200/80 dark:border-neutral-800
+                           p-4 sm:p-5
+                           bg-white dark:bg-neutral-900
+                           transition
+                           hover:bg-gray-50 dark:hover:bg-neutral-800"
               >
                 {/* Heading */}
                 <div className="min-w-0 flex items-center gap-2">
                   <div
-                    className="text-sm sm:text-base font-semibold dark:text-white truncate"
-                    title={[
-                      (w.code || undefined),
-                      (w.title || w.wirId || undefined),
-                      (typeof w.version === "number" ? `v${w.version}` : undefined),
-                    ].filter(Boolean).join(" — ")}
+                    className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate"
+                    title={headingFull}
                   >
-                    {[
-                      shortCode(w.code) || undefined,
-                      (w.title || w.wirId || undefined),
-                      (typeof w.version === "number" ? `v${w.version}` : undefined),
-                    ].filter(Boolean).join(" — ")}
+                    {headingDisplay}
                     {busy ? " • checking…" : ""}
                   </div>
                   {isHL && (
@@ -777,6 +796,7 @@ export default function WIR() {
                     </span>
                   )}
                 </div>
+
                 {/* Status + pills + BIC */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusBadge value={w.status} />
@@ -810,7 +830,7 @@ export default function WIR() {
                     <span
                       title={reschedTip}
                       className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700
-               bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
                     >
                       Rescheduled
                     </span>
@@ -833,17 +853,21 @@ export default function WIR() {
                       )}
                     </>
                   )}
-                  {/* BIC pill (full name preferred; fallback to id; final fallback dash) */}
+
+                  {/* BIC pill */}
                   <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-gray-200">
                     BIC: {bicName || "—"}
                   </span>
+
                   {(() => {
                     const st = canonicalWirStatus(w.status);
                     const isAwdC = (w.inspectorRecommendation || "").toUpperCase() === "APPROVE_WITH_COMMENTS";
                     const hasChild = w.code && typeof w.version === "number" && (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
                     return st === "HODApproved" && isAwdC && !hasChild ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                        Follow-up Open</span>) : null;
+                        Follow-up Open
+                      </span>
+                    ) : null;
                   })()}
                 </div>
 
@@ -868,7 +892,8 @@ export default function WIR() {
               </div>
               <button
                 onClick={() => setPermOpen(false)}
-                className="text-sm px-3 py-2 rounded border dark:border-neutral-800"
+                className="text-sm px-3 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50
+                           dark:bg-neutral-900 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 Close
               </button>
@@ -930,16 +955,15 @@ export default function WIR() {
             <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
               <button
                 onClick={() => setPermOpen(false)}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50
+                           dark:bg-neutral-900 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 Cancel
               </button>
 
-              {/* OK can optionally take them to a neutral page or open a help doc. 
-            For now, just close the dialog. If you prefer, navigate to /home/my-projects. */}
               <button
                 onClick={() => setPermOpen(false)}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-full bg-emerald-600 text-white font-medium shadow-sm hover:bg-emerald-700 dark:border-emerald-700"
               >
                 OK
               </button>
