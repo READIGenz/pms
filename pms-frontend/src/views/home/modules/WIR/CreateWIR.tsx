@@ -211,6 +211,15 @@ type HeaderDocsState = {
     safety?: File[];
 };
 
+// Existing header-level evidences already attached to this WIR
+type HeaderEvidenceLite = {
+    id: string;
+    kind?: string | null;
+    url: string;
+    fileName?: string | null;
+    createdAt?: string | null;
+};
+
 function extractWirIdFromResponse(res: any): string | null {
     if (!res) return null;
     const data = res.data ?? res;
@@ -472,7 +481,7 @@ export default function CreateWIR() {
 
     // Section 3: header-level documents (WIR header, not item runner)
     const [docs, setDocs] = useState<HeaderDocsState>({});
-
+    const [headerEvidences, setHeaderEvidences] = useState<HeaderEvidenceLite[]>([]);
     // Section 4/5:
     const [refLoading, setRefLoading] = useState<boolean>(false);
     const [refErr, setRefErr] = useState<string | null>(null);
@@ -767,7 +776,20 @@ export default function CreateWIR() {
                     ""; // intentionally exclude row.title
 
                 setWorkInspection(String(wiCandidate));
-
+                // ---- Header-level evidences already attached to this WIR ----
+                if (Array.isArray(row.evidences)) {
+                    setHeaderEvidences(
+                        row.evidences.map((ev: any) => ({
+                            id: String(ev.id ?? ev.evidenceId ?? crypto.randomUUID()),
+                            kind: ev.kind ?? null,
+                            url: String(ev.url),
+                            fileName: ev.fileName ?? null,
+                            createdAt: ev.createdAt ?? null,
+                        }))
+                    );
+                } else {
+                    setHeaderEvidences([]);
+                }
                 logWir("edit:workInspection mapping", {
                     description: row.description ?? null,
                     header_description: row.header?.description ?? null,
@@ -1167,12 +1189,42 @@ export default function CreateWIR() {
         }
 
         try {
-            await api.post(`/projects/${projectId}/wir/${wirId}/documents`, form, {
+            const res = await api.post(`/projects/${projectId}/wir/${wirId}/documents`, form, {
                 headers: { "Content-Type": "multipart/form-data" },
             });
+            // If API returns created evidences (as per /documents spec), merge into view
+            if (Array.isArray(res?.data)) {
+                setHeaderEvidences((prev) => [
+                    ...prev,
+                    ...res.data.map((ev: any) => ({
+                        id: String(ev.evidenceId ?? ev.id ?? crypto.randomUUID()),
+                        kind: ev.kind ?? null,
+                        url: String(ev.url),
+                        fileName: ev.fileName ?? null,
+                        createdAt: ev.createdAt ?? null,
+                    })),
+                ]);
+            }
         } catch (err) {
             // keep business flow unchanged; just log for now
             console.warn("[WIR] header docs upload failed:", err);
+        }
+    }
+
+    // Delete a header-level evidence using existing runner attachments endpoint
+    async function deleteHeaderEvidence(evidenceId: string) {
+        if (!projectId || !evidenceId) return;
+        const wirId = editId || wirIdForModal;
+        if (!wirId) return;
+
+        try {
+            await api.delete(
+                `/projects/${projectId}/wir/${wirId}/runner/attachments/${evidenceId}`
+            );
+            setHeaderEvidences((prev) => prev.filter((ev) => ev.id !== evidenceId));
+        } catch (err) {
+            // Non-blocking: just log; do not disturb other flows
+            console.warn("[WIR] delete header evidence failed:", err);
         }
     }
 
@@ -1644,30 +1696,111 @@ export default function CreateWIR() {
                                 { key: "photos", label: "Upload Photos" },
                                 { key: "material", label: "Material Approval" },
                                 { key: "safety", label: "Safety Clearance" },
-                            ].map((tile) => (
-                                <label
-                                    key={tile.key}
-                                    className="cursor-pointer rounded-xl border dark:border-neutral-800 p-3 text-center hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                >
-                                    <div className="text-[13px] sm:text-sm dark:text-white">{tile.label}</div>
-                                    <input
-                                        type="file"
-                                        className="hidden"
-                                        multiple
-                                        onChange={(e) => {
-                                            const files = e.target.files ? Array.from(e.target.files) : [];
-                                            setDocs((prev) => ({ ...prev, [tile.key]: files }));
-                                        }}
-                                    />
-                                    <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                        {(docs as any)[tile.key]?.length ? `${(docs as any)[tile.key].length} file(s)` : "Choose files"}
-                                    </div>
-                                </label>
-                            ))}
+                            ].map((tile) => {
+                                const filesForTile = (docs as any)[tile.key] as File[] | undefined;
+                                const count = filesForTile?.length ?? 0;
+
+                                return (
+                                    <label
+                                        key={tile.key}
+                                        className="cursor-pointer rounded-xl border dark:border-neutral-800 p-3 text-center hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    >
+                                        <div className="text-[13px] sm:text-sm dark:text-white">{tile.label}</div>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            multiple
+                                            onChange={(e) => {
+                                                const files = e.target.files ? Array.from(e.target.files) : [];
+                                                setDocs((prev) => ({ ...prev, [tile.key]: files }));
+                                            }}
+                                        />
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                            {count ? `${count} file(s)` : "Choose files"}
+                                        </div>
+
+                                        {/* Per-tile file names with remove option (local, pre-upload only) */}
+                                        {filesForTile && filesForTile.length > 0 && (
+                                            <ul className="mt-1 space-y-0.5 text-[11px] text-gray-600 dark:text-gray-300 text-left">
+                                                {filesForTile.map((f, idx) => (
+                                                    <li key={idx} className="flex items-center gap-1">
+                                                        <span
+                                                            className="truncate flex-1"
+                                                            title={f.name}
+                                                        >
+                                                            {f.name}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            className="shrink-0 px-1 rounded-full border text-[10px] leading-none dark:border-neutral-700"
+                                                            onClick={(e) => {
+                                                                // don’t trigger file picker when clicking remove
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+
+                                                                setDocs((prev) => {
+                                                                    const prevArr = (prev as any)[tile.key] as File[] | undefined;
+                                                                    if (!prevArr) return prev;
+                                                                    const nextArr = prevArr.filter((_, i) => i !== idx);
+                                                                    return { ...prev, [tile.key]: nextArr };
+                                                                });
+                                                            }}
+                                                            aria-label="Remove file"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </label>
+                                );
+                            })}
                         </div>
+
                         <Note className="mt-2">
                             Files are grouped here and uploaded to the WIR header when you Save Draft or Submit.
                         </Note>
+                        {headerEvidences.length > 0 && (
+                            <div className="mt-3 border-t border-dashed dark:border-neutral-800 pt-3">
+                                <div className="text-[12px] font-medium text-gray-700 dark:text-gray-200 mb-1">
+                                    Already attached to this WIR
+                                </div>
+                                <ul className="space-y-1 text-[12px]">
+                                    {headerEvidences.map((ev) => {
+                                        const fallbackName =
+                                            ev.fileName ||
+                                            (ev.url ? ev.url.split("/").pop() || "File" : "File");
+                                        return (
+                                            <li key={ev.id} className="flex items-center justify-between gap-2">
+                                                <a
+                                                    href={ev.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="truncate underline text-blue-600 dark:text-blue-400"
+                                                >
+                                                    {fallbackName}
+                                                </a>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {ev.kind && (
+                                                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                                            {ev.kind}
+                                                        </span>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        className="text-[11px] px-2 py-0.5 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                        onClick={() => deleteHeaderEvidence(ev.id)}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
                     </div>
 
                     {/* Section 4 — Checklist Library */}

@@ -110,10 +110,20 @@ export class WirController {
     FilesInterceptor('files', 20, {
       limits: { fileSize: 10 * 1024 * 1024 }, // same as runner attachments for now
       fileFilter: (_req, file, cb) => {
-        // Reuse the same whitelist as runner attachments for consistency
-        const ok = /^(image\/(jpeg|png|webp)|video\/mp4|application\/pdf)$/.test(
-          file.mimetype,
-        );
+        const allowed = [
+          /^image\/(jpeg|png|webp)$/, // photos
+          /^video\/mp4$/,             // videos
+          /^application\/pdf$/,       // PDFs
+          /^application\/msword$/,    // .doc
+          /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/, // .docx
+          /^application\/vnd\.ms-excel$/, // .xls
+          /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/, // .xlsx
+          /^application\/vnd\.ms-powerpoint$/, // .ppt
+          /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/, // .pptx
+          /^text\/plain$/, // .txt
+        ];
+
+        const ok = allowed.some((re) => re.test(file.mimetype));
         cb(ok ? null : new BadRequestException('Unsupported file type'), ok);
       },
     }),

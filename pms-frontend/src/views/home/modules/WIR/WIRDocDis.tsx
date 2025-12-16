@@ -107,6 +107,7 @@ type WirDoc = {
         createdAt: string;
         meta?: any;
     }>;
+    evidences?: WirItemEvidence[];
     // --- Inspector recommendation header fields (persisted on BE) ---
     inspectorRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
     inspectorRemarks?: string | null;
@@ -1108,6 +1109,15 @@ export default function WIRDocDis() {
         };
     }, [mappedFinalizeOutcome]);
 
+    // Header-level evidences: those not tied to any specific item/run
+    const headerDocs = useMemo(
+        () => {
+            const all = row?.evidences ?? [];
+            return all.filter((ev: any) => !ev.itemId); // itemId null/undefined => header document
+        },
+        [row?.evidences]
+    );
+
     // click handler used by the button
     const onSendToHodClick = useCallback(async () => {
         const res = validateAllRunnerFields();
@@ -1482,6 +1492,49 @@ export default function WIRDocDis() {
                                         )}
                                     </div>
                                 </div>
+                                {/* Documents & Evidence (header-level, read-only) */}
+                                {headerDocs.length > 0 && (
+                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                Documents &amp; Evidence
+                                            </div>
+                                            <span className="text-[11px] uppercase tracking-wide text-slate-400">
+                                                Read only
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-1 text-sm dark:text-white">
+                                            {headerDocs.map((ev: any) => {
+                                                const displayName =
+                                                    ev.fileName ||
+                                                    (typeof ev.url === "string" ? ev.url.split("/").pop() : "") ||
+                                                    ev.kind ||
+                                                    "Attachment";
+
+                                                return (
+                                                    <div
+                                                        key={ev.id || displayName}
+                                                        className="flex items-center justify-between gap-2 text-[12px]"
+                                                    >
+                                                        <a
+                                                            href={ev.url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="truncate underline decoration-dotted hover:decoration-solid"
+                                                        >
+                                                            {displayName}
+                                                        </a>
+                                                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                                            {ev.kind || "File"}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Reschedule button (below Checklists) — visible only for Inspector/Inspector+HOD who is BIC */}
                                 {canReschedule && (
                                     <div className="md:col-span-2 flex justify-end">
