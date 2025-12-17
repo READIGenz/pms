@@ -11,13 +11,13 @@ type CompanyOpt = {
   companyId: string;
   name: string;
   companyRole?:
-    | "IH_PMT"
-    | "IH-PMT"
-    | "Contractor"
-    | "Consultant"
-    | "PMC"
-    | "Supplier"
-    | null;
+  | "IH_PMT"
+  | "IH-PMT"
+  | "Contractor"
+  | "Consultant"
+  | "PMC"
+  | "Supplier"
+  | null;
 };
 
 /** Enums from prisma schema */
@@ -185,7 +185,7 @@ export default function UserCreate() {
     if (!isClient && !isServiceProvider) {
       window.alert(
         "Affiliation required.\n\n" +
-          "Please mark the user as a Client and/or a Service Partner before creating."
+        "Please mark the user as a Client and/or a Service Partner before creating."
       );
       return;
     }
@@ -193,7 +193,7 @@ export default function UserCreate() {
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-          "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+        "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
       return;
     }
@@ -264,7 +264,7 @@ export default function UserCreate() {
         } catch (e: any) {
           setRoleWarn(
             e?.response?.data?.error ||
-              "User created, but failed to grant Global Admin role."
+            "User created, but failed to grant Global Admin role."
           );
         }
       }
@@ -292,7 +292,7 @@ export default function UserCreate() {
               ? res.data
               : res?.data?.users || [];
             u = pickUserByPhone(list, targetDigits);
-          } catch {}
+          } catch { }
 
           if (!u) {
             try {
@@ -306,7 +306,7 @@ export default function UserCreate() {
               ) {
                 u = candidate;
               }
-            } catch {}
+            } catch { }
           }
 
           if (!u) {
@@ -318,7 +318,7 @@ export default function UserCreate() {
                 ? res.data
                 : res?.data?.users || [];
               u = pickUserByPhone(list, targetDigits);
-            } catch {}
+            } catch { }
           }
 
           if (u?.userId) {
@@ -326,17 +326,15 @@ export default function UserCreate() {
               .filter(Boolean)
               .join(" ");
             const codeLine = u.userCode ? `Code: ${u.userCode}\n` : "";
-            const phoneLine = `Phone: +91 ${
-              normalizeDigits(u.phone) || targetDigits
-            }`;
+            const phoneLine = `Phone: +91 ${normalizeDigits(u.phone) || targetDigits
+              }`;
 
             const proceedToEdit = window.confirm(
               "A user with this mobile number already exists.\n\n" +
-                `${codeLine}Name: ${
-                  fullName || "(no name)"
-                }\n${phoneLine}\n\n` +
-                "Press OK to open that user's Edit page.\n" +
-                "Press Cancel to stay here — the save will be canceled."
+              `${codeLine}Name: ${fullName || "(no name)"
+              }\n${phoneLine}\n\n` +
+              "Press OK to open that user's Edit page.\n" +
+              "Press Cancel to stay here — the save will be canceled."
             );
 
             if (proceedToEdit) {
@@ -347,8 +345,8 @@ export default function UserCreate() {
 
           const openList = window.confirm(
             "A user with this mobile number already exists, but we couldn't fetch an exact match automatically.\n\n" +
-              `Phone: +91 ${targetDigits}\n\n` +
-              "Press OK to open the Users list, or Cancel to stay here (save canceled)."
+            `Phone: +91 ${targetDigits}\n\n` +
+            "Press OK to open the Users list, or Cancel to stay here (save canceled)."
           );
           if (openList) nav("/admin/users");
           return;
@@ -435,7 +433,7 @@ export default function UserCreate() {
             />
 
             <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
-              <Text label="Code" value="+91" setValue={() => {}} disabled />
+              <Text label="Code" value="+91" setValue={() => { }} disabled />
               <Text
                 label="Mobile (India)"
                 value={phone}
@@ -463,7 +461,22 @@ export default function UserCreate() {
               <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 Profile Photo
               </span>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="h-16 w-16 rounded-full overflow-hidden border border-slate-200 bg-slate-100 dark:border-neutral-700 dark:bg-neutral-800">
+                  {profileFile ? (
+                    <img
+                      src={URL.createObjectURL(profileFile)}
+                      alt="Preview"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center text-[10px] text-slate-500">
+                      No photo
+                    </div>
+                  )}
+                </div>
+
                 <input
                   ref={fileRef}
                   type="file"
@@ -471,10 +484,10 @@ export default function UserCreate() {
                   onChange={(e) => setProfileFile(e.target.files?.[0] || null)}
                   className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
                 />
+
                 {profileFile && (
                   <span className="text-xs text-gray-600 dark:text-gray-400">
-                    {profileFile.name} ({Math.round(profileFile.size / 1024)}{" "}
-                    KB)
+                    {profileFile.name} ({Math.round(profileFile.size / 1024)} KB)
                   </span>
                 )}
               </div>
@@ -583,11 +596,10 @@ export default function UserCreate() {
                   <CheckboxGroup
                     label={
                       companyRoleFilter
-                        ? `Select Company(ies) — ${
-                            companyRoleFilter === "IH_PMT"
-                              ? "IH-PMT"
-                              : companyRoleFilter
-                          }`
+                        ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT"
+                          ? "IH-PMT"
+                          : companyRoleFilter
+                        }`
                         : "Select Company(ies)"
                     }
                     items={filteredCompanies.map((c) => ({

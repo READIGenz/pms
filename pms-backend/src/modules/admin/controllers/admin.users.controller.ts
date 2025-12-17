@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import * as fs from 'fs';
+// import { diskStorage } from 'multer';
+// import { extname } from 'path';
+// import * as fs from 'fs';
+import { memoryStorage } from 'multer';
+import { FilesService } from 'src/common/storage/files.service';
 import {
   Prisma, UserRole, CompanyRole, RoleScope
 } from '@prisma/client';
@@ -22,7 +24,8 @@ export class AdminUsersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly codeSvc: AdminCodeService,
-  ) {}
+    private readonly files: FilesService,
+  ) { }
 
   // IMPORTANT: keep specific routes ABOVE the :id param route so they aren't shadowed.
   @Get('next-code/preview')
@@ -50,10 +53,10 @@ export class AdminUsersController {
       Object.assign(where, {
         OR: [
           { firstName: { contains: q, mode: Prisma.QueryMode.insensitive } },
-          { lastName:  { contains: q, mode: Prisma.QueryMode.insensitive } },
-          { email:     { contains: q, mode: Prisma.QueryMode.insensitive } },
-          { phone:     { contains: q, mode: Prisma.QueryMode.insensitive } },
-          { code:      { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { lastName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { email: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { phone: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { code: { contains: q, mode: Prisma.QueryMode.insensitive } },
         ],
       } as Prisma.UserWhereInput);
     }
@@ -62,7 +65,7 @@ export class AdminUsersController {
     }
 
     const allowedSort = new Set<keyof Prisma.UserOrderByWithRelationInput>([
-      'createdAt','updatedAt','firstName','lastName','email','phone','code','userStatus','isSuperAdmin','userRole',
+      'createdAt', 'updatedAt', 'firstName', 'lastName', 'email', 'phone', 'code', 'userStatus', 'isSuperAdmin', 'userRole',
     ]);
     const by = (allowedSort.has(sortBy as any) ? sortBy : 'createdAt') as keyof Prisma.UserOrderByWithRelationInput;
     const dir: Prisma.SortOrder = sortDir === 'desc' ? 'desc' : 'asc';
@@ -85,21 +88,21 @@ export class AdminUsersController {
         },
         userRoleMemberships: includeMemberships === '1'
           ? {
-              select: {
-                id: true,
-                role: true,
-                scopeType: true,
-                companyId: true,
-                projectId: true,
-                isDefault: true,
-                createdAt: true,
-                updatedAt: true,      // now available in schema
-                validFrom: true,
-                validTo: true,
-                company: { select: { companyId: true, name: true } },
-                project: { select: { projectId: true, title: true, code: true } },
-              },
-            }
+            select: {
+              id: true,
+              role: true,
+              scopeType: true,
+              companyId: true,
+              projectId: true,
+              isDefault: true,
+              createdAt: true,
+              updatedAt: true,      // now available in schema
+              validFrom: true,
+              validTo: true,
+              company: { select: { companyId: true, name: true } },
+              project: { select: { projectId: true, title: true, code: true } },
+            },
+          }
           : false,
       },
     });
@@ -130,21 +133,21 @@ export class AdminUsersController {
         },
         userRoleMemberships: includeMemberships === '1'
           ? {
-              select: {
-                id: true,
-                role: true,
-                scopeType: true,
-                companyId: true,
-                projectId: true,
-                isDefault: true,
-                createdAt: true,
-                updatedAt: true,      // now available in schema
-                validFrom: true,
-                validTo: true,
-                company: { select: { companyId: true, name: true, companyRole: true } },
-                project: { select: { projectId: true, title: true, code: true } },
-              },
-            }
+            select: {
+              id: true,
+              role: true,
+              scopeType: true,
+              companyId: true,
+              projectId: true,
+              isDefault: true,
+              createdAt: true,
+              updatedAt: true,      // now available in schema
+              validFrom: true,
+              validTo: true,
+              company: { select: { companyId: true, name: true, companyRole: true } },
+              project: { select: { projectId: true, title: true, code: true } },
+            },
+          }
           : false,
       },
     });
@@ -153,7 +156,7 @@ export class AdminUsersController {
   }
 
   @Post()
-  async createUser(@Req() req: any,@Body() body: any) {
+  async createUser(@Req() req: any, @Body() body: any) {
     if (!body?.firstName || !body?.countryCode || !body?.phone) {
       return { ok: false, error: 'firstName, countryCode and phone are required.' };
     }
@@ -233,17 +236,7 @@ export class AdminUsersController {
   @Post(':id/photo')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const dir = 'uploads';
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          cb(null, dir);
-        },
-        filename: (req, file, cb) => {
-          const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(null, unique + extname(file.originalname));
-        },
-      }),
+      storage: memoryStorage(), // IMPORTANT: so file.buffer exists (required by FilesService)
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (req, file, cb) => {
         if (/^image\/(png|jpe?g|webp|gif|bmp|tiff?)$/.test(file.mimetype)) cb(null, true);
@@ -253,12 +246,38 @@ export class AdminUsersController {
   )
   async uploadPhoto(@Param('id') id: string, @UploadedFile() file?: Express.Multer.File) {
     if (!file) throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
-    const relPath = `/${file.destination}/${file.filename}`.replace(/\\/g, '/');
+
+    const existing = await this.prisma.user.findUnique({
+      where: { userId: id },
+      select: { userId: true, profilePhoto: true },
+    });
+    if (!existing) throw new HttpException('Not found', HttpStatus.NOT_FOUND);
+
+    // Save like WIR evidence (inside uploads/users/:id/)
+    const saved = await this.files.saveMulterFile(file, {
+      subdir: `users/${id}`,
+      baseName: 'profile',
+    });
+
+    // Best-effort cleanup of old photo (only if it was inside uploads/users/:id/)
+    try {
+      const old = existing.profilePhoto || '';
+      if (old.startsWith('/uploads/')) {
+        const oldRel = old.replace(/^\/uploads\//, '');
+        if (oldRel.startsWith(`users/${id}/`)) {
+          await this.files.deleteByRelPath(oldRel);
+        }
+      }
+    } catch {
+      // ignore cleanup failures
+    }
+
     const updated = await this.prisma.user.update({
       where: { userId: id },
-      data: { profilePhoto: relPath },
+      data: { profilePhoto: saved.url }, // => /uploads/users/:id/...
       select: { userId: true, profilePhoto: true, updatedAt: true },
     });
+
     return { ok: true, user: updated };
   }
 
@@ -273,7 +292,7 @@ export class AdminUsersController {
     const companyIds = Array.isArray(body.companyIds) ? body.companyIds.filter(Boolean) : [];
 
     // Detect which fields were explicitly provided so we only touch those scopes
-    const hasProjectsField  = Object.prototype.hasOwnProperty.call(body, 'projectIds');
+    const hasProjectsField = Object.prototype.hasOwnProperty.call(body, 'projectIds');
     const hasCompaniesField = Object.prototype.hasOwnProperty.call(body, 'companyIds');
 
     const mapCompanyRoleToUserRole = (cr: CompanyRole | null): any => {
@@ -301,7 +320,7 @@ export class AdminUsersController {
           select: { id: true, companyId: true },
         });
 
-        const desiredSet  = new Set(companyIds);
+        const desiredSet = new Set(companyIds);
         const existingSet = new Set(existing.map(m => m.companyId!).filter(Boolean));
 
         const toDeleteIds = existing
