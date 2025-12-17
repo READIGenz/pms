@@ -138,7 +138,8 @@ const canonicalStage = (s?: string | null): CanonicalStage => {
   if (clean === "design") return "design";
   if (clean === "procurement") return "procurement";
   if (clean === "execution") return "execution";
-  if (clean === "handover" || clean === "handedover" || clean === "handover") return "handover";
+  if (clean === "handover" || clean === "handedover" || clean === "handover")
+    return "handover";
   if (clean === "closed" || clean === "close") return "closed";
   return "";
 };
@@ -702,8 +703,8 @@ export default function MyProjects() {
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 lg:p-6">
       {/* Header + back + profile */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
             {role || "User"}
           </p>
@@ -711,7 +712,7 @@ export default function MyProjects() {
             My Projects
           </h1>
         </div>
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/home/tiles")}
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
@@ -781,24 +782,55 @@ export default function MyProjects() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
-                       hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+               hover:bg-slate-50 hover:border-slate-300
+               dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            title="Sort"
           >
-            <span>Sort</span>
+            {/* sort icon */}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <path
+                d="M7 4h2v14l2-2 1.4 1.4L8 22l-4.4-4.6L5 16l2 2V4zm10 0 4.4 4.6L20 10l-2-2v14h-2V8l-2 2-1.4-1.4L17 4z"
+                className="fill-current"
+              />
+            </svg>
+            <span className="hidden xs:inline">Sort</span>
+            <span className="xs:hidden">Sort</span>
           </button>
+
           <button
             type="button"
             onClick={() => setShowFilter(true)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
-                       hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+               hover:bg-slate-50 hover:border-slate-300
+               dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            title="Filter"
           >
-            <span>Filter</span>
+            {/* filter icon */}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <path
+                d="M4 5h16v2l-6 7v5l-4-2v-3L4 7V5z"
+                className="fill-current"
+              />
+            </svg>
+            <span className="hidden xs:inline">Filter</span>
+            <span className="xs:hidden">Filter</span>
           </button>
         </div>
       </div>
@@ -881,7 +913,9 @@ export default function MyProjects() {
         {filtered.map((p) => {
           const statusLabel = canonicalStatus(p.status) || p.status || "";
           const healthLabel = canonicalHealth(p.health);
-          const cityState = [p.cityTown, p.stateName].filter(Boolean).join(" • ");
+          const cityState = [p.cityTown, p.stateName]
+            .filter(Boolean)
+            .join(" • ");
 
           return (
             <button
@@ -1033,7 +1067,11 @@ export default function MyProjects() {
                           key={s.id}
                           type="button"
                           onClick={() =>
-                            toggleFromArray(s.id, selectedStages, setSelectedStages)
+                            toggleFromArray(
+                              s.id,
+                              selectedStages,
+                              setSelectedStages
+                            )
                           }
                           className={
                             "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
@@ -1063,7 +1101,11 @@ export default function MyProjects() {
                             key={c}
                             type="button"
                             onClick={() =>
-                              toggleFromArray(c, selectedCities, setSelectedCities)
+                              toggleFromArray(
+                                c,
+                                selectedCities,
+                                setSelectedCities
+                              )
                             }
                             className={
                               "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
@@ -1168,7 +1210,9 @@ export default function MyProjects() {
                         <button
                           key={opt.id}
                           type="button"
-                          onClick={() => setScheduleFilter(opt.id as ScheduleFilter)}
+                          onClick={() =>
+                            setScheduleFilter(opt.id as ScheduleFilter)
+                          }
                           className={
                             "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
                             (active
@@ -1199,7 +1243,9 @@ export default function MyProjects() {
                         <button
                           key={opt.id}
                           type="button"
-                          onClick={() => setOpenFormsFilter(opt.id as OpenFormsFilter)}
+                          onClick={() =>
+                            setOpenFormsFilter(opt.id as OpenFormsFilter)
+                          }
                           className={
                             "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
                             (active
@@ -1237,7 +1283,6 @@ export default function MyProjects() {
           </div>
         </div>
       )}
-
       {/* Profile side panel */}
       {showProfilePanel && (
         <div className="fixed inset-0 z-40 flex justify-end">

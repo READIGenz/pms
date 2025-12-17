@@ -15,7 +15,7 @@ type CommentRow = {
   text: string;
   authorUserId?: string | null;
   authorName?: string | null;
-  createdAt: string;        // ISO
+  createdAt: string; // ISO
   // optional:
   editedAt?: string | null;
 };
@@ -33,10 +33,7 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  const threadTitle = useMemo(
-    () => `Discussion — ${wirCode || wirId}`,
-    [wirCode, wirId]
-  );
+  const threadTitle = useMemo(() => `Discussion — ${wirCode || wirId}`, [wirCode, wirId]);
 
   // ---- load thread ----
   const load = useCallback(async () => {
@@ -44,18 +41,10 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
     setErr(null);
     try {
       // BE should sort by createdAt asc/desc; we’ll sort client side anyway.
-      const { data } = await api.get(
-        `/projects/${projectId}/wir/${wirId}/discussion`
-      );
-      const items: CommentRow[] = Array.isArray(data?.items)
-        ? data.items
-        : Array.isArray(data)
-        ? data
-        : [];
+      const { data } = await api.get(`/projects/${projectId}/wir/${wirId}/discussion`);
+      const items: CommentRow[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       // oldest first for chat flow
-      items.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       setRows(items);
     } catch (e: any) {
       setErr(e?.response?.data?.error || e?.message || "Failed to load discussion.");
@@ -93,10 +82,7 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
     setText("");
 
     try {
-      const { data } = await api.post(
-        `/projects/${projectId}/wir/${wirId}/discussion`,
-        { text: trimmed }
-      );
+      const { data } = await api.post(`/projects/${projectId}/wir/${wirId}/discussion`, { text: trimmed });
       // Replace optimistic with server row (id, timestamps, etc.)
       const saved: CommentRow =
         (data?.item ?? data) && typeof (data?.item ?? data) === "object"
@@ -133,16 +119,15 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-sm text-gray-700 dark:text-gray-200 font-medium">
-        {threadTitle}
-      </div>
+      <div className="text-sm sm:text-base text-gray-900 dark:text-white font-semibold">{threadTitle}</div>
 
+      {/* Thread */}
       <div
         ref={listRef}
-        className="rounded-2xl border dark:border-neutral-800 p-3 max-h-[50vh] overflow-auto bg-white dark:bg-neutral-900"
+        className="rounded-2xl bg-yellow-50/60 border border-yellow-200/80 dark:bg-emerald-900/20 dark:border-emerald-800/40 p-3 sm:p-4 max-h-[50vh] overflow-auto shadow-sm"
       >
         {loading ? (
-          <div className="text-sm">Loading…</div>
+          <div className="text-sm text-gray-700 dark:text-gray-200">Loading…</div>
         ) : err ? (
           <div className="text-sm text-rose-600">{err}</div>
         ) : rows.length === 0 ? (
@@ -150,9 +135,12 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
         ) : (
           <ul className="space-y-3">
             {rows.map((m) => (
-              <li key={m.id} className="rounded-xl border dark:border-neutral-800 p-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-[12px] text-gray-600 dark:text-gray-300">
+              <li
+                key={m.id}
+                className="rounded-2xl bg-white/80 dark:bg-neutral-900/60 border border-slate-200/70 dark:border-neutral-800 p-3 shadow-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[12px] font-medium text-slate-700 dark:text-neutral-200">
                     {m.authorName || "User"}
                   </div>
                   <div className="text-[11px] text-gray-500 dark:text-gray-400">
@@ -160,7 +148,7 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
                     {m.editedAt ? " • edited" : ""}
                   </div>
                 </div>
-                <div className="mt-1 text-sm whitespace-pre-wrap break-words dark:text-white">
+                <div className="mt-1 text-sm whitespace-pre-wrap break-words text-gray-900 dark:text-white">
                   {m.text}
                 </div>
               </li>
@@ -169,39 +157,55 @@ export default function WIRDiscussion({ wirId, wirCode, creatorName }: Props) {
         )}
       </div>
 
-      <div className="rounded-2xl border dark:border-neutral-800 p-3">
-        <div className="text-[12px] text-gray-500 dark:text-gray-400 mb-1">
-          Signed in as: {creatorName}
+      {/* Composer */}
+      <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 bg-white dark:bg-neutral-900 p-3 sm:p-4 shadow-sm">
+        <div className="text-[12px] text-gray-600 dark:text-gray-300 mb-2">
+          Signed in as: <span className="font-medium">{creatorName}</span>
         </div>
+
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
           rows={3}
-          className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm outline-none resize-none
+                     focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
+                     dark:bg-neutral-900 dark:border-neutral-700 dark:text-white"
           placeholder="Write a comment… (Enter to send, Shift+Enter for newline)"
           maxLength={2000}
         />
-        <div className="mt-2 flex items-center justify-between">
+
+        <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="text-[12px] text-rose-600">{postErr || "\u00A0"}</div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2 justify-end">
             <button
               onClick={load}
               disabled={loading || posting}
-              className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+                         hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60
+                         dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
               title="Refresh thread"
+              type="button"
             >
               Refresh
             </button>
             <button
               onClick={doPost}
               disabled={posting || !text.trim()}
-              className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-5 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm
+                         hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
               title="Post comment"
+              type="button"
             >
               {posting ? "Posting…" : "Post"}
             </button>
           </div>
+        </div>
+
+        <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+          Tip: Press <span className="font-semibold">Enter</span> to send, <span className="font-semibold">Shift+Enter</span>{" "}
+          for a new line.
         </div>
       </div>
     </div>
