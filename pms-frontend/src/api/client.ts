@@ -4,7 +4,7 @@ import axios from "axios";
 // no import.meta usage:
 const baseURL =
   (window as any).__API_BASE_URL__ ||
-  "http://34.236.185.127:3000"; // fallback
+  "http://localhost:3000"; // fallback to LOCAL
 
 export const api = axios.create({
   baseURL,
