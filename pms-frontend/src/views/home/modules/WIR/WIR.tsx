@@ -604,133 +604,134 @@ export default function WIR() {
     fetchWirCfg();
   }, [fetchWirCfg]);
 
-  const matchStatusFilter = useCallback((w: WirLite, sf: StatusFilter) => {
-    if (sf === "all") return true;
+const matchStatusFilter = useCallback((w: WirLite, sf: StatusFilter) => {
+  if (sf === "all") return true;
 
-    const st = canonicalWirStatus(w.status);
-    const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
+  const st = canonicalWirStatus(w.status);
+  const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
 
-    if (sf === "submitted")
-      return st === "Submitted" || st === "InspectorRecommended";
+  if (sf === "submitted")
+    return st === "Submitted" || st === "InspectorRecommended";
 
-    if (sf === "rejected")
-      return (
-        st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT"
-      );
+  if (sf === "rejected")
+    return (
+      st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT"
+    );
 
-    if (sf === "approved") {
-      // approved (NOT approved with comments)
-      if (st !== "HODApproved" && st !== "Closed") return false;
-      return ir === "APPROVE" || (!ir && st === "HODApproved"); // fallback if IR missing
-    }
+  if (sf === "approved") {
+    if (st !== "HODApproved" && st !== "Closed") return false;
+    return ir === "APPROVE" || (!ir && st === "HODApproved");
+  }
 
-    if (sf === "approved_with_comments") {
-      if (st !== "HODApproved" && st !== "Closed") return false;
-      return ir === "APPROVE_WITH_COMMENTS";
-    }
+  if (sf === "approved_with_comments") {
+    if (st !== "HODApproved" && st !== "Closed") return false;
+    return ir === "APPROVE_WITH_COMMENTS";
+  }
 
-    return true;
-  }, []);
+  return true;
+}, []);
 
-  const matchDiscFilter = useCallback((w: WirLite, df: DisciplineFilter) => {
-    if (df === "all") return true;
-    const d = canonicalDisc(w.discipline ?? null);
-    return d === df;
-  }, []);
+const matchDiscFilter = useCallback((w: WirLite, df: DisciplineFilter) => {
+  if (df === "all") return true;
+  const d = canonicalDisc(w.discipline ?? null);
+  return d === df;
+}, []);
 
-  const matchesRange = useCallback(
-    (w: WirLite, fromYmd: string, toYmd: string) => {
-      if (!fromYmd && !toYmd) return true;
-      const when = wirWhen(w);
-      if (!when) return false;
+const matchesRange = useCallback((w: WirLite, fromYmd: string, toYmd: string) => {
+  if (!fromYmd && !toYmd) return true;
+  const when = wirWhen(w);
+  if (!when) return false;
 
-      if (fromYmd) {
-        const from = startOfDay(new Date(fromYmd));
-        if (when.getTime() < from.getTime()) return false;
-      }
-      if (toYmd) {
-        const to = endOfDay(new Date(toYmd));
-        if (when.getTime() > to.getTime()) return false;
-      }
-      return true;
-    },
-    []
-  );
+  if (fromYmd) {
+    const from = startOfDay(new Date(fromYmd));
+    if (when.getTime() < from.getTime()) return false;
+  }
+  if (toYmd) {
+    const to = endOfDay(new Date(toYmd));
+    if (when.getTime() > to.getTime()) return false;
+  }
+  return true;
+}, []);
 
-  // ✅ Search + Draft hide + Filters + Quick tabs + Sort
   const filtered = useMemo(() => {
-    let out = [...list];
+  const q = search.trim().toLowerCase();
 
-    // hide drafts not created by me
-    out = out.filter((w) => {
-      const st = canonicalWirStatus(w.status);
-      if (st !== "Draft") return true;
-      if (!w.createdById) return false;
-      return w.createdById.toString() === currentUserId;
-    });
-
-    // search
-    const q = search.trim().toLowerCase();
-    if (q) {
-      out = out.filter((w) => {
+  // 1) Search
+  let out = q
+    ? list.filter((w) => {
         const hay = [w.code, w.title, w.status].map((v) =>
           (v || "").toString().toLowerCase()
         );
         return hay.some((s) => s.includes(q));
-      });
-    }
+      })
+    : list;
 
-    // applied modal filters
-    out = out.filter((w) => matchStatusFilter(w, fStatus));
-    out = out.filter((w) => matchDiscFilter(w, fDisc));
-    out = out.filter((w) => matchesRange(w, fFrom, fTo));
+  // 2) Hide Drafts not created by me (master logic)
+  out = out.filter((w) => {
+    const st = canonicalWirStatus(w.status);
+    if (st !== "Draft") return true;
+    if (!w.createdById) return false;
+    return w.createdById.toString() === currentUserId;
+  });
 
-    // quick tabs (All / Today / Upcoming)
-    if (quickTab !== "all") {
-      const now = new Date();
-      const sod = startOfDay(now).getTime();
-      const eod = endOfDay(now).getTime();
+  // 3) Modal filters (your logic)
+  out = out.filter((w) => matchStatusFilter(w, fStatus));
+  out = out.filter((w) => matchDiscFilter(w, fDisc));
+  out = out.filter((w) => matchesRange(w, fFrom, fTo));
 
-      out = out.filter((w) => {
-        const when = wirWhen(w);
-        if (!when) return false;
-        const t = when.getTime();
+  // 4) Quick tabs (your logic)
+  if (quickTab !== "all") {
+    const now = new Date();
+    const sod = startOfDay(now).getTime();
+    const eod = endOfDay(now).getTime();
 
-        if (quickTab === "today") return t >= sod && t <= eod;
-        if (quickTab === "upcoming") return t > eod;
-        return true;
-      });
-    }
-
-    // sort (same as before: code -> title)
-    out.sort((a, b) => {
-      const aa = (shortCode(a.code) || "").toLowerCase();
-      const bb = (shortCode(b.code) || "").toLowerCase();
-      if (aa < bb) return sortDir === "asc" ? -1 : 1;
-      if (aa > bb) return sortDir === "asc" ? 1 : -1;
-
-      const at = (a.title || "").toLowerCase();
-      const bt = (b.title || "").toLowerCase();
-      if (at < bt) return sortDir === "asc" ? -1 : 1;
-      if (at > bt) return sortDir === "asc" ? 1 : -1;
-      return 0;
+    out = out.filter((w) => {
+      const when = wirWhen(w);
+      if (!when) return false;
+      const t = when.getTime();
+      if (quickTab === "today") return t >= sod && t <= eod;
+      if (quickTab === "upcoming") return t > eod;
+      return true;
     });
+  }
 
-    return out;
-  }, [
-    list,
-    search,
-    currentUserId,
-    fStatus,
-    fDisc,
-    fFrom,
-    fTo,
-    quickTab,
-    sortDir,
-    matchStatusFilter,
-    matchDiscFilter,
-    matchesRange,
-  ]);
+  // 5) Sort + keep versions stacked within same code
+  out.sort((a, b) => {
+    const aa = (shortCode(a.code) || "").toLowerCase();
+    const bb = (shortCode(b.code) || "").toLowerCase();
+
+    if (aa < bb) return sortDir === "asc" ? -1 : 1;
+    if (aa > bb) return sortDir === "asc" ? 1 : -1;
+
+    const va = typeof a.version === "number" ? a.version : -Infinity;
+    const vb = typeof b.version === "number" ? b.version : -Infinity;
+    if (va !== vb) return vb - va;
+
+    const at = (a.title || "").toLowerCase();
+    const bt = (b.title || "").toLowerCase();
+    if (at < bt) return sortDir === "asc" ? -1 : 1;
+    if (at > bt) return sortDir === "asc" ? 1 : -1;
+
+    const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return db - da;
+  });
+
+  return out;
+}, [
+  list,
+  search,
+  currentUserId,
+  fStatus,
+  fDisc,
+  fFrom,
+  fTo,
+  quickTab,
+  sortDir,
+  matchStatusFilter,
+  matchDiscFilter,
+  matchesRange,
+]);
 
   useEffect(() => {
     if (!highlightId || !hlEl) return;
@@ -852,21 +853,23 @@ export default function WIR() {
       },
     });
   };
+const applyFilterSheet = () => {
+  setFStatus(dStatus);
+  setFDisc(dDisc);
+  setFFrom(dFrom);
+  setFTo(dTo);
+  setShowFilter(false);
+};
 
-  const applyFilterSheet = () => {
-    setFStatus(dStatus);
-    setFDisc(dDisc);
-    setFFrom(dFrom);
-    setFTo(dTo);
-    setShowFilter(false);
-  };
-
-  const resetFilterSheet = () => {
-    setDStatus("all");
-    setDDisc("all");
-    setDFrom("");
-    setDTo("");
-  };
+const resetFilterSheet = () => {
+  setDStatus("all");
+  setDDisc("all");
+  setDFrom("");
+  setDTo("");
+};
+  // --- local helpers for stacked visual grouping by base WIR code ---
+  let lastBaseCode: string | null = null;
+  let stackDepth = 0;
 
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -1067,11 +1070,25 @@ export default function WIR() {
         </div>
       )}
 
+
       {/* ✅ FULL-WIDTH TILES (like MyProjects) */}
       <div className="mt-6 space-y-4">
         {filtered.map((w) => {
           const busy = preflightId === w.wirId;
           const isHL = highlightId && w.wirId === highlightId;
+
+          // --- stacked visual group by base code (shortCode) ---
+          const baseCodeKey = shortCode(w.code) || w.code || w.wirId;
+          if (baseCodeKey === lastBaseCode) {
+            stackDepth += 1;
+          } else {
+            stackDepth = 0;
+            lastBaseCode = baseCodeKey;
+          }
+          const isStackedSibling = stackDepth > 0;
+          const stackClasses = isStackedSibling
+            ? "relative z-[5] mt-[-10px] ml-4"
+            : "relative z-[10]";
 
           const any = w as any;
           const bicName = pickBicName(w, bicNameMap);
@@ -1139,14 +1156,14 @@ export default function WIR() {
               type="button"
               onClick={() => !busy && openWirDetail(w)}
               disabled={busy}
-              className={
-                "group w-full text-left rounded-3xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4 sm:px-5 sm:py-5 shadow-sm " +
-                "hover:shadow-md hover:-translate-y-0.5 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/60 " +
-                (busy ? "opacity-60 cursor-wait" : "") +
-                (isHL
+              className={`group w-full text-left ${stackClasses} rounded-3xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4 sm:px-5 sm:py-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/60 ${
+                busy ? "opacity-60 cursor-wait" : ""
+              }${
+                isHL
                   ? " ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900"
-                  : "")
-              }
+                  : ""
+              }`}
+
               title={isHL ? "New follow-up created" : undefined}
             >
               {/* Top row: title + status badges */}

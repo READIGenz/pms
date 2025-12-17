@@ -395,7 +395,7 @@ export default function ModuleSettingsLayout() {
                   Transmission Type
                 </div>
                 {(
-                  ["Public", "Private", "UserSet"] as WirTransmissionType[]
+                  ["Public", "Private"] as WirTransmissionType[]
                 ).map((val) => {
                   const checked = getWirExtra(wir).transmissionType === val;
                   return (
