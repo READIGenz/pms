@@ -107,6 +107,7 @@ type WirDoc = {
         createdAt: string;
         meta?: any;
     }>;
+    evidences?: WirItemEvidence[];
     // --- Inspector recommendation header fields (persisted on BE) ---
     inspectorRecommendation?: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null;
     inspectorRemarks?: string | null;
@@ -362,6 +363,9 @@ export default function WIRDocDis() {
     // Hold local (unsaved) pick
     const [pendingRec, setPendingRec] =
         useState<WirDoc["inspectorRecommendation"] | null>(null);
+
+    // Header-level Inspector remarks (for recommendation tile)
+    const [pendingRemark, setPendingRemark] = useState<string>("");
 
     // --- PATCH: keep showing ALL saved evidences without waiting for a refetch ---
     const uploadEvidence = useCallback(async (itemId: string, file: File) => {
@@ -773,6 +777,11 @@ export default function WIRDocDis() {
     }, [row?.wirId, row?.updatedAt]);
 
     useEffect(() => {
+        if (!row) return;
+        setPendingRemark(row.inspectorRemarks ?? "");
+    }, [row?.wirId, row?.updatedAt, row?.inspectorRemarks]);
+
+    useEffect(() => {
         const lock = computeCriticalFail();
         setRecLockedReject(lock);
         if (lock) setPendingRec("REJECT");
@@ -1108,8 +1117,33 @@ export default function WIRDocDis() {
         };
     }, [mappedFinalizeOutcome]);
 
-    // click handler used by the button
+    // Header-level evidences: those not tied to any specific item/run
+    const headerDocs = useMemo(
+        () => {
+            const all = row?.evidences ?? [];
+            return all.filter((ev: any) => !ev.itemId); // itemId null/undefined => header document
+        },
+        [row?.evidences]
+    );
+
     const onSendToHodClick = useCallback(async () => {
+        // NEW: Guard – one recommendation must be selected
+        const currentRec: "APPROVE" | "APPROVE_WITH_COMMENTS" | "REJECT" | null =
+            recLockedReject
+                ? "REJECT"
+                : ((pendingRec ?? row?.inspectorRecommendation) ?? null);
+
+        if (!currentRec) {
+            setSendWarnList([
+                {
+                    id: "inspectorRecommendation",
+                    name: "Select an Inspector Recommendation (Approve / Approve w/ Comments / Reject) before sending to HOD.",
+                },
+            ]);
+            setSendWarnOpen(true);
+            return;
+        }
+
         const res = validateAllRunnerFields();
         if (!res.ok) {
             setSendWarnList(res.missing);
@@ -1121,10 +1155,18 @@ export default function WIRDocDis() {
             }
             return;
         }
-        setHodSelectedUserId(null);           // <— reset selection for a fresh open
+
+        setHodSelectedUserId(null);           // reset selection for a fresh open
         setHodConfirmOpen(true);
         loadHodDerived();
-    }, [validateAllRunnerFields, inputRefs, loadHodDerived]);
+    }, [
+        validateAllRunnerFields,
+        inputRefs,
+        loadHodDerived,
+        recLockedReject,
+        pendingRec,
+        row?.inspectorRecommendation,
+    ]);
 
     // onRunnerClick to show dialog when not allowed to open editable runner
     const onRunnerClick = useCallback(() => {
@@ -1482,6 +1524,49 @@ export default function WIRDocDis() {
                                         )}
                                     </div>
                                 </div>
+                                {/* Documents & Evidence (header-level, read-only) */}
+                                {headerDocs.length > 0 && (
+                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                Documents &amp; Evidence
+                                            </div>
+                                            <span className="text-[11px] uppercase tracking-wide text-slate-400">
+                                                Read only
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-1 text-sm dark:text-white">
+                                            {headerDocs.map((ev: any) => {
+                                                const displayName =
+                                                    ev.fileName ||
+                                                    (typeof ev.url === "string" ? ev.url.split("/").pop() : "") ||
+                                                    ev.kind ||
+                                                    "Attachment";
+
+                                                return (
+                                                    <div
+                                                        key={ev.id || displayName}
+                                                        className="flex items-center justify-between gap-2 text-[12px]"
+                                                    >
+                                                        <a
+                                                            href={ev.url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="truncate underline decoration-dotted hover:decoration-solid"
+                                                        >
+                                                            {displayName}
+                                                        </a>
+                                                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                                            {ev.kind || "File"}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Reschedule button (below Checklists) — visible only for Inspector/Inspector+HOD who is BIC */}
                                 {canReschedule && (
                                     <div className="md:col-span-2 flex justify-end">
@@ -1513,6 +1598,10 @@ export default function WIRDocDis() {
                                                     <span className="text-[12px] text-gray-700 dark:text-gray-200">
                                                         Inspector recommends: <b>{row.inspectorRecommendation || "—"}</b>
                                                     </span>
+                                                </div>
+                                                <div className="text-[12px] text-gray-700 dark:text-gray-300">
+                                                    <span className="font-medium">Inspector remarks:</span>{" "}
+                                                    {row.inspectorRemarks || "—"}
                                                 </div>
                                                 <div className="pt-1">
                                                     <button
@@ -1903,6 +1992,23 @@ export default function WIRDocDis() {
                                         </button>
 
                                     </div>
+                                    {/* Header-level Inspector Remarks (saved with recommendation) */}
+                                    <div className="mt-3">
+                                        <label className="text-[12px] block mb-1 text-gray-600 dark:text-gray-300">
+                                            Inspector Remarks (max 200 chars)
+                                        </label>
+                                        <textarea
+                                            value={pendingRemark}
+                                            onChange={(e) => setPendingRemark(e.target.value.slice(0, 200))}
+                                            rows={3}
+                                            className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                            placeholder="Write a brief summary for HOD…"
+                                        />
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
+                                            {pendingRemark.length}/200
+                                        </div>
+                                    </div>
+
                                 </div>
                                 {/* Bottom action bar */}
                                 <div className="mt-3 flex flex-wrap gap-2 justify-end">
@@ -2624,9 +2730,15 @@ export default function WIRDocDis() {
                                         await api.patch(`/projects/${projectId}/wir/${wirId}`, hodPlannedPatch);
 
                                         // 3) Persist the recommendation via BE endpoint (keeps audit/version parity)
+                                        const remark =
+                                            (pendingRemark || "").slice(0, 200).trim() || null;
+
                                         await api.post(
                                             `/projects/${projectId}/wir/${wirId}/runner/inspector-recommend`,
-                                            { action: hodPlannedPatch.inspectorRecommendation, comment: null }
+                                            {
+                                                action: hodPlannedPatch.inspectorRecommendation,
+                                                comment: remark,
+                                            }
                                         );
 
                                         // 4) Refresh
@@ -2686,10 +2798,12 @@ export default function WIRDocDis() {
                     <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Missing required fields</div>
                         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                            All <b>Mandatory</b> items must have:
-                            <b>Pass/Fail</b> status, a numeric <b>Measurement</b> if tagged <i>measurement</i>,
-                            and an attached <b>Photo/Document</b> if tagged <i>evidence/document</i>.
+                            All <b>Mandatory</b> items must have a <b>Pass/Fail</b> status,
+                            a numeric <b>Measurement</b> if tagged <i>measurement</i>,
+                            an attached <b>Photo/Document</b> if tagged <i>evidence/document</i>,
+                            and one <b>Recommendation</b> (Approve / Approve w/ Comments / Reject) selected.
                         </div>
+
                         {sendWarnList.length > 0 && (
                             <ul className="mt-3 text-sm list-disc pl-5 max-h-48 overflow-auto">
                                 {sendWarnList.map(it => (

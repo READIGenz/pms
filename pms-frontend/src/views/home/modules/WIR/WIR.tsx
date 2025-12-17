@@ -452,8 +452,28 @@ export default function WIR() {
   useEffect(() => { fetchWirCfg(); }, [fetchWirCfg]);
 
   // Visible list = search-filtered AND hide Drafts not created by me
+  // const filtered = useMemo(() => {
+  //   const q = search.trim().toLowerCase();
+  //   const base = q
+  //     ? list.filter((w) => {
+  //       const hay = [w.code, w.title, w.status].map((v) =>
+  //         (v || "").toString().toLowerCase()
+  //       );
+  //       return hay.some((s) => s.includes(q));
+  //     })
+  //     : list;
+  //   return base.filter((w) => {
+  //     const st = canonicalWirStatus(w.status);
+  //     if (st !== "Draft") return true; // non-drafts always visible
+  //     // Drafts are visible only if createdById matches me (if present)
+  //     if (!w.createdById) return false; // be strict if BE provides no owner
+  //     return w.createdById.toString() === currentUserId;
+  //   });
+  // }, [list, search, currentUserId]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+
+    // 1) Search filter (unchanged)
     const base = q
       ? list.filter((w) => {
         const hay = [w.code, w.title, w.status].map((v) =>
@@ -462,13 +482,49 @@ export default function WIR() {
         return hay.some((s) => s.includes(q));
       })
       : list;
-    return base.filter((w) => {
+
+    // 2) Visibility filter (unchanged logic)
+    const visible = base.filter((w) => {
       const st = canonicalWirStatus(w.status);
       if (st !== "Draft") return true; // non-drafts always visible
       // Drafts are visible only if createdById matches me (if present)
       if (!w.createdById) return false; // be strict if BE provides no owner
       return w.createdById.toString() === currentUserId;
     });
+
+    // 3) Stack WIRs with same code together, latest version on top
+    const byCode = new Map<string, WirLite[]>();
+    const order: string[] = [];
+
+    for (const w of visible) {
+      const baseCode = shortCode(w.code);
+      const key = baseCode || (w.code || w.wirId); // fall back to full code / wirId
+      let bucket = byCode.get(key);
+      if (!bucket) {
+        bucket = [];
+        byCode.set(key, bucket);
+        order.push(key); // preserve first-seen order of codes
+      }
+      bucket.push(w);
+    }
+
+    const stacked: WirLite[] = [];
+    for (const key of order) {
+      const bucket = byCode.get(key)!;
+      bucket.sort((a, b) => {
+        const va = typeof a.version === "number" ? a.version : -Infinity;
+        const vb = typeof b.version === "number" ? b.version : -Infinity;
+        if (va !== vb) return vb - va; // higher version first
+
+        // tie-breaker: newer createdAt first (if available)
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
+      });
+      stacked.push(...bucket);
+    }
+
+    return stacked;
   }, [list, search, currentUserId]);
 
   useEffect(() => {
@@ -614,6 +670,10 @@ export default function WIR() {
     });
   };
 
+  // --- local helpers for stacked visual grouping by code ---
+  let lastBaseCode: string | null = null;
+  let stackDepth = 0;
+
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
       {/* Header */}
@@ -696,6 +756,19 @@ export default function WIR() {
           const busy = preflightId === w.wirId;
           const isHL = highlightId && w.wirId === highlightId;
 
+          // --- stacked visual group by base code (shortCode) ---
+          const baseCodeKey = shortCode(w.code) || w.code || w.wirId;
+          if (baseCodeKey === lastBaseCode) {
+            stackDepth += 1;
+          } else {
+            stackDepth = 0;
+            lastBaseCode = baseCodeKey;
+          }
+          const isStackedSibling = stackDepth > 0;
+          const stackClasses = isStackedSibling
+            ? "relative z-[5] mt-[-10px] ml-4"
+            : "relative z-[10]";
+
           // Prefer normalized fields (now preserved in mapping), with light fallbacks:
           const any = w as any;
           const bicName = pickBicName(w, bicNameMap);
@@ -741,7 +814,10 @@ export default function WIR() {
               ref={isHL ? setHlEl : undefined}
               onClick={() => !busy && openWirDetail(w)}
               disabled={busy}
-              className={`text-left group ${busy ? "opacity-60 cursor-wait" : ""} ${isHL ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 rounded-2xl" : ""
+              className={`text-left group ${stackClasses} ${busy ? "opacity-60 cursor-wait" : ""
+                } ${isHL
+                  ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 rounded-2xl"
+                  : ""
                 }`}
               title={isHL ? "New follow-up created" : undefined}
             >

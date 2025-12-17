@@ -12,12 +12,12 @@ type CompanyOpt = {
   companyId: string;
   name: string;
   companyRole?:
-    | "IH_PMT"
-    | "Contractor"
-    | "Consultant"
-    | "PMC"
-    | "Supplier"
-    | null;
+  | "IH_PMT"
+  | "Contractor"
+  | "Consultant"
+  | "PMC"
+  | "Supplier"
+  | null;
 };
 
 /** Enums from prisma schema */
@@ -147,7 +147,7 @@ export default function UserEdit() {
         status === 404
           ? "States API not found (list may be incomplete)."
           : (results[0] as any)?.reason?.response?.data?.error ||
-              "Failed to load states."
+          "Failed to load states."
       );
     }
 
@@ -159,7 +159,7 @@ export default function UserEdit() {
       if (!refsErr) {
         setRefsErr(
           (results[1] as any)?.reason?.response?.data?.error ||
-            "Failed to load projects."
+          "Failed to load projects."
         );
       }
     }
@@ -172,7 +172,7 @@ export default function UserEdit() {
       if (!refsErr) {
         setRefsErr(
           (results[2] as any)?.reason?.response?.data?.error ||
-            "Failed to load companies."
+          "Failed to load companies."
         );
       }
     }
@@ -351,7 +351,7 @@ export default function UserEdit() {
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-          "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+        "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
       return;
     }
@@ -416,8 +416,8 @@ export default function UserEdit() {
         : "";
       window.alert(
         "This user is assigned as Client to one or more projects." +
-          list +
-          "\n\nPlease remove those assignments first, then change this setting."
+        list +
+        "\n\nPlease remove those assignments first, then change this setting."
       );
       return;
     }
@@ -428,13 +428,13 @@ export default function UserEdit() {
     if (!next && selectedCompanyIds.length > 0) {
       const list = serviceCompanyLabels.length
         ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join(
-            "\n• "
-          )}`
+          "\n• "
+        )}`
         : "";
       window.alert(
         "This user is linked to one or more Service Partner companies." +
-          list +
-          "\n\nPlease remove those assignments first, then change this setting."
+        list +
+        "\n\nPlease remove those assignments first, then change this setting."
       );
       return;
     }
@@ -459,11 +459,11 @@ export default function UserEdit() {
 
     window.alert(
       "This user is linked to a Service Partner company." +
-        `\n\n• ${companyLabel}` +
-        `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join(
-          "\n• "
-        )}` +
-        "\n\nPlease remove those assignments first, then change this setting."
+      `\n\n• ${companyLabel}` +
+      `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join(
+        "\n• "
+      )}` +
+      "\n\nPlease remove those assignments first, then change this setting."
     );
     return false;
   };
@@ -556,7 +556,7 @@ export default function UserEdit() {
                 />
 
                 <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
-                  <Text label="Code" value="+91" setValue={() => {}} disabled />
+                  <Text label="Code" value="+91" setValue={() => { }} disabled />
                   <Text
                     label="Mobile (India)"
                     value={phone}
@@ -615,7 +615,7 @@ export default function UserEdit() {
                       onChange={(e) =>
                         setProfileFile(e.target.files?.[0] || null)
                       }
-                      className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
+                      className="block w-fit shrink-0 text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
                     />
 
                     {profileFile && (
@@ -739,11 +739,10 @@ export default function UserEdit() {
                       <CheckboxGroup
                         label={
                           companyRoleFilter
-                            ? `Select Company(ies) — ${
-                                companyRoleFilter === "IH_PMT"
-                                  ? "IH-PMT"
-                                  : companyRoleFilter
-                              }`
+                            ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT"
+                              ? "IH-PMT"
+                              : companyRoleFilter
+                            }`
                             : "Select Company(ies)"
                         }
                         items={filteredCompanies.map((c) => ({

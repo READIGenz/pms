@@ -201,15 +201,64 @@ type ActivityLite = {
     discipline?: string | null;
 };
 
+// Header documents (WIR-level, not item runners)
+type HeaderDocsState = {
+    drawings?: File[];
+    itp?: File[];
+    other?: File[];
+    photos?: File[];
+    material?: File[];
+    safety?: File[];
+};
+
+// Existing header-level evidences already attached to this WIR
+type HeaderEvidenceLite = {
+    id: string;
+    kind?: string | null;
+    url: string;
+    fileName?: string | null;
+    createdAt?: string | null;
+};
+
+function extractWirIdFromResponse(res: any): string | null {
+    if (!res) return null;
+    const data = res.data ?? res;
+    const id =
+        data?.data?.wirId ??
+        data?.wir?.wirId ??
+        data?.wirId ??
+        data?.id ??
+        null;
+    return id ? String(id) : null;
+}
+
 // UI type for the Compliance modal rows
+// type UiComplianceItem = {
+//     id: string;
+//     text: string;
+//     refId: string;
+//     code: string | null;
+//     requirement: string | null;
+//     required: boolean | null;
+//     critical: boolean | null;
+//     tags: string[];
+//     units: string | null;
+//     tolOp: string | null;
+//     base: number | null;
+//     plus: number | null;
+//     minus: number | null;
+//     refCode: string | null;
+//     refTitle: string | null;
+// };
+// UI type for the Compliance modal rows (also reused for Follow-up viewer)
 type UiComplianceItem = {
     id: string;
     text: string;
-    refId: string;
+    refId: string | null;
     code: string | null;
     requirement: string | null;
     required: boolean | null;
-    critical: boolean | null;
+    critical: boolean;
     tags: string[];
     units: string | null;
     tolOp: string | null;
@@ -220,6 +269,47 @@ type UiComplianceItem = {
     refTitle: string | null;
 };
 
+type WirItemLike = {
+    id: string;
+    name?: string | null;
+    spec?: string | null;
+    tolerance?: string | null;
+    unit?: string | null;
+    base?: string | number | null;
+    plus?: string | number | null;
+    minus?: string | number | null;
+    code?: string | null;
+    tags?: string[] | null;
+    critical?: boolean | null;
+    checklistId?: string | null;
+    sourceChecklistId?: string | null;
+};
+
+type ChecklistMetaMap = Record<string, { code?: string | null; title?: string | null }>;
+
+function mapWirItemToUiComplianceItem(it: WirItemLike, checklistMap: ChecklistMetaMap): UiComplianceItem {
+    const refId = it.checklistId || it.sourceChecklistId || null;
+    const ref = refId ? checklistMap[refId] : undefined;
+
+    return {
+        id: it.id,
+        text: it.name || "—",
+        refId,
+        code: it.code ?? null,
+        // drives Mandatory / Optional pills
+        requirement: it.spec ?? null,
+        required: null,
+        critical: !!it.critical,
+        tags: Array.isArray(it.tags) ? it.tags : [],
+        units: it.unit ?? null,
+        tolOp: it.tolerance ?? null,
+        base: it.base != null ? Number(it.base) : null,
+        plus: it.plus != null ? Number(it.plus) : null,
+        minus: it.minus != null ? Number(it.minus) : null,
+        refCode: ref?.code ?? null,
+        refTitle: ref?.title ?? null,
+    };
+}
 function normalizeArrayish(payload: any): any[] {
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
@@ -389,9 +479,9 @@ export default function CreateWIR() {
     // Section 2:
     const [workInspection, setWorkInspection] = useState<string>(""); // 200 chars
 
-    // Section 3: (tiles) – placeholders for now
-    const [docs, setDocs] = useState<{ drawings?: File[]; itp?: File[]; other?: File[]; photos?: File[]; material?: File[]; safety?: File[] }>({});
-
+    // Section 3: header-level documents (WIR header, not item runner)
+    const [docs, setDocs] = useState<HeaderDocsState>({});
+    const [headerEvidences, setHeaderEvidences] = useState<HeaderEvidenceLite[]>([]);
     // Section 4/5:
     const [refLoading, setRefLoading] = useState<boolean>(false);
     const [refErr, setRefErr] = useState<string | null>(null);
@@ -519,29 +609,37 @@ export default function CreateWIR() {
     const ensureActivitiesRef = useRef(ensureActivities);
     useEffect(() => { ensureActivitiesRef.current = ensureActivities; }, [ensureActivities]);
 
+    // // PATCH: follow-up viewer state (near other useState/useRef)
+    // const editWirRef = useRef<any>(null);
+
+    // type FailedUiItem = {
+    //     id: string;
+    //     text: string;
+    //     code: string | null;
+    //     refCode: string | null;   // checklist code
+    //     refTitle: string | null;  // checklist title
+    //     inspectorStatus: string | null;
+    //     status: string | null;
+    //     lastRunStatus: string | null;
+    //     units: string | null;
+    //     tolOp: string | null;
+    //     base: number | null;
+    //     plus: number | null;
+    //     minus: number | null;
+    // };
+
+    // const [fuOpen, setFuOpen] = useState(false);
+    // const [fuLoading, setFuLoading] = useState(false);
+    // const [fuErr, setFuErr] = useState<string | null>(null);
+    // const [fuItems, setFuItems] = useState<FailedUiItem[]>([]);
+
     // PATCH: follow-up viewer state (near other useState/useRef)
     const editWirRef = useRef<any>(null);
-
-    type FailedUiItem = {
-        id: string;
-        text: string;
-        code: string | null;
-        refCode: string | null;   // checklist code
-        refTitle: string | null;  // checklist title
-        inspectorStatus: string | null;
-        status: string | null;
-        lastRunStatus: string | null;
-        units: string | null;
-        tolOp: string | null;
-        base: number | null;
-        plus: number | null;
-        minus: number | null;
-    };
 
     const [fuOpen, setFuOpen] = useState(false);
     const [fuLoading, setFuLoading] = useState(false);
     const [fuErr, setFuErr] = useState<string | null>(null);
-    const [fuItems, setFuItems] = useState<FailedUiItem[]>([]);
+    const [fuItems, setFuItems] = useState<UiComplianceItem[]>([]);
 
     // Edit-loader effect
     useEffect(() => {
@@ -678,7 +776,20 @@ export default function CreateWIR() {
                     ""; // intentionally exclude row.title
 
                 setWorkInspection(String(wiCandidate));
-
+                // ---- Header-level evidences already attached to this WIR ----
+                if (Array.isArray(row.evidences)) {
+                    setHeaderEvidences(
+                        row.evidences.map((ev: any) => ({
+                            id: String(ev.id ?? ev.evidenceId ?? crypto.randomUUID()),
+                            kind: ev.kind ?? null,
+                            url: String(ev.url),
+                            fileName: ev.fileName ?? null,
+                            createdAt: ev.createdAt ?? null,
+                        }))
+                    );
+                } else {
+                    setHeaderEvidences([]);
+                }
                 logWir("edit:workInspection mapping", {
                     description: row.description ?? null,
                     header_description: row.header?.description ?? null,
@@ -971,7 +1082,55 @@ export default function CreateWIR() {
         }
     };
 
-    // PATCH: open Failed Items viewer for follow-up edit
+    // // PATCH: open Failed Items viewer for follow-up edit
+    // const openViewFailed = async () => {
+    //     setFuErr(null);
+    //     setFuLoading(true);
+    //     setFuOpen(true);
+
+    //     try {
+    //         const row = editWirRef.current || {};
+    //         const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
+    //         const byChecklistId = new Map(
+    //             checklists.map((c: any) => [
+    //                 String(c?.checklistId ?? c?.id ?? ""),
+    //                 {
+    //                     code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+    //                     title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
+    //                 },
+    //             ])
+    //         );
+
+    //         const items: Array<any> = Array.isArray(row.items) ? row.items : [];
+    //         const list: FailedUiItem[] = items.map((it: any) => {
+    //             const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
+    //             const meta = byChecklistId.get(cid) || { code: null, title: null };
+    //             return {
+    //                 id: String(it?.id ?? crypto.randomUUID()),
+    //                 text: String(it?.name ?? it?.text ?? it?.title ?? "—"),
+    //                 code: (it?.code ?? null) as string | null,
+    //                 refCode: meta.code,
+    //                 refTitle: meta.title,
+    //                 inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
+    //                 status: (it?.status ?? null) as string | null,
+    //                 lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
+    //                 units: (it?.unit ?? null) as string | null,
+    //                 tolOp: (it?.tolerance ?? null) as string | null,
+    //                 base: (it?.base ?? null) as number | null,
+    //                 plus: (it?.plus ?? null) as number | null,
+    //                 minus: (it?.minus ?? null) as number | null,
+    //             };
+    //         });
+
+    //         setFuItems(list);
+    //     } catch (e: any) {
+    //         setFuErr(e?.response?.data?.error || e?.message || "Failed to load follow-up items.");
+    //     } finally {
+    //         setFuLoading(false);
+    //     }
+    // };
+
+    // PATCH: open Failed Items viewer for follow-up edit (reuse UiComplianceItem mapper)
     const openViewFailed = async () => {
         setFuErr(null);
         setFuLoading(true);
@@ -980,36 +1139,19 @@ export default function CreateWIR() {
         try {
             const row = editWirRef.current || {};
             const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
-            const byChecklistId = new Map(
-                checklists.map((c: any) => [
-                    String(c?.checklistId ?? c?.id ?? ""),
-                    {
-                        code: (c?.checklistCode ?? c?.code ?? null) as string | null,
-                        title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
-                    },
-                ])
-            );
 
-            const items: Array<any> = Array.isArray(row.items) ? row.items : [];
-            const list: FailedUiItem[] = items.map((it: any) => {
-                const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
-                const meta = byChecklistId.get(cid) || { code: null, title: null };
-                return {
-                    id: String(it?.id ?? crypto.randomUUID()),
-                    text: String(it?.name ?? it?.text ?? it?.title ?? "—"),
-                    code: (it?.code ?? null) as string | null,
-                    refCode: meta.code,
-                    refTitle: meta.title,
-                    inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
-                    status: (it?.status ?? null) as string | null,
-                    lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
-                    units: (it?.unit ?? null) as string | null,
-                    tolOp: (it?.tolerance ?? null) as string | null,
-                    base: (it?.base ?? null) as number | null,
-                    plus: (it?.plus ?? null) as number | null,
-                    minus: (it?.minus ?? null) as number | null,
+            const checklistMap: ChecklistMetaMap = {};
+            for (const c of checklists) {
+                const cid = String(c?.checklistId ?? c?.id ?? "");
+                if (!cid) continue;
+                checklistMap[cid] = {
+                    code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+                    title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
                 };
-            });
+            }
+
+            const items: Array<WirItemLike> = Array.isArray(row.items) ? row.items : [];
+            const list: UiComplianceItem[] = items.map((it) => mapWirItemToUiComplianceItem(it, checklistMap));
 
             setFuItems(list);
         } catch (e: any) {
@@ -1027,6 +1169,64 @@ export default function CreateWIR() {
         // In follow-up, we keep carried items; no need to pick new checklists.
         return isFollowupMode ? baseOk : Boolean(baseOk && selectedRefIds.length > 0);
     }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds, isFollowupMode]);
+
+    // Upload WIR header documents to:
+    // POST /projects/:projectId/wir/:wirId/documents (multipart/form-data, files[])
+    async function uploadHeaderDocs(projectId: string, wirId: string, docsState: HeaderDocsState) {
+        if (!projectId || !wirId) return;
+
+        const allFiles: File[] = [];
+        (["drawings", "itp", "other", "photos", "material", "safety"] as const).forEach((key) => {
+            const arr = docsState[key];
+            if (arr && arr.length) allFiles.push(...arr);
+        });
+
+        if (!allFiles.length) return;
+
+        const form = new FormData();
+        for (const f of allFiles) {
+            form.append("files", f);
+        }
+
+        try {
+            const res = await api.post(`/projects/${projectId}/wir/${wirId}/documents`, form, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            // If API returns created evidences (as per /documents spec), merge into view
+            if (Array.isArray(res?.data)) {
+                setHeaderEvidences((prev) => [
+                    ...prev,
+                    ...res.data.map((ev: any) => ({
+                        id: String(ev.evidenceId ?? ev.id ?? crypto.randomUUID()),
+                        kind: ev.kind ?? null,
+                        url: String(ev.url),
+                        fileName: ev.fileName ?? null,
+                        createdAt: ev.createdAt ?? null,
+                    })),
+                ]);
+            }
+        } catch (err) {
+            // keep business flow unchanged; just log for now
+            console.warn("[WIR] header docs upload failed:", err);
+        }
+    }
+
+    // Delete a header-level evidence using existing runner attachments endpoint
+    async function deleteHeaderEvidence(evidenceId: string) {
+        if (!projectId || !evidenceId) return;
+        const wirId = editId || wirIdForModal;
+        if (!wirId) return;
+
+        try {
+            await api.delete(
+                `/projects/${projectId}/wir/${wirId}/runner/attachments/${evidenceId}`
+            );
+            setHeaderEvidences((prev) => prev.filter((ev) => ev.id !== evidenceId));
+        } catch (err) {
+            // Non-blocking: just log; do not disturb other flows
+            console.warn("[WIR] delete header evidence failed:", err);
+        }
+    }
 
     // Build the exact draft payload (same keys you already send in saveDraft)
     function buildDraftPayload(isPatch = false) {
@@ -1132,6 +1332,12 @@ export default function CreateWIR() {
                 logWir("saveDraft:verify <- GET", check?.data);
             }
 
+            // Header docs upload (if any)
+            const wirId = extractWirIdFromResponse(res) || (isPatch ? editId : null);
+            if (wirId) {
+                await uploadHeaderDocs(projectId, wirId, docs);
+            }
+
             // Keep checklist sync (non-blocking)
             //if (isPatch && selectedRefIds.length) {
             if (isPatch && selectedRefIds.length && !isFollowupMode) {
@@ -1193,10 +1399,17 @@ export default function CreateWIR() {
                 }
             }
 
+            let res;
             if (isEdit && editId) {
-                await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
+                res = await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
             } else {
-                await api.post(`/projects/${projectId}/wir`, payload);
+                res = await api.post(`/projects/${projectId}/wir`, payload);
+            }
+
+            // Header docs upload (if any)
+            const wirId = extractWirIdFromResponse(res) || (isEdit ? editId : null);
+            if (wirId) {
+                await uploadHeaderDocs(projectId, wirId, docs);
             }
 
             backToWirList();
@@ -1224,20 +1437,27 @@ export default function CreateWIR() {
             const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
             logWir("autoSaveDraft <- response", res?.data);
 
+            // // Extract a stable wirId from common API shapes
+            // const newId =
+            //     String(
+            //         res?.data?.data?.wirId ??
+            //         res?.data?.wir?.wirId ??
+            //         res?.data?.wirId ??
+            //         res?.data?.id ??
+            //         ""
+            //     ) || wirIdForModal;
+
+            // if (newId) setWirIdForModal(newId);
             // Extract a stable wirId from common API shapes
-            const newId =
-                String(
-                    res?.data?.data?.wirId ??
-                    res?.data?.wir?.wirId ??
-                    res?.data?.wirId ??
-                    res?.data?.id ??
-                    ""
-                ) || wirIdForModal;
-
-            if (newId) setWirIdForModal(newId);
-
+            const newId = extractWirIdFromResponse(res) || wirIdForModal;
+            if (newId) {
+                setWirIdForModal(newId);
+                // Header docs upload (if any) before opening dispatch modal
+                await uploadHeaderDocs(projectId, newId, docs);
+            }
             // open the dispatch modal now that we’re sure a draft exists
             setDispatchOpen(true);
+
         } catch (e: any) {
             const err = e?.response?.data || e?.message || e;
             console.error("[WIR] autoSaveDraft error:", err);
@@ -1476,28 +1696,111 @@ export default function CreateWIR() {
                                 { key: "photos", label: "Upload Photos" },
                                 { key: "material", label: "Material Approval" },
                                 { key: "safety", label: "Safety Clearance" },
-                            ].map((tile) => (
-                                <label
-                                    key={tile.key}
-                                    className="cursor-pointer rounded-xl border dark:border-neutral-800 p-3 text-center hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                >
-                                    <div className="text-[13px] sm:text-sm dark:text-white">{tile.label}</div>
-                                    <input
-                                        type="file"
-                                        className="hidden"
-                                        multiple
-                                        onChange={(e) => {
-                                            const files = e.target.files ? Array.from(e.target.files) : [];
-                                            setDocs((prev) => ({ ...prev, [tile.key]: files }));
-                                        }}
-                                    />
-                                    <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                        {(docs as any)[tile.key]?.length ? `${(docs as any)[tile.key].length} file(s)` : "Choose files"}
-                                    </div>
-                                </label>
-                            ))}
+                            ].map((tile) => {
+                                const filesForTile = (docs as any)[tile.key] as File[] | undefined;
+                                const count = filesForTile?.length ?? 0;
+
+                                return (
+                                    <label
+                                        key={tile.key}
+                                        className="cursor-pointer rounded-xl border dark:border-neutral-800 p-3 text-center hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    >
+                                        <div className="text-[13px] sm:text-sm dark:text-white">{tile.label}</div>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            multiple
+                                            onChange={(e) => {
+                                                const files = e.target.files ? Array.from(e.target.files) : [];
+                                                setDocs((prev) => ({ ...prev, [tile.key]: files }));
+                                            }}
+                                        />
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                            {count ? `${count} file(s)` : "Choose files"}
+                                        </div>
+
+                                        {/* Per-tile file names with remove option (local, pre-upload only) */}
+                                        {filesForTile && filesForTile.length > 0 && (
+                                            <ul className="mt-1 space-y-0.5 text-[11px] text-gray-600 dark:text-gray-300 text-left">
+                                                {filesForTile.map((f, idx) => (
+                                                    <li key={idx} className="flex items-center gap-1">
+                                                        <span
+                                                            className="truncate flex-1"
+                                                            title={f.name}
+                                                        >
+                                                            {f.name}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            className="shrink-0 px-1 rounded-full border text-[10px] leading-none dark:border-neutral-700"
+                                                            onClick={(e) => {
+                                                                // don’t trigger file picker when clicking remove
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+
+                                                                setDocs((prev) => {
+                                                                    const prevArr = (prev as any)[tile.key] as File[] | undefined;
+                                                                    if (!prevArr) return prev;
+                                                                    const nextArr = prevArr.filter((_, i) => i !== idx);
+                                                                    return { ...prev, [tile.key]: nextArr };
+                                                                });
+                                                            }}
+                                                            aria-label="Remove file"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </label>
+                                );
+                            })}
                         </div>
-                        <Note className="mt-2">Uploading to server can be wired later; this records user selection in state now.</Note>
+
+                        <Note className="mt-2">
+                            Files are grouped here and uploaded to the WIR header when you Save Draft or Submit.
+                        </Note>
+                        {headerEvidences.length > 0 && (
+                            <div className="mt-3 border-t border-dashed dark:border-neutral-800 pt-3">
+                                <div className="text-[12px] font-medium text-gray-700 dark:text-gray-200 mb-1">
+                                    Already attached to this WIR
+                                </div>
+                                <ul className="space-y-1 text-[12px]">
+                                    {headerEvidences.map((ev) => {
+                                        const fallbackName =
+                                            ev.fileName ||
+                                            (ev.url ? ev.url.split("/").pop() || "File" : "File");
+                                        return (
+                                            <li key={ev.id} className="flex items-center justify-between gap-2">
+                                                <a
+                                                    href={ev.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="truncate underline text-blue-600 dark:text-blue-400"
+                                                >
+                                                    {fallbackName}
+                                                </a>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {ev.kind && (
+                                                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                                            {ev.kind}
+                                                        </span>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        className="text-[11px] px-2 py-0.5 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                                        onClick={() => deleteHeaderEvidence(ev.id)}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
                     </div>
 
                     {/* Section 4 — Checklist Library */}
@@ -1669,6 +1972,13 @@ export default function CreateWIR() {
                                             ? await api.patch(path, payload)
                                             : await api.post(path, payload);
                                         logWir("saveDraft(confirm) <- response", res?.data);
+
+                                        // Header docs upload (if any)
+                                        const wirId = extractWirIdFromResponse(res) || (saveMethodRef.current === "PATCH" ? editId : null);
+                                        if (wirId) {
+                                            await uploadHeaderDocs(projectId, wirId, docs);
+                                        }
+
                                         setSaveDlgBusy(false);
                                         setSaveDlgOpen(false);
                                         backToWirList();
@@ -1914,33 +2224,20 @@ export default function CreateWIR() {
                             <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {fuItems.map((it) => {
-                                        const op = it.tolOp === "+-" ? "±" : it.tolOp;
-                                        const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
+                                        const tol = tolPillOf(it);
                                         const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
-
-                                        const statusBadge = (label: string | null, tone: "rose" | "amber" | "gray" = "gray") =>
-                                            label ? (
-                                                <span
-                                                    className={
-                                                        "text-[11px] px-2 py-1 rounded-full border " +
-                                                        (tone === "rose"
-                                                            ? "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
-                                                            : tone === "amber"
-                                                                ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300"
-                                                                : "dark:border-neutral-800 text-gray-600 dark:text-gray-300")
-                                                    }
-                                                >
-                                                    {label}
-                                                </span>
-                                            ) : null;
+                                        const req = (it.requirement || "").toString().trim();
+                                        const isMandatory = it.required === true || /^mandatory$/i.test(req);
+                                        const isOptional = it.required === false || /^optional$/i.test(req);
 
                                         return (
                                             <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-                                                {/* Title + tolerance (exact like Compliance) */}
+                                                {/* Title + tolerance (like Compliance) */}
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <div className="text-sm font-semibold dark:text-white">
-                                                            {it.text || "Untitled"}{tol ? ` — ${tol}` : ""}
+                                                            {it.text || "Untitled"}
+                                                            {tol ? ` — ${tol}` : ""}
                                                         </div>
                                                         {codeLine && (
                                                             <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
@@ -1948,11 +2245,26 @@ export default function CreateWIR() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {/* Compliance has a right-side Critical pill; Follow-up schema lacks it, so keep empty */}
+
+                                                    {it.critical && (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                                            Critical
+                                                        </span>
+                                                    )}
                                                 </div>
 
-                                                {/* Pills row (Mandatory/Optional omitted — not available in Follow-up); keep Unit/Tolerance like Compliance */}
+                                                {/* Pills row (Mandatory/Optional + Unit/Tolerance) */}
                                                 <div className="mt-2 flex flex-wrap gap-2">
+                                                    {isMandatory && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Mandatory
+                                                        </span>
+                                                    )}
+                                                    {isOptional && (
+                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            Optional
+                                                        </span>
+                                                    )}
                                                     {it.units && (
                                                         <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
                                                             Unit: {it.units}
@@ -1965,11 +2277,23 @@ export default function CreateWIR() {
                                                     )}
                                                 </div>
 
-                                                {/* Compliance shows tags row; Follow-up has no tags — omit for visual parity */}
+                                                {/* Tags row (if any) */}
+                                                {(it.tags?.length || 0) > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                        {it.tags!.map((t, i) => (
+                                                            <span
+                                                                key={i}
+                                                                className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
+                                                            >
+                                                                {t}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
-                                </div> {/* ← close the new grid wrapper */}
+                                </div>
                             </div>
                         )}
                         {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}

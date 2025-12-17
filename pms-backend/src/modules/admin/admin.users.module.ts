@@ -4,10 +4,11 @@ import { AdminUsersController } from './controllers/admin.users.controller';
 import { AdminRefsController } from './controllers/admin.refs.controller';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AdminCodeService } from './admin-code.service';
+import { FilesService } from 'src/common/storage/files.service';
 
 @Module({
   controllers: [AdminUsersController, AdminRefsController],
-  providers: [PrismaService, AdminCodeService],
+  providers: [PrismaService, AdminCodeService, FilesService],
   exports: [], // export services here if other modules need them
 })
 export class AdminUsersModule {}
