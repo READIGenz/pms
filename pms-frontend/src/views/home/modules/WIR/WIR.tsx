@@ -235,6 +235,7 @@ type WirListCfg = {
 
 /* -------- Quick tabs -------- */
 type QuickTab = "all" | "today" | "upcoming";
+type GroupBy = "none" | "status" | "discipline";
 
 /* -------- Filter sheet types -------- */
 type StatusFilter =
@@ -306,6 +307,7 @@ export default function WIR() {
 
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [hlEl, setHlEl] = useState<HTMLButtonElement | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
 
   useEffect(() => {
     const id = new URLSearchParams(loc.search).get("hl");
@@ -604,134 +606,201 @@ export default function WIR() {
     fetchWirCfg();
   }, [fetchWirCfg]);
 
-const matchStatusFilter = useCallback((w: WirLite, sf: StatusFilter) => {
-  if (sf === "all") return true;
+  const matchStatusFilter = useCallback((w: WirLite, sf: StatusFilter) => {
+    if (sf === "all") return true;
 
-  const st = canonicalWirStatus(w.status);
-  const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
-
-  if (sf === "submitted")
-    return st === "Submitted" || st === "InspectorRecommended";
-
-  if (sf === "rejected")
-    return (
-      st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT"
-    );
-
-  if (sf === "approved") {
-    if (st !== "HODApproved" && st !== "Closed") return false;
-    return ir === "APPROVE" || (!ir && st === "HODApproved");
-  }
-
-  if (sf === "approved_with_comments") {
-    if (st !== "HODApproved" && st !== "Closed") return false;
-    return ir === "APPROVE_WITH_COMMENTS";
-  }
-
-  return true;
-}, []);
-
-const matchDiscFilter = useCallback((w: WirLite, df: DisciplineFilter) => {
-  if (df === "all") return true;
-  const d = canonicalDisc(w.discipline ?? null);
-  return d === df;
-}, []);
-
-const matchesRange = useCallback((w: WirLite, fromYmd: string, toYmd: string) => {
-  if (!fromYmd && !toYmd) return true;
-  const when = wirWhen(w);
-  if (!when) return false;
-
-  if (fromYmd) {
-    const from = startOfDay(new Date(fromYmd));
-    if (when.getTime() < from.getTime()) return false;
-  }
-  if (toYmd) {
-    const to = endOfDay(new Date(toYmd));
-    if (when.getTime() > to.getTime()) return false;
-  }
-  return true;
-}, []);
-
-  const filtered = useMemo(() => {
-  const q = search.trim().toLowerCase();
-
-  // 1) Search
-  let out = q
-    ? list.filter((w) => {
-        const hay = [w.code, w.title, w.status].map((v) =>
-          (v || "").toString().toLowerCase()
-        );
-        return hay.some((s) => s.includes(q));
-      })
-    : list;
-
-  // 2) Hide Drafts not created by me (master logic)
-  out = out.filter((w) => {
     const st = canonicalWirStatus(w.status);
-    if (st !== "Draft") return true;
-    if (!w.createdById) return false;
-    return w.createdById.toString() === currentUserId;
-  });
+    const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
 
-  // 3) Modal filters (your logic)
-  out = out.filter((w) => matchStatusFilter(w, fStatus));
-  out = out.filter((w) => matchDiscFilter(w, fDisc));
-  out = out.filter((w) => matchesRange(w, fFrom, fTo));
+    if (sf === "submitted")
+      return st === "Submitted" || st === "InspectorRecommended";
 
-  // 4) Quick tabs (your logic)
-  if (quickTab !== "all") {
-    const now = new Date();
-    const sod = startOfDay(now).getTime();
-    const eod = endOfDay(now).getTime();
+    if (sf === "rejected")
+      return (
+        st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT"
+      );
 
-    out = out.filter((w) => {
+    if (sf === "approved") {
+      if (st !== "HODApproved" && st !== "Closed") return false;
+      return ir === "APPROVE" || (!ir && st === "HODApproved");
+    }
+
+    if (sf === "approved_with_comments") {
+      if (st !== "HODApproved" && st !== "Closed") return false;
+      return ir === "APPROVE_WITH_COMMENTS";
+    }
+
+    return true;
+  }, []);
+
+  const matchDiscFilter = useCallback((w: WirLite, df: DisciplineFilter) => {
+    if (df === "all") return true;
+    const d = canonicalDisc(w.discipline ?? null);
+    return d === df;
+  }, []);
+
+  const matchesRange = useCallback(
+    (w: WirLite, fromYmd: string, toYmd: string) => {
+      if (!fromYmd && !toYmd) return true;
       const when = wirWhen(w);
       if (!when) return false;
-      const t = when.getTime();
-      if (quickTab === "today") return t >= sod && t <= eod;
-      if (quickTab === "upcoming") return t > eod;
+
+      if (fromYmd) {
+        const from = startOfDay(new Date(fromYmd));
+        if (when.getTime() < from.getTime()) return false;
+      }
+      if (toYmd) {
+        const to = endOfDay(new Date(toYmd));
+        if (when.getTime() > to.getTime()) return false;
+      }
       return true;
+    },
+    []
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    // 1) Search
+    let out = q
+      ? list.filter((w) => {
+          const hay = [w.code, w.title, w.status].map((v) =>
+            (v || "").toString().toLowerCase()
+          );
+          return hay.some((s) => s.includes(q));
+        })
+      : list;
+
+    // 2) Hide Drafts not created by me (master logic)
+    out = out.filter((w) => {
+      const st = canonicalWirStatus(w.status);
+      if (st !== "Draft") return true;
+      if (!w.createdById) return false;
+      return w.createdById.toString() === currentUserId;
     });
-  }
 
-  // 5) Sort + keep versions stacked within same code
-  out.sort((a, b) => {
-    const aa = (shortCode(a.code) || "").toLowerCase();
-    const bb = (shortCode(b.code) || "").toLowerCase();
+    // 3) Modal filters (your logic)
+    out = out.filter((w) => matchStatusFilter(w, fStatus));
+    out = out.filter((w) => matchDiscFilter(w, fDisc));
+    out = out.filter((w) => matchesRange(w, fFrom, fTo));
 
-    if (aa < bb) return sortDir === "asc" ? -1 : 1;
-    if (aa > bb) return sortDir === "asc" ? 1 : -1;
+    // 4) Quick tabs (your logic)
+    if (quickTab !== "all") {
+      const now = new Date();
+      const sod = startOfDay(now).getTime();
+      const eod = endOfDay(now).getTime();
 
-    const va = typeof a.version === "number" ? a.version : -Infinity;
-    const vb = typeof b.version === "number" ? b.version : -Infinity;
-    if (va !== vb) return vb - va;
+      out = out.filter((w) => {
+        const when = wirWhen(w);
+        if (!when) return false;
+        const t = when.getTime();
+        if (quickTab === "today") return t >= sod && t <= eod;
+        if (quickTab === "upcoming") return t > eod;
+        return true;
+      });
+    }
 
-    const at = (a.title || "").toLowerCase();
-    const bt = (b.title || "").toLowerCase();
-    if (at < bt) return sortDir === "asc" ? -1 : 1;
-    if (at > bt) return sortDir === "asc" ? 1 : -1;
+    // 5) Sort + keep versions stacked within same code
+    out.sort((a, b) => {
+      const aa = (shortCode(a.code) || "").toLowerCase();
+      const bb = (shortCode(b.code) || "").toLowerCase();
 
-    const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return db - da;
-  });
+      if (aa < bb) return sortDir === "asc" ? -1 : 1;
+      if (aa > bb) return sortDir === "asc" ? 1 : -1;
 
-  return out;
-}, [
-  list,
-  search,
-  currentUserId,
-  fStatus,
-  fDisc,
-  fFrom,
-  fTo,
-  quickTab,
-  sortDir,
-  matchStatusFilter,
-  matchDiscFilter,
-  matchesRange,
-]);
+      const va = typeof a.version === "number" ? a.version : -Infinity;
+      const vb = typeof b.version === "number" ? b.version : -Infinity;
+      if (va !== vb) return vb - va;
+
+      const at = (a.title || "").toLowerCase();
+      const bt = (b.title || "").toLowerCase();
+      if (at < bt) return sortDir === "asc" ? -1 : 1;
+      if (at > bt) return sortDir === "asc" ? 1 : -1;
+
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+
+    return out;
+  }, [
+    list,
+    search,
+    currentUserId,
+    fStatus,
+    fDisc,
+    fFrom,
+    fTo,
+    quickTab,
+    sortDir,
+    matchStatusFilter,
+    matchDiscFilter,
+    matchesRange,
+  ]);
+
+  const pretty = (s: string) =>
+    (s || "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/_/g, " ")
+      .trim();
+
+  const STATUS_ORDER = [
+    "Draft",
+    "Submitted",
+    "InspectorRecommended",
+    "HODApproved",
+    "Closed",
+    "HODRejected",
+  ];
+
+  const DISC_ORDER = ["civil", "arch", "mech", "elec", "plumb", "other"];
+
+  const grouped = useMemo(() => {
+    if (groupBy === "none") {
+      return [{ key: "all", label: "All", items: filtered }];
+    }
+
+    const map = new Map<string, WirLite[]>();
+    for (const w of filtered) {
+      const keyRaw =
+        groupBy === "status"
+          ? (canonicalWirStatus(w.status) as string)
+          : (canonicalDisc(w.discipline ?? null) as string);
+
+      const key = keyRaw && keyRaw.trim() ? keyRaw : "unspecified";
+      const arr = map.get(key) || [];
+      arr.push(w);
+      map.set(key, arr);
+    }
+
+    const arr = Array.from(map.entries()).map(([key, items]) => ({
+      key,
+      label: key === "unspecified" ? "Unspecified" : pretty(key),
+      items,
+    }));
+
+    // order groups nicely
+    arr.sort((a, b) => {
+      if (a.key === "unspecified") return 1;
+      if (b.key === "unspecified") return -1;
+
+      if (groupBy === "status") {
+        const ai = STATUS_ORDER.indexOf(a.key);
+        const bi = STATUS_ORDER.indexOf(b.key);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      }
+
+      // discipline
+      const ai = DISC_ORDER.indexOf(a.key);
+      const bi = DISC_ORDER.indexOf(b.key);
+      if (ai !== -1 || bi !== -1)
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+
+      return a.label.localeCompare(b.label);
+    });
+
+    return arr;
+  }, [filtered, groupBy]);
 
   useEffect(() => {
     if (!highlightId || !hlEl) return;
@@ -853,23 +922,20 @@ const matchesRange = useCallback((w: WirLite, fromYmd: string, toYmd: string) =>
       },
     });
   };
-const applyFilterSheet = () => {
-  setFStatus(dStatus);
-  setFDisc(dDisc);
-  setFFrom(dFrom);
-  setFTo(dTo);
-  setShowFilter(false);
-};
+  const applyFilterSheet = () => {
+    setFStatus(dStatus);
+    setFDisc(dDisc);
+    setFFrom(dFrom);
+    setFTo(dTo);
+    setShowFilter(false);
+  };
 
-const resetFilterSheet = () => {
-  setDStatus("all");
-  setDDisc("all");
-  setDFrom("");
-  setDTo("");
-};
-  // --- local helpers for stacked visual grouping by base WIR code ---
-  let lastBaseCode: string | null = null;
-  let stackDepth = 0;
+  const resetFilterSheet = () => {
+    setDStatus("all");
+    setDDisc("all");
+    setDFrom("");
+    setDTo("");
+  };
 
   return (
     <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 md:p-6">
@@ -1027,6 +1093,33 @@ const resetFilterSheet = () => {
           </button>
         </div>
       </div>
+      {/* Group row (like MyProjects) */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+        <span className="text-gray-500 dark:text-gray-400">Group</span>
+
+        {[
+          { id: "none", label: "None" },
+          { id: "status", label: "Status" },
+          { id: "discipline", label: "Discipline" },
+        ].map((g) => {
+          const active = groupBy === (g.id as GroupBy);
+          return (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => setGroupBy(g.id as GroupBy)}
+              className={
+                "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
+                (active
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                  : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800")
+              }
+            >
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
 
       {/* ✅ Quick tabs (All / Today / Upcoming) */}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
@@ -1070,198 +1163,189 @@ const resetFilterSheet = () => {
         </div>
       )}
 
-
-      {/* ✅ FULL-WIDTH TILES (like MyProjects) */}
-      <div className="mt-6 space-y-4">
-        {filtered.map((w) => {
-          const busy = preflightId === w.wirId;
-          const isHL = highlightId && w.wirId === highlightId;
-
-          // --- stacked visual group by base code (shortCode) ---
-          const baseCodeKey = shortCode(w.code) || w.code || w.wirId;
-          if (baseCodeKey === lastBaseCode) {
-            stackDepth += 1;
-          } else {
-            stackDepth = 0;
-            lastBaseCode = baseCodeKey;
-          }
-          const isStackedSibling = stackDepth > 0;
-          const stackClasses = isStackedSibling
-            ? "relative z-[5] mt-[-10px] ml-4"
-            : "relative z-[10]";
-
-          const any = w as any;
-          const bicName = pickBicName(w, bicNameMap);
-
-          const forDateRaw =
-            w.forDate ??
-            any?.for_date ??
-            (any?.plannedAt ? String(any.plannedAt) : null);
-          const forDateDisp = forDateRaw
-            ? new Date(forDateRaw).toLocaleDateString()
-            : "—";
-
-          const forTime = w.forTime ?? any?.for_time ?? null;
-          const forTimeDisp = fmtTime12(forTime);
-
-          const itemsDisp =
-            typeof w.itemsCount === "number" ? w.itemsCount : "—";
-
-          const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
-          const reschedTimeRaw =
-            w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
-          const reschedTimeDisp = fmtTime12(reschedTimeRaw);
-
-          const reschedTip = isRescheduled
-            ? `Rescheduled → ${
-                w.rescheduleForDate
-                  ? new Date(w.rescheduleForDate).toLocaleDateString()
-                  : "—"
-              } • ${reschedTimeDisp || "—"}${
-                w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
-              }`
-            : "";
-
-          const titleLine = [
-            shortCode(w.code) || "WIR",
-            w.title ? w.title : null,
-            typeof w.version === "number" ? `v${w.version}` : null,
-          ]
-            .filter(Boolean)
-            .join(" — ");
-
-          const subtitleLine = [
-            w.code ? w.code : null,
-            `Items: ${itemsDisp}`,
-            forDateDisp !== "—" || forTimeDisp
-              ? `${forDateDisp} ${forTimeDisp ? `• ${forTimeDisp}` : ""}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" • ");
-
-          const st = canonicalWirStatus(w.status);
-          const isAwdC =
-            (w.inspectorRecommendation || "").toUpperCase() ===
-            "APPROVE_WITH_COMMENTS";
-          const hasChild =
-            w.code &&
-            typeof w.version === "number" &&
-            (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
+      <div className="mt-6 space-y-6">
+        {grouped.map((g) => {
+          let lastBaseCode = "";
+          let stackDepth = 0;
 
           return (
-            <button
-              key={w.wirId}
-              ref={isHL ? setHlEl : undefined}
-              type="button"
-              onClick={() => !busy && openWirDetail(w)}
-              disabled={busy}
-              className={`group w-full text-left ${stackClasses} rounded-3xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4 sm:px-5 sm:py-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/60 ${
-                busy ? "opacity-60 cursor-wait" : ""
-              }${
-                isHL
-                  ? " ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900"
-                  : ""
-              }`}
-
-              title={isHL ? "New follow-up created" : undefined}
-            >
-              {/* Top row: title + status badges */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate">
-                    {titleLine}
-                    {busy ? " • checking…" : ""}
-                  </h2>
-                  <p className="mt-0.5 text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">
-                    {subtitleLine || "—"}
-                  </p>
-                  {w.discipline && (
-                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">
-                      Discipline: {w.discipline}
-                    </p>
-                  )}
+            <div key={g.key} className="space-y-4">
+              {groupBy !== "none" && (
+                <div className="px-1 flex items-center justify-between text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <span>{g.label}</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-neutral-800 dark:text-neutral-200">
+                    {g.items.length}
+                  </span>
                 </div>
+              )}
 
-                <div className="flex flex-col items-end gap-1">
-                  <StatusBadge value={w.status} />
-                  {isHL && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-emerald-700 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                      New
-                    </span>
-                  )}
-                </div>
-              </div>
+              {g.items.map((w) => {
+                // IMPORTANT: keep the stacking logic working per-group:
+                const baseCodeKey = shortCode(w.code) || w.code || w.wirId;
+                if (baseCodeKey === lastBaseCode) stackDepth += 1;
+                else {
+                  stackDepth = 0;
+                  lastBaseCode = baseCodeKey;
+                }
+                const isStackedSibling = stackDepth > 0;
+                const stackClasses = isStackedSibling
+                  ? "relative z-[5] mt-[-10px] ml-4"
+                  : "relative z-[10]";
 
-              {/* Chips row (like MyProjects) */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {/* Recommendation pill for approved states */}
-                {(() => {
-                  if (st !== "HODApproved" && st !== "Closed") return null;
-                  const ir = (w.inspectorRecommendation || "")
-                    .toString()
-                    .toUpperCase();
-                  const label =
-                    ir === "APPROVE_WITH_COMMENTS"
-                      ? "Approved with Comments"
-                      : ir === "APPROVE"
-                      ? "Approved"
-                      : ir === "REJECT"
-                      ? "Rejected"
-                      : null;
-                  return label ? (
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                      {label}
-                    </span>
-                  ) : null;
-                })()}
+                                const busy = preflightId === w.wirId;
+                const isHL = highlightId && w.wirId === highlightId;
 
-                {isRescheduled && (
-                  <span
-                    title={reschedTip}
-                    className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200"
+                const any = w as any;
+                const bicName = pickBicName(w, bicNameMap);
+
+                const forDateRaw =
+                  w.forDate ??
+                  any?.for_date ??
+                  any?.forDate ??
+                  (any?.plannedAt ? String(any.plannedAt) : null);
+                const forDateDisp = forDateRaw
+                  ? new Date(forDateRaw).toLocaleDateString()
+                  : "—";
+
+                const forTimeRaw =
+                  w.forTime ?? any?.for_time ?? any?.forTime ?? null;
+                const forTimeDisp = fmtTime12(forTimeRaw);
+
+                const itemsDisp =
+                  typeof (w as any).itemsCount === "number"
+                    ? (w as any).itemsCount
+                    : (any?.itemsCount ?? any?.items_count ?? "—");
+
+                const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
+                const reschedTimeRaw =
+                  w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
+                const reschedTimeDisp = fmtTime12(reschedTimeRaw);
+
+                const reschedTip = isRescheduled
+                  ? `Rescheduled → ${
+                      w.rescheduleForDate
+                        ? new Date(w.rescheduleForDate).toLocaleDateString()
+                        : "—"
+                    } • ${reschedTimeDisp || "—"}${
+                      w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+                    }`
+                  : "";
+
+                const titleLine = [
+                  shortCode(w.code) || "WIR",
+                  w.title ? w.title : null,
+                  typeof w.version === "number" ? `v${w.version}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" — ");
+
+                const subtitleLine = [
+                  w.code ? w.code : null,
+                  `Items: ${itemsDisp}`,
+                  forDateDisp !== "—" || forTimeDisp
+                    ? `${forDateDisp}${forTimeDisp ? ` • ${forTimeDisp}` : ""}`
+                    : null,
+                  bicName ? `BIC: ${bicName}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" • ");
+
+                const st = canonicalWirStatus(w.status);
+                const isAwdC =
+                  (w.inspectorRecommendation || "").toUpperCase() ===
+                  "APPROVE_WITH_COMMENTS";
+                const hasChild =
+                  w.code &&
+                  typeof w.version === "number" &&
+                  (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
+
+                const discKey = canonicalDisc(w.discipline ?? any?.discipline ?? null);
+                const discLabel =
+                  discKey === "civil"
+                    ? "Civil"
+                    : discKey === "finishes"
+                    ? "Finishes"
+                    : discKey === "mep"
+                    ? "MEP"
+                    : "Unknown";
+
+                return (
+                  <button
+                    key={w.wirId}
+                    ref={isHL ? setHlEl : undefined}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => !busy && openWirDetail(w)}
+                    className={
+                      stackClasses +
+                      " group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition " +
+                      "hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500/30 " +
+                      "disabled:opacity-60 disabled:cursor-not-allowed " +
+                      "dark:bg-neutral-900 dark:border-neutral-800"
+                    }
+                    title={reschedTip || undefined}
                   >
-                    Rescheduled
-                  </span>
-                )}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate">
+                          {titleLine}
+                        </div>
+                        <div className="mt-1 text-[12px] sm:text-sm text-gray-600 dark:text-gray-300">
+                          {subtitleLine || "—"}
+                        </div>
+                      </div>
 
-                {wirCfg && (
-                  <>
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                      {wirCfg.transmissionType}
-                    </span>
-                    {wirCfg.exportPdfAllowed && (
+                      <div className="shrink-0 flex flex-col items-end gap-1">
+                        <StatusBadge value={st} />
+                        {isAwdC && (
+                          <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
+                            AWC
+                          </span>
+                        )}
+                        {hasChild && (
+                          <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
+                            Has Follow-up
+                          </span>
+                        )}
+                        {isRescheduled && (
+                          <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
+                            Rescheduled
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                        PDF
+                        Discipline: {discLabel}
                       </span>
-                    )}
-                    {!wirCfg.redirectAllowed && (
+                      {forDateDisp !== "—" && (
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                          {forDateDisp}
+                          {forTimeDisp ? ` • ${forTimeDisp}` : ""}
+                        </span>
+                      )}
                       <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                        No-Redirect
+                        Items: {itemsDisp}
                       </span>
-                    )}
-                  </>
-                )}
+                      {bicName && (
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                          BIC: {bicName}
+                        </span>
+                      )}
+                    </div>
 
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                  BIC: {bicName || "—"}
-                </span>
-
-                {st === "HODApproved" && isAwdC && !hasChild ? (
-                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-200">
-                    Follow-up Open
-                  </span>
-                ) : null}
-              </div>
-
-              {/* Open bar (full-width tile bottom like MyProjects) */}
-              <div
-                className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
-                           dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
-              >
-                Open
-              </div>
-            </button>
+                    <div
+                      className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
+                                group-hover:border-emerald-500 group-hover:text-emerald-700
+                                dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
+                    >
+                      {busy ? "Opening…" : "Open"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
       </div>
