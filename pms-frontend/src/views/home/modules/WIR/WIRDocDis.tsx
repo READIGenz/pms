@@ -179,15 +179,17 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`px-3 py-2 rounded-lg border text-sm ${active
-                ? "bg-emerald-600 text-white dark:border-emerald-700"
-                : "hover:bg-gray-50 dark:hover:bg-neutral-800 dark:border-neutral-800"
-                }`}
+            className={`px-4 py-2 rounded-full border text-sm font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                active
+                    ? "bg-emerald-600 text-white border-emerald-700/30"
+                    : "bg-white/80 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900/40 dark:text-gray-100 dark:border-neutral-800/60 dark:hover:bg-neutral-800/60"
+            }`}
         >
             {children}
         </button>
     );
 }
+
 
 // Map file to BE "kind"
 const detectKind = (file: File): "Photo" | "Video" | "File" => {
@@ -1373,12 +1375,27 @@ export default function WIRDocDis() {
     }, [hodReviewOpen, hodPlannedPatch, row?.inspectorId, actorNameMap]);
 
     return (
-        <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
+        <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-gray-200/70 dark:border-neutral-800/60 p-4 sm:p-5 md:p-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <div className="text-lg sm:text-xl md:text-2xl font-semibold dark:text-white truncate">
-                        {headerLine || "WIR Document"}
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="text-lg sm:text-xl md:text-2xl font-semibold dark:text-white truncate">
+                            {headerLine || "WIR Document"}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setNotesOpen(true)}
+                            className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                            title="Notes"
+                            aria-label="Notes"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 16v-4" />
+                                <path d="M12 8h.01" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
                         {projectFromState?.code ? `${projectFromState.code} — ` : ""}
@@ -1388,9 +1405,23 @@ export default function WIRDocDis() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={backToList}
-                        className="text-sm px-3 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                        aria-label="Back"
+                        title="Back"
                     >
-                        Back
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                        >
+                            <path d="M15 18l-6-6 6-6" />
+                        </svg>
+                        <span>Back</span>
                     </button>
                 </div>
             </div>
@@ -1398,15 +1429,15 @@ export default function WIRDocDis() {
             {/* Meta strip */}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
                 {statusBadge(row?.status)}
-                <span className="px-2 py-1 rounded-lg border dark:border-neutral-800">
+                <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                     BIC: {bicName || row?.bicUserId || "—"}
                 </span>
-                <span className="px-2 py-1 rounded-lg border dark:border-neutral-800">
+                <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                     Date: {row?.forDate ? new Date(row.forDate).toLocaleDateString() : "—"}
                 </span>
-                <span className="px-2 py-1 rounded-lg border dark:border-neutral-800">Time: {row?.forTime || "—"}</span>
-                <span className="px-2 py-1 rounded-lg border dark:border-neutral-800">Items: {itemsCount || "—"}</span>
-                <span className="px-2 py-1 rounded-lg border dark:border-neutral-800">
+                <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">Time: {row?.forTime || "—"}</span>
+                <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">Items: {itemsCount || "—"}</span>
+                <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                     Location: {row?.cityTown || "—"}
                 </span>
             </div>
@@ -1419,14 +1450,10 @@ export default function WIRDocDis() {
                 <TabButton active={tab === "discussion"} onClick={() => setTab("discussion")}>
                     Discussion
                 </TabButton>
-                {/* Notes button (opens full-screen modal) */}
-                <TabButton active={false} onClick={() => setNotesOpen(true)}>
-                    Notes
-                </TabButton>
-            </div>
+</div>
 
             {/* Content area */}
-            <div className="mt-4 rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
+            <div className="mt-4 rounded-2xl border border-green-200/70 dark:border-neutral-800/60 p-3 sm:p-5">
                 {loading ? (
                     <div className="text-sm">Loading…</div>
                 ) : err ? (
@@ -1450,7 +1477,7 @@ export default function WIRDocDis() {
 
                         {subtab === "overview" ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className="rounded-xl border dark:border-neutral-800 p-3">
+                                <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                         Submission Summary
                                     </div>
@@ -1504,7 +1531,7 @@ export default function WIRDocDis() {
 
                                 </div>
 
-                                <div className="rounded-xl border dark:border-neutral-800 p-3">
+                                <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                     <div className="text:[11px] text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                         Checklists
                                     </div>
@@ -1526,7 +1553,7 @@ export default function WIRDocDis() {
                                 </div>
                                 {/* Documents & Evidence (header-level, read-only) */}
                                 {headerDocs.length > 0 && (
-                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                    <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 md:col-span-2">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                                 Documents &amp; Evidence
@@ -1557,7 +1584,7 @@ export default function WIRDocDis() {
                                                         >
                                                             {displayName}
                                                         </a>
-                                                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">
                                                             {ev.kind || "File"}
                                                         </span>
                                                     </div>
@@ -1573,7 +1600,7 @@ export default function WIRDocDis() {
                                         <button
                                             type="button"
                                             onClick={() => setReschedOpen(true)}
-                                            className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-amber-600 text-white hover:opacity-95"
+                                            className="text-sm px-4 py-2 rounded-full border border-amber-200 dark:border-amber-900/40 bg-amber-600 text-white hover:opacity-95 font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                                             title="Change the planned date/time for this inspection"
                                         >
                                             Reschedule Inspection
@@ -1586,13 +1613,13 @@ export default function WIRDocDis() {
                                     canonicalWirStatus(row?.status) === "Recommended" &&
                                     !!row?.bicUserId &&
                                     String(row.bicUserId) === currentUid && (
-                                        <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                        <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 md:col-span-2">
                                             <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                                 HOD
                                             </div>
                                             <div className="text-sm dark:text-white space-y-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[12px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
+                                                    <span className="text-[12px] px-2 py-0.5 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                         Recommendation
                                                     </span>
                                                     <span className="text-[12px] text-gray-700 dark:text-gray-200">
@@ -1606,7 +1633,7 @@ export default function WIRDocDis() {
                                                 <div className="pt-1">
                                                     <button
                                                         onClick={() => setFinalizeOpen(true)}
-                                                        className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+                                                        className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-blue-600 text-white disabled:opacity-60"
                                                         disabled={
                                                             !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
                                                             canonicalWirStatus(row.status) !== "Recommended"
@@ -1628,7 +1655,7 @@ export default function WIRDocDis() {
 
                                 {/* HOFFinalizedOutcome (visible only after HOD finalizes) */}
                                 {isFinalized && (
-                                    <div className="rounded-xl border dark:border-neutral-800 p-3 md:col-span-2">
+                                    <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 md:col-span-2">
                                         <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                             HOD Finalized Outcome:
                                         </div>
@@ -1662,7 +1689,7 @@ export default function WIRDocDis() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setFollowupOpen(true)}
-                                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white hover:opacity-95"
+                                                    className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white hover:opacity-95"
                                                     title="Schedule a follow-up inspection as next version"
                                                 >
                                                     {`Schedule Followup ${nextVersionLabel}`}
@@ -1677,7 +1704,7 @@ export default function WIRDocDis() {
                             // RUNNER — EXACT three-tile layout per your spec
                             <div>
                                 {/* Tile 1: Runner instruction */}
-                                <div className="rounded-xl border dark:border-neutral-800 p-3 mb-3">
+                                <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-3 mb-3 dark:border-yellow-800/40 dark:bg-yellow-900/20">
                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                         Runner Checklist
                                     </div>
@@ -1690,7 +1717,7 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={saveAllItems}
                                         disabled={savingAll}
-                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white disabled:opacity-60 hover:opacity-95"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white disabled:opacity-60 hover:opacity-95 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     >
                                         {savingAll ? "Saving…" : "Save Progress"}
                                     </button>
@@ -1712,7 +1739,7 @@ export default function WIRDocDis() {
                                             })();
 
                                             return (
-                                                <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3 space-y-3">
+                                                <div key={it.id} className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                                                     {/* Tile 2: Item meta */}
                                                     <div>
                                                         <div className="flex items-start justify-between gap-3">
@@ -1743,14 +1770,14 @@ export default function WIRDocDis() {
                                                                 const s = (it.spec || "").trim();
                                                                 if (/^mandatory$/i.test(s)) {
                                                                     return (
-                                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                        <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                             Mandatory
                                                                         </span>
                                                                     );
                                                                 }
                                                                 if (/^optional$/i.test(s)) {
                                                                     return (
-                                                                        <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                        <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                             Optional
                                                                         </span>
                                                                     );
@@ -1759,12 +1786,12 @@ export default function WIRDocDis() {
                                                             })()}
 
                                                             {it.unit ? (
-                                                                <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                     Unit: {it.unit}
                                                                 </span>
                                                             ) : null}
                                                             {tolPill ? (
-                                                                <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                                <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                     Tolerance: {tolPill}
                                                                 </span>
                                                             ) : null}
@@ -1774,7 +1801,7 @@ export default function WIRDocDis() {
                                                         {(it.tags?.length || 0) > 0 ? (
                                                             <div className="mt-2 flex flex-wrap gap-1.5">
                                                                 {it.tags!.map((t, i) => (
-                                                                    <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                                                                    <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200/70 dark:border-neutral-800/60">
                                                                         {t}
                                                                     </span>
                                                                 ))}
@@ -1783,7 +1810,7 @@ export default function WIRDocDis() {
                                                     </div>
 
                                                     {/* Tile 3: Inspector observation */}
-                                                    <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                                                    <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                                                         <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                                             Inspector Observation
                                                         </div>
@@ -1794,7 +1821,7 @@ export default function WIRDocDis() {
                                                             {(it.evidences?.length || 0) > 0 && (
                                                                 <div className="flex flex-wrap gap-2">
                                                                     {it.evidences!.map(ev => (
-                                                                        <span key={ev.id} className="inline-flex items-center gap-2 max-w-[320px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                        <span key={ev.id} className="inline-flex items-center gap-2 max-w-[320px] truncate text-[12px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-100">
                                                                             <a href={ev.url} target="_blank" rel="noreferrer" className="underline truncate">
                                                                                 {ev.fileName || baseName(ev.url) || ev.kind}
                                                                             </a>
@@ -1802,7 +1829,7 @@ export default function WIRDocDis() {
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => deleteSavedEvidence(it.id, ev.id)}
-                                                                                className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                                className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
                                                                                 title="Remove this file"
                                                                             >
                                                                                 ✕
@@ -1825,14 +1852,14 @@ export default function WIRDocDis() {
                                                                             {canAdd ? (
                                                                                 <>
                                                                                     {/* Take Photo (camera) */}
-                                                                                    <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                                                                    <label className="text-[12px] px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
                                                                                         Take Photo
                                                                                         <input
                                                                                             type="file"
                                                                                             accept="image/*"
                                                                                             capture="environment"
                                                                                             multiple
-                                                                                            className="hidden"
+                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                                                                             ref={registerFileRef(it.id, 0)}
                                                                                             onChange={(e) => {
                                                                                                 if (!e.target.files) return;
@@ -1844,13 +1871,13 @@ export default function WIRDocDis() {
                                                                                     </label>
 
                                                                                     {/* Add Photo/Document (gallery/doc picker) */}
-                                                                                    <label className="text-[12px] px-3 py-2 rounded border dark:border-neutral-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+                                                                                    <label className="text-[12px] px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
                                                                                         Add Document
                                                                                         <input
                                                                                             type="file"
                                                                                             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
                                                                                             multiple
-                                                                                            className="hidden"
+                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                                                                             ref={registerFileRef(it.id, 1)}
                                                                                             onChange={(e) => {
                                                                                                 if (!e.target.files) return;
@@ -1861,12 +1888,12 @@ export default function WIRDocDis() {
                                                                                     </label>
                                                                                 </>
                                                                             ) : (
-                                                                                <span className="text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                                <span className="text-[12px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-100">
                                                                                     Max {MAX_EVIDENCES_PER_ITEM} attachments reached
                                                                                 </span>
                                                                             )}
                                                                             {/* Tiny counter */}
-                                                                            <span className="text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-800">
+                                                                            <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-gray-200/70 dark:border-neutral-800/60">
                                                                                 {total} / {MAX_EVIDENCES_PER_ITEM}
                                                                             </span>
                                                                         </div>
@@ -1875,13 +1902,13 @@ export default function WIRDocDis() {
                                                                         {staged.length > 0 && (
                                                                             <div className="flex flex-wrap gap-2">
                                                                                 {staged.map((f, idx) => (
-                                                                                    <span key={`${f.name}-${idx}`} className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100">
+                                                                                    <span key={`${f.name}-${idx}`} className="inline-flex items-center gap-2 max-w-[260px] truncate text-[12px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-100">
                                                                                         <span className="truncate" title={f.name}>{f.name}</span>
                                                                                         <span className="text-[10px] px-1.5 py-0.5 rounded border dark:border-neutral-700">Pending</span>
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={() => removePendingFile(it.id, idx)}
-                                                                                            className="ml-1 text-[11px] px-1.5 py-0.5 rounded border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                                                                                            className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full border dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-700"
                                                                                             title="Remove from selection"
                                                                                         >
                                                                                             ✕
@@ -1904,7 +1931,7 @@ export default function WIRDocDis() {
                                                                 ref={(el) => (inputRefs.current[it.id] = el)}
                                                                 value={buf.value ?? ""}
                                                                 onChange={(e) => setEdit(it.id, { value: e.target.value })}
-                                                                className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                                                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                                                 placeholder={it.base != null ? `e.g. ${it.base}` : "Enter reading"}
                                                                 inputMode="decimal"
                                                             />
@@ -1914,7 +1941,7 @@ export default function WIRDocDis() {
                                                         <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={() => setEdit(it.id, { status: "PASS" })}
-                                                                className={`text-sm px-3 py-2 rounded border ${buf.status === "PASS"
+                                                                className={`text-sm px-3 py-2 rounded-full border ${buf.status === "PASS"
                                                                     ? "bg-emerald-600 text-white border-emerald-700"
                                                                     : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                                     }`}
@@ -1923,7 +1950,7 @@ export default function WIRDocDis() {
                                                             </button>
                                                             <button
                                                                 onClick={() => setEdit(it.id, { status: "FAIL" })}
-                                                                className={`text-sm px-3 py-2 rounded border ${buf.status === "FAIL"
+                                                                className={`text-sm px-3 py-2 rounded-full border ${buf.status === "FAIL"
                                                                     ? "bg-rose-600 text-white border-rose-700"
                                                                     : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                                     }`}
@@ -1940,7 +1967,7 @@ export default function WIRDocDis() {
                                                             <textarea
                                                                 value={buf.remark ?? ""}
                                                                 onChange={(e) => setEdit(it.id, { remark: e.target.value })}
-                                                                className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                                                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                                                 rows={3}
                                                                 placeholder="Write your observation…"
                                                             />
@@ -1953,7 +1980,7 @@ export default function WIRDocDis() {
                                 )
                                 }
                                 {/* Recommendation tile (bottom) */}
-                                < div className="mt-4 rounded-2xl border dark:border-neutral-800 p-3" >
+                                < div className="mt-4 rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3" >
                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                         Recommendation
                                     </div>
@@ -1963,7 +1990,7 @@ export default function WIRDocDis() {
                                     <div className="mt-2 flex flex-wrap gap-2">
                                         <button
                                             onClick={() => onRecommend("APPROVE")}
-                                            className={`text-sm px-3 py-2 rounded border ${rec === "APPROVE"
+                                            className={`text-sm px-3 py-2 rounded-full border ${rec === "APPROVE"
                                                 ? "bg-emerald-600 text-white border-emerald-700"
                                                 : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                 }`}
@@ -1973,7 +2000,7 @@ export default function WIRDocDis() {
 
                                         <button
                                             onClick={() => onRecommend("APPROVE_WITH_COMMENTS")}
-                                            className={`text-sm px-3 py-2 rounded border ${rec === "APPROVE_WITH_COMMENTS"
+                                            className={`text-sm px-3 py-2 rounded-full border ${rec === "APPROVE_WITH_COMMENTS"
                                                 ? "bg-blue-600 text-white border-blue-700"
                                                 : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                 }`}
@@ -1983,7 +2010,7 @@ export default function WIRDocDis() {
 
                                         <button
                                             onClick={() => onRecommend("REJECT")}
-                                            className={`text-sm px-3 py-2 rounded border ${rec === "REJECT"
+                                            className={`text-sm px-3 py-2 rounded-full border ${rec === "REJECT"
                                                 ? "bg-rose-600 text-white border-rose-700"
                                                 : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                 }`}
@@ -2001,7 +2028,7 @@ export default function WIRDocDis() {
                                             value={pendingRemark}
                                             onChange={(e) => setPendingRemark(e.target.value.slice(0, 200))}
                                             rows={3}
-                                            className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                            className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                             placeholder="Write a brief summary for HOD…"
                                         />
                                         <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
@@ -2015,7 +2042,7 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={saveAllItems}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-emerald-600 text-white disabled:opacity-60"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     >
                                         {savingAll ? "Saving…" : "Save Progress"}
                                     </button>
@@ -2023,14 +2050,14 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={onPreview}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     >
                                         Preview
                                     </button>
                                     <button
                                         onClick={onSendToHodClick}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-lg border dark:border-neutral-800 bg-blue-600 text-white disabled:opacity-60"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     >
                                         {recSubmitting === "APPROVE" ? "Sending…" : "Send to HOD"}
                                     </button>
@@ -2057,14 +2084,14 @@ export default function WIRDocDis() {
                     aria-modal="true"
                 >
                     <div className="absolute inset-0 p-3 sm:p-4 md:p-6">
-                        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border dark:border-neutral-800 w-full h-full flex flex-col">
+                        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-gray-200/70 dark:border-neutral-800/60 w-full h-full flex flex-col">
                             {/* Header */}
                             <div className="flex items-center justify-between p-3 sm:p-4 border-b dark:border-neutral-800">
                                 <div className="text-base sm:text-lg font-semibold dark:text-white">
                                     Notes — How this screen works
                                 </div>
                                 <button
-                                    className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                    className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     onClick={() => setNotesOpen(false)}
                                 >
                                     Close
@@ -2190,12 +2217,12 @@ export default function WIRDocDis() {
                     role="dialog"
                     aria-modal="true"
                 >
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-lg p-4">
                         {/* Header */}
                         <div className="flex items-center justify-between">
                             <div className="text-base font-semibold dark:text-white">Reschedule Inspection</div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setReschedOpen(false)}
                             >
                                 Close
@@ -2205,7 +2232,7 @@ export default function WIRDocDis() {
                         {/* Body */}
                         <div className="mt-3 space-y-3 text-sm">
                             {/* Plan summary (original vs current) */}
-                            <div className="rounded-xl border dark:border-neutral-800 p-3">
+                            <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                 <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                     Plan
                                 </div>
@@ -2225,7 +2252,7 @@ export default function WIRDocDis() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                            <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                                 <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     New Schedule
                                 </div>
@@ -2236,7 +2263,7 @@ export default function WIRDocDis() {
                                         type="date"
                                         value={reschedDate}
                                         onChange={(e) => setReschedDate(e.target.value)}
-                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                     />
                                 </div>
 
@@ -2246,7 +2273,7 @@ export default function WIRDocDis() {
                                         type="time"
                                         value={reschedTime}
                                         onChange={(e) => setReschedTime(e.target.value)}
-                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                     />
                                 </div>
 
@@ -2257,7 +2284,7 @@ export default function WIRDocDis() {
                                         onChange={(e) => setReschedReason(e.target.value)}
                                         rows={3}
                                         placeholder="Why is this being rescheduled?"
-                                        className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                     />
                                 </div>
                             </div>
@@ -2266,13 +2293,13 @@ export default function WIRDocDis() {
                         {/* Footer */}
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setReschedOpen(false)}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-3 py-2 text-sm rounded-lg bg-amber-600 text-white disabled:opacity-60"
+                                className="px-4 py-2 text-sm rounded-full bg-amber-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 disabled={reschedSubmitting || !reschedDate || !reschedTime || !reschedReason.trim()}
                                 onClick={async () => {
                                     try {
@@ -2303,14 +2330,14 @@ export default function WIRDocDis() {
                     role="dialog"
                     aria-modal="true"
                 >
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-3xl max-h-[85vh] overflow-auto">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[96vw] max-w-3xl max-h-[85vh] overflow-auto">
                         {/* Header */}
                         <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
                             <div className="text-base sm:text-lg font-semibold dark:text-white">
                                 WIR History — {row.code || row.wirId}
                             </div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setHistoryOpen(false)}
                             >
                                 Close
@@ -2327,7 +2354,7 @@ export default function WIRDocDis() {
                                         .slice()
                                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                         .map((h) => (
-                                            <li key={h.id} className="rounded-xl border dark:border-neutral-800 p-3">
+                                            <li key={h.id} className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                                     <div className="text-sm dark:text-white font-medium">
                                                         {h.action || "Action"}
@@ -2351,7 +2378,7 @@ export default function WIRDocDis() {
                                                         <summary className="cursor-pointer text-[12px] text-gray-600 dark:text-gray-400">
                                                             Show metadata
                                                         </summary>
-                                                        <pre className="mt-1 text-[11px] overflow-auto p-2 rounded bg-gray-50 dark:bg-neutral-800 dark:text-gray-200">
+                                                        <pre className="mt-1 text-[11px] overflow-auto p-2 rounded bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-200">
                                                             {JSON.stringify(h.meta, null, 2)}
                                                         </pre>
                                                     </details>
@@ -2371,14 +2398,14 @@ export default function WIRDocDis() {
                     role="dialog"
                     aria-modal="true"
                 >
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-4xl max-h-[85vh] overflow-auto">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[96vw] max-w-4xl max-h-[85vh] overflow-auto">
                         {/* Header */}
                         <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
                             <div className="text-base sm:text-lg font-semibold dark:text-white">
                                 Runner Items History — {row.code || row.wirId}
                             </div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setRunnerHistoryOpen(false)}
                             >
                                 Close
@@ -2394,7 +2421,7 @@ export default function WIRDocDis() {
                                     {(row.items ?? [])
                                         .filter(it => (it.runs?.length || 0) > 0)
                                         .map((it) => (
-                                            <li key={it.id} className="rounded-xl border dark:border-neutral-800 p-3">
+                                            <li key={it.id} className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <div className="text-sm font-semibold dark:text-white">
@@ -2420,12 +2447,12 @@ export default function WIRDocDis() {
                                                             .slice()
                                                             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                                             .map((r, idx) => (
-                                                                <li key={idx} className="rounded-lg border dark:border-neutral-800 p-2">
+                                                                <li key={idx} className="rounded-lg border border-gray-200/70 dark:border-neutral-800/60 p-2">
                                                                     <div className="flex items-center justify-between gap-2">
                                                                         <div className="text-[12px] text-gray-700 dark:text-gray-300">
                                                                             <b>When:</b> {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
                                                                         </div>
-                                                                        <div className="text-[11px] px-2 py-0.5 rounded border dark:border-neutral-800">
+                                                                        <div className="text-[11px] px-2 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">
                                                                             {r.status || "—"}
                                                                         </div>
                                                                     </div>
@@ -2456,14 +2483,14 @@ export default function WIRDocDis() {
                     role="dialog"
                     aria-modal="true"
                 >
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[96vw] max-w-5xl max-h-[88vh] flex flex-col">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[96vw] max-w-5xl max-h-[88vh] flex flex-col">
                         {/* Modal header */}
                         <div className="p-4 border-b dark:border-neutral-800 flex items-center justify-between">
                             <div className="text-base sm:text-lg font-semibold dark:text-white">
                                 Preview — Runner (Read only)
                             </div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setPreviewOpen(false)}
                             >
                                 Close
@@ -2494,7 +2521,7 @@ export default function WIRDocDis() {
                                         const savedCount = (it.evidences?.length || 0);
                                         const canAddEvidence = savedCount < MAX_EVIDENCES;
                                         return (
-                                            <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3 space-y-3">
+                                            <div key={it.id} className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                                                 {/* Item meta (same header info as runner card) */}
                                                 <div>
                                                     <div className="flex items-start justify-between gap-3">
@@ -2519,22 +2546,22 @@ export default function WIRDocDis() {
                                                     {/* Pills: requirement, unit, tolerance */}
                                                     <div className="mt-2 flex flex-wrap gap-2">
                                                         {isMandatory && (
-                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                 Mandatory
                                                             </span>
                                                         )}
                                                         {isOptional && (
-                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                 Optional
                                                             </span>
                                                         )}
                                                         {it.unit ? (
-                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                 Unit: {it.unit}
                                                             </span>
                                                         ) : null}
                                                         {tolPill ? (
-                                                            <span className="text-[11px] px-2 py-1 rounded-lg border dark:border-neutral-800">
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                                 Tolerance: {tolPill}
                                                             </span>
                                                         ) : null}
@@ -2544,7 +2571,7 @@ export default function WIRDocDis() {
                                                     {(it.tags?.length || 0) > 0 ? (
                                                         <div className="mt-2 flex flex-wrap gap-1.5">
                                                             {it.tags!.map((t, i) => (
-                                                                <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                                                                <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200/70 dark:border-neutral-800/60">
                                                                     {t}
                                                                 </span>
                                                             ))}
@@ -2553,7 +2580,7 @@ export default function WIRDocDis() {
                                                 </div>
 
                                                 {/* Read-only observation summary */}
-                                                <div className="rounded-xl border dark:border-neutral-800 p-3 space-y-2">
+                                                <div className="rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-2">
                                                     <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                                         Inspector Observation (Read only)
                                                     </div>
@@ -2590,18 +2617,18 @@ export default function WIRDocDis() {
                                                                         <div key={ev.id} className="text-[12px]">
                                                                             • <a className="underline" href={ev.url} target="_blank" rel="noreferrer">
                                                                                 {ev.fileName || baseName(ev.url) || ev.kind}
-                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">{ev.kind}</span>
+                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">{ev.kind}</span>
                                                                         </div>
                                                                     ))}
                                                                     {buf.evidenceUrl && (
                                                                         <div className="text-[12px]">
                                                                             • <a className="underline" href={buf.evidenceUrl} target="_blank" rel="noreferrer">
                                                                                 {buf.evidenceName || baseName(buf.evidenceUrl) || "Attachment"}
-                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">Pending</span>
+                                                                            </a> <span className="ml-1 text-[10px] px-1 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">Pending</span>
                                                                         </div>
                                                                     )}
                                                                     {buf.photo && !buf.evidenceUrl && (
-                                                                        <div className="text-[12px]">• {buf.photo.name} <span className="ml-1 text-[10px] px-1 py-0.5 rounded border dark:border-neutral-800">Pending</span></div>
+                                                                        <div className="text-[12px]">• {buf.photo.name} <span className="ml-1 text-[10px] px-1 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">Pending</span></div>
                                                                     )}
                                                                 </div>
                                                             )
@@ -2621,11 +2648,11 @@ export default function WIRDocDis() {
 
             {hodConfirmOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-lg p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-lg p-4">
                         <div className="flex items-center justify-between">
                             <div className="text-base font-semibold dark:text-white">Send to HOD — Confirmation</div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setHodConfirmOpen(false)}
                             >
                                 Close
@@ -2650,7 +2677,7 @@ export default function WIRDocDis() {
                                         return (
                                             <li
                                                 key={u.userId}
-                                                className={`flex items-center justify-between rounded border dark:border-neutral-800 px-3 py-2 cursor-pointer ${checked ? "ring-2 ring-blue-500" : ""
+                                                className={`flex items-center justify-between rounded border border-gray-200/70 dark:border-neutral-800/60 px-3 py-2 cursor-pointer ${checked ? "ring-2 ring-blue-500" : ""
                                                     }`}
                                                 onClick={() => setHodSelectedUserId(u.userId)}
                                             >
@@ -2658,13 +2685,13 @@ export default function WIRDocDis() {
                                                     <input
                                                         type="radio"
                                                         name="hod-pick"
-                                                        className="shrink-0"
+                                                        className="shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                                         checked={checked}
                                                         onChange={() => setHodSelectedUserId(u.userId)}
                                                     />
                                                     <span className="truncate">{u.fullName}</span>
                                                 </div>
-                                                <span className="text-[11px] px-2 py-0.5 rounded-lg border dark:border-neutral-800">
+                                                <span className="text-[11px] px-2 py-0.5 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                                                     {u.acting}
                                                 </span>
                                             </li>
@@ -2676,13 +2703,13 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setHodConfirmOpen(false)}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-60"
+                                className="px-4 py-2 text-sm rounded-full bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={onConfirmSendToHod}
                                 disabled={hodLoading || !hodSelectedUserId}   // <— gate by selection
                             >
@@ -2695,7 +2722,7 @@ export default function WIRDocDis() {
 
             {hodReviewOpen && hodPlannedPatch && (
                 <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Review changes</div>
 
                         <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
@@ -2710,13 +2737,13 @@ export default function WIRDocDis() {
 
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => { setHodReviewOpen(false); setHodPlannedPatch(null); }}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-60"
+                                className="px-4 py-2 text-sm rounded-full bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={async () => {
                                     try {
                                         setRecSubmitting(hodPlannedPatch.inspectorRecommendation);
@@ -2764,7 +2791,7 @@ export default function WIRDocDis() {
                     role="dialog"
                     aria-modal="true"
                 >
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">
                             Measurement must be a number
                         </div>
@@ -2773,7 +2800,7 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => {
                                     const id = valErrItemId;
                                     setValErrItemId(null);
@@ -2784,7 +2811,7 @@ export default function WIRDocDis() {
                                 Go to field
                             </button>
                             <button
-                                className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white"
+                                className="px-4 py-2 text-sm rounded-full bg-emerald-600 text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setValErrItemId(null)}
                             >
                                 Dismiss
@@ -2795,7 +2822,7 @@ export default function WIRDocDis() {
             )}
             {sendWarnOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Missing required fields</div>
                         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
                             All <b>Mandatory</b> items must have a <b>Pass/Fail</b> status,
@@ -2813,7 +2840,7 @@ export default function WIRDocDis() {
                         )}
                         <div className="mt-4 flex justify-end">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white"
+                                className="px-4 py-2 text-sm rounded-full bg-emerald-600 text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setSendWarnOpen(false)}
                             >
                                 Got it
@@ -2839,7 +2866,7 @@ export default function WIRDocDis() {
             )}
             {noEditPermOpen && (
                 <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border dark:border-neutral-800 w-[92vw] max-w-md p-4">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-gray-200/70 dark:border-neutral-800/60 w-[92vw] max-w-md p-4">
                         <div className="text-base font-semibold dark:text-white">Runner — Edit Not Allowed</div>
                         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
                             Editable Runner opens only when <b>Inspector + Submitted + BIC is you</b>.
@@ -2847,7 +2874,7 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end">
                             <button
-                                className="px-3 py-2 text-sm rounded-lg border dark:border-neutral-800"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setNoEditPermOpen(false)}
                             >
                                 OK
@@ -2859,12 +2886,12 @@ export default function WIRDocDis() {
 
             {finalizeOpen && row && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border dark:border-neutral-800 w-[96vw] max-w-lg max-h-[90vh] overflow-auto p-4 sm:p-5">
+                    <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-gray-200/70 dark:border-neutral-800/60 w-[96vw] max-w-lg max-h-[90vh] overflow-auto p-4 sm:p-5">
                         {/* Header */}
                         <div className="flex items-center justify-between">
                             <div className="text-base sm:text-lg font-semibold dark:text-white">Finalize Outcome</div>
                             <button
-                                className="text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                 onClick={() => setFinalizeOpen(false)}
                             >
                                 Close
@@ -2872,7 +2899,7 @@ export default function WIRDocDis() {
                         </div>
 
                         {/* Tile 1: Details */}
-                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3">
+                        <section className="mt-3 rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                                 Finalize Outcome
                             </div>
@@ -2884,7 +2911,7 @@ export default function WIRDocDis() {
                         </section>
 
                         {/* Tile 2: Select Outcome */}
-                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                        <section className="mt-3 rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                 Select Outcome
                             </div>
@@ -2920,7 +2947,7 @@ export default function WIRDocDis() {
                                     value={finalizeNote}
                                     onChange={(e) => setFinalizeNote(e.target.value.slice(0, 200))}
                                     rows={3}
-                                    className="w-full text-sm px-3 py-2 rounded-lg border dark:border-neutral-800 bg-white dark:bg-neutral-900"
+                                    className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-white dark:bg-neutral-900"
                                     placeholder="Write a brief note for this decision…"
                                 />
                                 <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 text-right">
@@ -2930,7 +2957,7 @@ export default function WIRDocDis() {
                         </section>
 
                         {/* Tile 3: What will be sent */}
-                        <section className="mt-3 rounded-xl border dark:border-neutral-800 p-3 space-y-3">
+                        <section className="mt-3 rounded-2xl border border-gray-200/70 dark:border-neutral-800/60 p-3 space-y-3">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                 What will be sent
                             </div>
@@ -2940,10 +2967,10 @@ export default function WIRDocDis() {
                             </div>
 
                             {/* Phase 1 — header patch */}
-                            <div className="rounded-lg border dark:border-neutral-800 p-3">
+                            <div className="rounded-lg border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                 <div className="text-[12px] font-semibold mb-1">Phase 1 — header patch (single PATCH)</div>
                                 {mappedFinalizeOutcome ? (
-                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100 p-2 rounded">
+                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-100 p-2 rounded">
                                         {JSON.stringify(finalizePhase1Preview, null, 2)}
                                     </pre>
                                 ) : (
@@ -2966,10 +2993,10 @@ export default function WIRDocDis() {
                             </div>
 
                             {/* Phase 2 — status patch */}
-                            <div className="rounded-lg border dark:border-neutral-800 p-3">
+                            <div className="rounded-lg border border-gray-200/70 dark:border-neutral-800/60 p-3">
                                 <div className="text-[12px] font-semibold mb-1">Phase 2 — status patch (separate PATCH)</div>
                                 {mappedFinalizeOutcome ? (
-                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50 dark:bg-neutral-800 dark:text-gray-100 p-2 rounded">
+                                    <pre className="text-[11px] overflow-auto whitespace-pre-wrap leading-5 bg-gray-50/70 dark:bg-neutral-800/60 dark:text-gray-100 p-2 rounded">
                                         {JSON.stringify(finalizePhase2Preview, null, 2)}
                                     </pre>
                                 ) : (
@@ -2993,7 +3020,7 @@ export default function WIRDocDis() {
                             <button
                                 type="button"
                                 onClick={() => setFinalizeOpen(false)}
-                                className="w-full sm:w-auto text-sm px-3 py-2 rounded-lg border dark:border-neutral-800"
+                                className="w-full sm:w-auto text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60"
                             >
                                 Cancel
                             </button>
