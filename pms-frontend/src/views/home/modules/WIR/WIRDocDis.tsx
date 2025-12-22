@@ -122,6 +122,7 @@ type WirDoc = {
 const canonicalWirStatus = (s?: string | null) => {
     const n = (s || "").toString().trim().toLowerCase();
     if (!n) return "Unknown";
+    if (n.includes("closed")) return "Closed";
     if (n.includes("draft")) return "Draft";
     if (n.includes("submit")) return "Submitted";
     if (n.includes("recommend")) return "Recommended";
@@ -888,6 +889,17 @@ export default function WIRDocDis() {
         return st === "Approved" || st === "Rejected" || st === "APPROVE_WITH_COMMENTS";
     }, [row?.status]);
 
+    const isClosed = useMemo(() => {
+        if (!row) return false;
+        const rec = (row.inspectorRecommendation || "")
+            .toString()
+            .trim()
+            .toUpperCase();
+        const hod = (row.hodOutcome || "").toString().trim().toUpperCase();
+
+        return rec === "APPROVE" && hod === "ACCEPT";
+    }, [row]);
+
     const statusBadge = (value?: string | null) => {
         const v = canonicalWirStatus(value);
         const map: Record<string, string> = {
@@ -900,6 +912,8 @@ export default function WIRDocDis() {
             Approved:
                 "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
             APPROVE_WITH_COMMENTS: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+            Closed:
+                "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
             Rejected:
                 "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
             Returned:
@@ -1518,7 +1532,7 @@ export default function WIRDocDis() {
 
             {/* Meta strip */}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
-                {statusBadge(row?.status)}
+                {statusBadge(isClosed ? "Closed" : row?.status)}
                 <span className="px-2 py-1 rounded-lg border border-gray-200/70 dark:border-neutral-800/60">
                     BIC: {bicName || row?.bicUserId || "—"}
                 </span>
