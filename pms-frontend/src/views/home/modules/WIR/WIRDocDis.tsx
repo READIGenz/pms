@@ -16,6 +16,7 @@ import InspRecoInspRunner from "./InspRecoInspRunner";
 import InspRecoHODRunner from "./InspRecoHODRunner";
 import WIRDiscussion from "./WIRDiscussion";
 import FollowupScheduleModal from "./FollowupScheduleModal";
+import { ComplianceItemsGrid } from "./CreateWIR";
 
 type NavState = {
     role?: string;
@@ -179,11 +180,10 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`px-4 py-2 rounded-full border text-sm font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
-                active
-                    ? "bg-emerald-600 text-white border-emerald-700/30"
-                    : "bg-white/80 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900/40 dark:text-gray-100 dark:border-neutral-800/60 dark:hover:bg-neutral-800/60"
-            }`}
+            className={`px-4 py-2 rounded-full border text-sm font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${active
+                ? "bg-emerald-600 text-white border-emerald-700/30"
+                : "bg-white/80 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900/40 dark:text-gray-100 dark:border-neutral-800/60 dark:hover:bg-neutral-800/60"
+                }`}
         >
             {children}
         </button>
@@ -911,6 +911,92 @@ export default function WIRDocDis() {
     };
 
     const items = row?.items ?? [];
+
+    // Doc > Overview > Checklists tile — build CreateWIR-style combined items
+    const combinedComplianceItems = useMemo(() => {
+        if (!row || !Array.isArray(row.items) || row.items.length === 0) return [];
+
+        const checklists: any[] = Array.isArray(row.checklists) ? row.checklists : [];
+
+        const byChecklistId = new Map<
+            string,
+            { code: string | null; title: string | null }
+        >(
+            checklists.map((c: any) => [
+                String(c?.checklistId ?? c?.id ?? ""),
+                {
+                    code: (c?.checklistCode ?? c?.code ?? null) as string | null,
+                    title: (c?.checklistTitle ?? c?.title ?? null) as string | null,
+                },
+            ])
+        );
+
+        return row.items.map((it: any) => {
+            const cid = String(it?.sourceChecklistId ?? it?.checklistId ?? "");
+            const meta = byChecklistId.get(cid) || { code: null, title: null };
+
+            const requirementRaw =
+                it.requirement ??
+                it.spec ??
+                it.mandatory ??
+                (it.required === true
+                    ? "Mandatory"
+                    : it.required === false
+                        ? "Optional"
+                        : null);
+
+            const requirement = requirementRaw
+                ? String(requirementRaw).trim()
+                : null;
+
+            const reqLower = (requirement || "").toLowerCase();
+            const isMandatory =
+                reqLower === "mandatory" || reqLower === "mand" || reqLower === "m";
+            const isOptional =
+                reqLower === "optional" || reqLower === "opt" || reqLower === "o";
+
+            const required =
+                typeof it.required === "boolean"
+                    ? it.required
+                    : isMandatory
+                        ? true
+                        : isOptional
+                            ? false
+                            : null;
+
+            const tags: string[] = Array.isArray(it.tags) ? it.tags : [];
+            const isCriticalExplicit =
+                typeof it.critical === "boolean" ? it.critical : false;
+            const isCriticalTag = tags.some((t) =>
+                String(t).toLowerCase().includes("critical")
+            );
+
+            return {
+                id: String(it.id ?? `${cid}-${Math.random()}`),
+                text: it.text ?? it.title ?? it.name ?? "—",
+                refId: cid,
+                code: it.code ?? it.itemCode ?? null,
+                requirement,
+                required,
+                critical: isCriticalExplicit || isCriticalTag,
+                tags,
+                units: it.units ?? it.unit ?? it.uom ?? null,
+                tolOp: it.tolerance ?? null,
+                base: it.base ?? null,
+                plus: it.plus ?? null,
+                minus: it.minus ?? null,
+                refCode: meta.code,
+                refTitle: meta.title,
+            };
+        });
+    }, [row]);
+
+    const combinedChecklistItems = useMemo(() => {
+        const list = row?.items ?? [];
+        // keep stable ordering if seq exists (nice for UX)
+        return [...list].sort((a, b) => (a.seq ?? 999999) - (b.seq ?? 999999));
+    }, [row?.items]);
+
     const totalRunnerRuns = useMemo(
         () => (row?.items ?? []).reduce((s, it) => s + ((it.runs?.length) || 0), 0),
         [row?.items]
@@ -1070,6 +1156,10 @@ export default function WIRDocDis() {
 
     // runner no-edit permission dialog
     const [noEditPermOpen, setNoEditPermOpen] = useState(false);
+
+    // to show combined checklists items in Doc > overview Chechlists tile
+    const [showChecklistItems, setShowChecklistItems] = useState(false);
+    const [showAllChecklistItems, setShowAllChecklistItems] = useState(false);
 
     // Helper: contractor fallback uid (prefer contractorId, else createdById)
     const contractorUid = useMemo<string | null>(() => {
@@ -1450,7 +1540,7 @@ export default function WIRDocDis() {
                 <TabButton active={tab === "discussion"} onClick={() => setTab("discussion")}>
                     Discussion
                 </TabButton>
-</div>
+            </div>
 
             {/* Content area */}
             <div className="mt-4 rounded-2xl border border-green-200/70 dark:border-neutral-800/60 p-3 sm:p-5">
@@ -1539,16 +1629,71 @@ export default function WIRDocDis() {
                                         {(row.checklists?.length || 0) === 0 ? (
                                             <div>None.</div>
                                         ) : (
-                                            <ul className="list-disc pl-5 space-y-1">
-                                                {row.checklists!.map((c) => (
-                                                    <li key={c.id}>
-                                                        {(c.checklistCode ? `#${c.checklistCode} ` : "") + (c.checklistTitle || "Untitled")}
-                                                        {c.versionLabel ? ` • v${c.versionLabel}` : ""}
-                                                        {typeof c.itemsCount === "number" ? ` • ${c.itemsCount} items` : ""}
-                                                    </li>
-                                                ))}
-                                            </ul>
+                                            <>
+                                                <ul className="list-disc pl-5 space-y-1">
+                                                    {row.checklists!.map((c) => (
+                                                        <li key={c.id}>
+                                                            {(c.checklistCode ? `#${c.checklistCode} ` : "") +
+                                                                (c.checklistTitle || "Untitled")}
+                                                            {c.versionLabel ? ` • v${c.versionLabel}` : ""}
+                                                            {typeof c.itemsCount === "number" ? ` • ${c.itemsCount} items` : ""}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+
+                                                <div className="mt-3">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                            Combined Items
+                                                        </div>
+
+                                                        {combinedChecklistItems.length > 0 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowChecklistItems((s) => !s)}
+                                                                className="text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                                            >
+                                                                {showChecklistItems
+                                                                    ? "Hide"
+                                                                    : `Show (${combinedChecklistItems.length})`}
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {combinedChecklistItems.length === 0 ? (
+                                                        <div className="mt-1 text-[12px] text-gray-600 dark:text-gray-300">
+                                                            Items not available on Overview.
+                                                        </div>
+                                                    ) : showChecklistItems ? (
+                                                        <>
+                                                            <div className="mt-2">
+                                                                <ComplianceItemsGrid
+                                                                    items={
+                                                                        showAllChecklistItems
+                                                                            ? combinedComplianceItems
+                                                                            : combinedComplianceItems.slice(0, 10)
+                                                                    }
+                                                                />
+                                                            </div>
+
+                                                            {combinedChecklistItems.length > 10 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setShowAllChecklistItems((s) => !s)}
+                                                                    className="mt-2 text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                                                >
+                                                                    {showAllChecklistItems
+                                                                        ? "Show less"
+                                                                        : `Show all (${combinedChecklistItems.length})`}
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    ) : null}
+
+                                                </div>
+                                            </>
                                         )}
+
                                     </div>
                                 </div>
                                 {/* Documents & Evidence (header-level, read-only) */}
