@@ -274,7 +274,7 @@ export class AdminUsersController {
 
     const updated = await this.prisma.user.update({
       where: { userId: id },
-      data: { profilePhoto: saved.url }, // => /uploads/users/:id/...
+      data: { profilePhoto: saved.relPath }, // => /uploads/users/:id/...
       select: { userId: true, profilePhoto: true, updatedAt: true },
     });
 
