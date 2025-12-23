@@ -7,6 +7,11 @@ import { randomUUID } from 'crypto';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
 import { FilesService } from '../../../common/storage/files.service';
 
+export interface SaveManyOpts extends SaveOpts {
+  makeThumbs?: boolean;
+}
+
+
 function toHodOutcomeEnum(v?: string | null): HodOutcome | undefined {
   if (v == null) return undefined;
   const t = String(v).trim().toUpperCase();

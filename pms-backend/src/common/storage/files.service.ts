@@ -9,6 +9,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+export interface SaveManyOpts extends SaveOpts {
+  makeThumbs?: boolean;
+}
+
+
+
 /* ====================== types ====================== */
 
 export type SavedFileInfo = {
@@ -41,6 +47,72 @@ export class FilesService {
   });
 
   /* ---------- UPLOAD ---------- */
+
+  import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import * as path from 'path';
+
+/* =========================
+   Types
+========================= */
+
+export interface SaveOpts {
+  subdir?: string;
+  baseName?: string;
+}
+
+export interface SavedFileInfo {
+  originalName: string;
+  fileName: string;
+  ext: string;
+  size: number;
+  mimeType: string;
+  relPath: string;
+}
+
+/* =========================
+   Helpers
+========================= */
+
+function sanitizePathPart(p: string): string {
+  return p.replace(/(\.\.|\/\/|\\)/g, '').replace(/^\/+/, '');
+}
+
+function baseFrom(filename: string): string {
+  return path.parse(filename).name;
+}
+
+function buildFinalName(base: string, originalName: string) {
+  const ext = path.extname(originalName);
+  const safeBase = base.replace(/[^a-zA-Z0-9-_]/g, '');
+  const finalName = `${safeBase}-${Date.now()}${ext}`;
+  return { finalName, ext };
+}
+
+/* =========================
+   Service
+========================= */
+
+@Injectable()
+export class FilesService {
+  private s3: S3Client;
+  private bucket: string;
+
+  constructor() {
+    this.bucket = process.env.AWS_S3_BUCKET as string;
+
+    this.s3 = new S3Client({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string,
+      },
+    });
+  }
+
+  /* =========================
+     Save single file
+  ========================= */
 
   async saveMulterFile(
     file: Express.Multer.File,
@@ -78,6 +150,70 @@ export class FilesService {
       throw new InternalServerErrorException('Failed to upload file to S3');
     }
   }
+
+  /* =========================
+     Save multiple files
+  ========================= */
+
+  async saveMany(
+    files: Express.Multer.File[],
+    opts: SaveOpts & { makeThumbs?: boolean } = {},
+  ): Promise<SavedFileInfo[]> {
+    if (!files || !files.length) {
+      return [];
+    }
+
+    const results: SavedFileInfo[] = [];
+
+    for (const file of files) {
+      const saved = await this.saveMulterFile(file, opts);
+      results.push(saved);
+    }
+
+    // makeThumbs is accepted for compatibility
+    // Thumbnail generation can be added later
+
+    return results;
+  }
+
+
+  // async saveMulterFile(
+    
+  //   file: Express.Multer.File,
+  //   opts: SaveOpts = {},
+  // ): Promise<SavedFileInfo> {
+  //   try {
+  //     const safeSubdir = sanitizePathPart(opts.subdir ?? '');
+
+  //     const { finalName, ext } = buildFinalName(
+  //       opts.baseName ?? baseFrom(file.originalname),
+  //       file.originalname,
+  //     );
+
+  //     const s3Key = path.posix.join(safeSubdir, finalName);
+
+  //     await this.s3.send(
+  //       new PutObjectCommand({
+  //         Bucket: this.bucket,
+  //         Key: s3Key,
+  //         Body: file.buffer,
+  //         ContentType: file.mimetype,
+  //       }),
+  //     );
+
+  //     return {
+  //       originalName: file.originalname,
+  //       fileName: finalName,
+  //       ext,
+  //       size: file.size,
+  //       mimeType: file.mimetype,
+  //       relPath: s3Key,
+  //     };
+  //   } catch (err) {
+  //     console.error(err);
+  //     throw new InternalServerErrorException('Failed to upload file to S3');
+  //   }
+  // }
 
   /* ---------- SIGNED URL ---------- */
 
