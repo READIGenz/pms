@@ -7,11 +7,6 @@ import { randomUUID } from 'crypto';
 import { InspectorSaveDto } from './inspector-runner-save.dto';
 import { FilesService } from '../../../common/storage/files.service';
 
-export interface SaveManyOpts extends SaveOpts {
-  makeThumbs?: boolean;
-}
-
-
 function toHodOutcomeEnum(v?: string | null): HodOutcome | undefined {
   if (v == null) return undefined;
   const t = String(v).trim().toUpperCase();
@@ -1082,7 +1077,7 @@ export class WirService {
             itemId: null, // header-level (not tied to any item)
             runId: null,
             kind,
-            url: s.url,
+            url: s.url || s.relPath,
             thumbUrl: s.thumbUrl || undefined,
             fileName: s.fileName || undefined,
             fileSize: s.size ?? undefined,
@@ -1497,7 +1492,7 @@ export class WirService {
             wirId,
             itemId: m.itemId,
             kind,
-            url: s.url,
+            url: s.url || s.relPath,
             thumbUrl: s.thumbUrl || undefined,
             fileName: s.fileName || undefined,
             fileSize: s.size ?? undefined,
