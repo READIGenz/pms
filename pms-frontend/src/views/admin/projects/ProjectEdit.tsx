@@ -1,7 +1,13 @@
 // pms-frontend/src/views/admin/projects/ProjectEdit.tsx
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../api/client";
+
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
 
 /* ---------- Reference-data types ---------- */
 type StateOpt = { stateId: string; name: string; code: string };
@@ -10,21 +16,8 @@ type CompanyOpt = { companyId: string; name: string };
 type TagOpt = { tagCode: string; label: string };
 
 /* ---------- Enums (from prisma schema) ---------- */
-const projectStatuses = [
-  "Draft",
-  "Active",
-  "OnHold",
-  "Completed",
-  "Archived",
-] as const;
-const stages = [
-  "Planning",
-  "Design",
-  "Procurement",
-  "Execution",
-  "Handover",
-  "Closed",
-] as const;
+const projectStatuses = ["Draft", "Active", "OnHold", "Completed", "Archived"] as const;
+const stages = ["Planning", "Design", "Procurement", "Execution", "Handover", "Closed"] as const;
 const projectTypes = [
   "Residential",
   "Commercial",
@@ -43,35 +36,10 @@ const structureTypes = [
   "ShellCore",
   "Other",
 ] as const;
-const constructionTypes = [
-  "New",
-  "Renovation",
-  "Retrofit",
-  "Repair",
-  "Fitout",
-  "Other",
-] as const;
-const contractTypes = [
-  "LumpSum",
-  "ItemRate",
-  "Turnkey",
-  "EPC",
-  "PMC",
-  "LabourOnly",
-  "Other",
-] as const;
+const constructionTypes = ["New", "Renovation", "Retrofit", "Repair", "Fitout", "Other"] as const;
+const contractTypes = ["LumpSum", "ItemRate", "Turnkey", "EPC", "PMC", "LabourOnly", "Other"] as const;
 const healthOptions = ["Green", "Amber", "Red", "Unknown"] as const;
-const currencies = [
-  "INR",
-  "USD",
-  "EUR",
-  "GBP",
-  "AED",
-  "SAR",
-  "SGD",
-  "AUD",
-  "Other",
-] as const;
+const currencies = ["INR", "USD", "EUR", "GBP", "AED", "SAR", "SGD", "AUD", "Other"] as const;
 const areaUnits = ["SQFT", "SQM", "SQYD", "Acre", "Hectare"] as const;
 
 /* ---------- Component ---------- */
@@ -102,8 +70,7 @@ export default function ProjectEdit() {
 
   // ---------- Dates and Cost ----------
   const [startDate, setStartDate] = useState<string>("");
-  const [plannedCompletionDate, setPlannedCompletionDate] =
-    useState<string>("");
+  const [plannedCompletionDate, setPlannedCompletionDate] = useState<string>("");
   const [currency, setCurrency] = useState<string>("INR");
   const [contractValue, setContractValue] = useState<string>("");
 
@@ -130,6 +97,15 @@ export default function ProjectEdit() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
+
+  // Title/subtitle (Admin header)
+  useEffect(() => {
+    document.title = "Trinity PMS — Edit Project";
+    window.__ADMIN_SUBTITLE__ = "Update project details, then save.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
 
   // --- Auth gate simple check ---
   useEffect(() => {
@@ -201,9 +177,7 @@ export default function ProjectEdit() {
         setConstructionType(p.constructionType ?? "");
         setContractType(p.contractType ?? "");
         setHealth(p.health ?? "Unknown");
-        setClientCompanyId(
-          p.clientCompanyId ?? p?.clientCompany?.companyId ?? ""
-        );
+        setClientCompanyId(p.clientCompanyId ?? p?.clientCompany?.companyId ?? "");
 
         setAddress(p.address ?? "");
         setStateId(p.stateId ?? p?.state?.stateId ?? "");
@@ -223,9 +197,7 @@ export default function ProjectEdit() {
         setPlannedCompletionDate(toYmd(p.plannedCompletionDate));
 
         setCurrency(p.currency ?? "INR");
-        setContractValue(
-          p.contractValue?.toString?.() ?? p.contractValue ?? ""
-        );
+        setContractValue(p.contractValue?.toString?.() ?? p.contractValue ?? "");
 
         setAreaUnit(p.areaUnit ?? "");
         setPlotArea(p.plotArea?.toString?.() ?? p.plotArea ?? "");
@@ -235,30 +207,20 @@ export default function ProjectEdit() {
         setDescription(p.description ?? "");
 
         try {
-          const { data: t1 } = await api.get(
-            `/admin/projects/${projectId}/tags`
-          );
+          const { data: t1 } = await api.get(`/admin/projects/${projectId}/tags`);
           const current = (Array.isArray(t1) ? t1 : t1?.tags ?? []) as any[];
-          setSelectedTagCodes(
-            current.map((t) => t.tagCode ?? t.code ?? t.value).filter(Boolean)
-          );
+          setSelectedTagCodes(current.map((t) => t.tagCode ?? t.code ?? t.value).filter(Boolean));
         } catch {
           try {
-            const { data: t2 } = await api.get(
-              `/admin/projects/${projectId}/project-tags`
-            );
+            const { data: t2 } = await api.get(`/admin/projects/${projectId}/project-tags`);
             const current = (Array.isArray(t2) ? t2 : t2?.tags ?? []) as any[];
-            setSelectedTagCodes(
-              current.map((t) => t.tagCode ?? t.code ?? t.value).filter(Boolean)
-            );
+            setSelectedTagCodes(current.map((t) => t.tagCode ?? t.code ?? t.value).filter(Boolean));
           } catch {
             /* ignore */
           }
         }
       } catch (e: any) {
-        setErr(
-          e?.response?.data?.error || e?.message || "Failed to load project."
-        );
+        setErr(e?.response?.data?.error || e?.message || "Failed to load project.");
       } finally {
         setLoading(false);
       }
@@ -273,9 +235,7 @@ export default function ProjectEdit() {
     }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", {
-          params: { stateId },
-        });
+        const { data } = await api.get("/admin/districts", { params: { stateId } });
         setDistricts(Array.isArray(data) ? data : data?.districts || []);
       } catch (e: any) {
         setErr(e?.response?.data?.error || "Failed to load districts.");
@@ -306,13 +266,38 @@ export default function ProjectEdit() {
     const projPart = (title || "").trim().slice(0, 3).toUpperCase();
     const compPart = (clientCompanyName || "").trim().slice(0, 3).toUpperCase();
     const pinPart = (pin || "").trim();
-
-    if (projPart && compPart && pinPart)
-      return `${projPart}-${compPart}-${pinPart}`;
-    return "e.g. PRO-COM-110001 (3 letters project - 3 letters company - PIN)";
+    if (projPart && compPart && pinPart) return `${projPart}-${compPart}-${pinPart}`;
+    return "e.g. PRO-COM-110001";
   }, [title, clientCompanyName, pin]);
 
-  const onPickTags = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const stateOptions = useMemo(() => {
+    const opts = states.map((s) => ({
+      value: s.stateId,
+      label: `${s.name} (${s.code})`,
+    }));
+    if (stateId && !opts.some((o) => o.value === stateId)) {
+      opts.push({ value: stateId, label: "(unknown state)" });
+    }
+    return opts;
+  }, [states, stateId]);
+
+  const districtOptions = useMemo(() => {
+    const opts = districts.map((d) => ({ value: d.districtId, label: d.name }));
+    if (districtId && !opts.some((o) => o.value === districtId)) {
+      opts.push({ value: districtId, label: "(unknown district)" });
+    }
+    return opts;
+  }, [districts, districtId]);
+
+  const companyOptions = useMemo(() => {
+    const opts = companies.map((c) => ({ value: c.companyId, label: c.name }));
+    if (clientCompanyId && !opts.some((o) => o.value === clientCompanyId)) {
+      opts.push({ value: clientCompanyId, label: "(unknown company)" });
+    }
+    return opts;
+  }, [companies, clientCompanyId]);
+
+  const onPickTags = (e: ChangeEvent<HTMLSelectElement>) => {
     const values = Array.from(e.target.selectedOptions).map((o) => o.value);
     setSelectedTagCodes(values);
   };
@@ -322,9 +307,7 @@ export default function ProjectEdit() {
     setErr(null);
 
     if (!canSave) {
-      setErr(
-        "Please fill required fields. Also ensure 'Planned Completion' is not before 'Start Date'."
-      );
+      setErr("Please fill required fields. Also ensure 'Planned Completion' is not before 'Start Date'.");
       return;
     }
 
@@ -367,14 +350,10 @@ export default function ProjectEdit() {
       await api.patch(`/admin/projects/${projectId}`, payload);
 
       try {
-        await api.post(`/admin/projects/${projectId}/tags`, {
-          tagCodes: selectedTagCodes,
-        });
+        await api.post(`/admin/projects/${projectId}/tags`, { tagCodes: selectedTagCodes });
       } catch {
         try {
-          await api.post(`/admin/projects/${projectId}/project-tags`, {
-            tagCodes: selectedTagCodes,
-          });
+          await api.post(`/admin/projects/${projectId}/project-tags`, { tagCodes: selectedTagCodes });
         } catch {
           /* ignore */
         }
@@ -382,425 +361,308 @@ export default function ProjectEdit() {
 
       nav("/admin/projects", { replace: true });
     } catch (e: any) {
-      setErr(
-        e?.response?.data?.error || e?.message || "Failed to save project"
-      );
+      setErr(e?.response?.data?.error || e?.message || "Failed to save project");
     } finally {
       setSaving(false);
     }
   };
 
-  const stateLabel = useMemo(() => {
-    if (!stateId) return "";
-    const s = states.find((x) => x.stateId === stateId);
-    return s ? `${s.name} (${s.code})` : "(unknown state)";
-  }, [stateId, states]);
-
-  const districtLabel = useMemo(() => {
-    if (!districtId) return "";
-    const d = districts.find((x) => x.districtId === districtId);
-    return d ? d.name : "(unknown district)";
-  }, [districtId, districts]);
+  /* ========================= CompanyEdit exact button tokens ========================= */
+  const btnSmBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+    "disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnOutline =
+    `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const btnPrimary =
+    `${btnSmBase} bg-[#00379C] text-white shadow-sm hover:brightness-110 focus:ring-[#00379C]/35`;
+  const infoBtn =
+    "ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white " +
+    "text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="w-full">
       <div className="mx-auto max-w-5xl">
-        {/* Header (Create-like) */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Edit Project
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Update the details below and save.
+        {/* Top helper row (EXACT pattern as CompanyEdit/UserEdit) */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-slate-700 dark:text-slate-200">
+            Edit and save project information.
+            <button className={infoBtn} onClick={() => setShowNote(true)} type="button">
+              i
+            </button>
+            {projectId ? (
+              <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                ID: <span className="font-mono">{projectId}</span>
               </span>
-
-              {/* Info icon (replaces Note button functionality) */}
-              <button
-                type="button"
-                onClick={() => setShowNote(true)}
-                aria-label="Info"
-                title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              >
-                i
-              </button>
-            </p>
-            {projectId && (
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Project ID: <span className="font-mono">{projectId}</span>
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="flex gap-2">
-            <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/projects")}
-              type="button"
-            >
+            <button className={btnOutline} onClick={() => nav("/admin/projects")} type="button">
               Cancel
             </button>
-            <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-              onClick={submit}
-              disabled={!canSave || saving || loading}
-              type="button"
-            >
+            <button className={btnPrimary} onClick={submit} disabled={!canSave || saving || loading} type="button">
               {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200">
             {err}
           </div>
         )}
 
         {loading ? (
-          <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 text-sm text-slate-700 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 sm:px-6 sm:py-5">
             Loading project…
           </div>
         ) : (
-          <>
-            {/* ========== Summary ========== */}
+          <div className="mt-4">
             <Section title="Summary">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Text
-                  label="Project Title"
-                  value={title}
-                  setValue={setTitle}
-                  required
-                />
-                <Text
-                  label="Project Code"
-                  value={code}
-                  setValue={setCode}
-                  placeholder={projectCodePlaceholder}
-                />
+                <Input label="Project Title" value={title} onChange={setTitle} required />
+                <Input label="Project Code" value={code} onChange={setCode} placeholder={projectCodePlaceholder} />
 
-                <Select
+                <SelectStrict
                   label="Status"
                   value={status}
-                  setValue={setStatus}
-                  options={projectStatuses as unknown as string[]}
+                  onChange={setStatus}
+                  options={projectStatuses.map((x) => ({ value: x, label: x }))}
                 />
-                <Select
+                <SelectStrict
                   label="Stage"
                   value={stage}
-                  setValue={setStage}
-                  options={["", ...stages]}
+                  onChange={setStage}
+                  placeholder="Select (optional)"
+                  options={stages.map((x) => ({ value: x, label: x }))}
                 />
 
-                <Select
+                <SelectStrict
                   label="Project Type"
                   value={projectType}
-                  setValue={setProjectType}
-                  options={["", ...projectTypes]}
+                  onChange={setProjectType}
+                  placeholder="Select (optional)"
+                  options={projectTypes.map((x) => ({ value: x, label: x }))}
                 />
-                <Select
+                <SelectStrict
                   label="Structure Type"
                   value={structureType}
-                  setValue={setStructureType}
-                  options={["", ...structureTypes]}
+                  onChange={setStructureType}
+                  placeholder="Select (optional)"
+                  options={structureTypes.map((x) => ({ value: x, label: x }))}
                 />
-                <Select
+                <SelectStrict
                   label="Construction Mode"
                   value={constructionType}
-                  setValue={setConstructionType}
-                  options={["", ...constructionTypes]}
+                  onChange={setConstructionType}
+                  placeholder="Select (optional)"
+                  options={constructionTypes.map((x) => ({ value: x, label: x }))}
                 />
-                <Select
+                <SelectStrict
                   label="Contract Type"
                   value={contractType}
-                  setValue={setContractType}
-                  options={["", ...contractTypes]}
+                  onChange={setContractType}
+                  placeholder="Select (optional)"
+                  options={contractTypes.map((x) => ({ value: x, label: x }))}
                 />
-                <Select
+                <SelectStrict
                   label="Project Health"
                   value={health}
-                  setValue={setHealth}
-                  options={healthOptions as unknown as string[]}
+                  onChange={setHealth}
+                  options={healthOptions.map((x) => ({ value: x, label: x }))}
                 />
 
-                <Select
+                <SelectStrict
                   label="Client / Owner Company"
                   value={clientCompanyId}
-                  setValue={setClientCompanyId}
-                  options={[
-                    "",
-                    ...companies.map((c) => ({
-                      value: c.companyId,
-                      label: c.name,
-                    })),
-                  ]}
+                  onChange={setClientCompanyId}
+                  placeholder="Select (optional)"
+                  options={companyOptions}
                 />
               </div>
             </Section>
 
-            {/* ========== Location ========== */}
             <Section title="Location">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <TextArea
-                  label="Address"
-                  value={address}
-                  setValue={setAddress}
-                />
+              <TextArea label="Address" value={address} onChange={setAddress} rows={3} />
 
-                <Select
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <SelectStrict
                   label="State / UT"
                   value={stateId}
-                  setValue={(v) => {
+                  onChange={(v) => {
                     setStateId(v);
-                    // Create clears district on state change
                     setDistrictId("");
                   }}
-                  options={[
-                    "",
-                    ...states.map((s) => ({
-                      value: s.stateId,
-                      label: `${s.name} (${s.code})`,
-                    })),
-                    ...(stateId && !states.some((s) => s.stateId === stateId)
-                      ? [{ value: stateId, label: stateLabel }]
-                      : []),
-                  ]}
+                  placeholder="Select (optional)"
+                  options={stateOptions}
                 />
-                <Select
+
+                <SelectStrict
                   label="District"
                   value={districtId}
-                  setValue={setDistrictId}
-                  options={[
-                    "",
-                    ...districts.map((d) => ({
-                      value: d.districtId,
-                      label: d.name,
-                    })),
-                    ...(districtId &&
-                    !districts.some((d) => d.districtId === districtId)
-                      ? [{ value: districtId, label: districtLabel }]
-                      : []),
-                  ]}
+                  onChange={setDistrictId}
+                  placeholder={stateId ? "Select (optional)" : "Select state first"}
+                  options={districtOptions}
                   disabled={!stateId}
                 />
-                <Text
-                  label="City/Town"
-                  value={cityTown}
-                  setValue={setCityTown}
-                />
-                <Text
+
+                <Input label="City/Town" value={cityTown} onChange={setCityTown} />
+                <Input
                   label="PIN Code"
                   value={pin}
-                  setValue={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
+                  onChange={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
                   placeholder="6-digit PIN"
                 />
-                <Text
+
+                <Input
                   label="Latitude"
                   value={latitude}
-                  setValue={(v) =>
-                    setLatitude(v.replace(/[^0-9.\-]/g, "").slice(0, 12))
-                  }
+                  onChange={(v) => setLatitude(v.replace(/[^0-9.\-]/g, "").slice(0, 12))}
                   placeholder="e.g., 12.9716"
                 />
-                <Text
+                <Input
                   label="Longitude"
                   value={longitude}
-                  setValue={(v) =>
-                    setLongitude(v.replace(/[^0-9.\-]/g, "").slice(0, 13))
-                  }
+                  onChange={(v) => setLongitude(v.replace(/[^0-9.\-]/g, "").slice(0, 13))}
                   placeholder="e.g., 77.5946"
                 />
               </div>
             </Section>
 
-            {/* ========== Dates & Cost ========== */}
             <Section title="Dates and Cost">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <DateInput
-                  label="Start Date"
-                  value={startDate}
-                  setValue={setStartDate}
-                />
+                <DateInput label="Start Date" value={startDate} onChange={setStartDate} />
                 <DateInput
                   label="Planned Completion"
                   value={plannedCompletionDate}
-                  setValue={setPlannedCompletionDate}
+                  onChange={setPlannedCompletionDate}
                   min={startDate || undefined}
                 />
 
-                <Select
+                <SelectStrict
                   label="Currency"
                   value={currency}
-                  setValue={setCurrency}
-                  options={currencies as unknown as string[]}
+                  onChange={setCurrency}
+                  options={currencies.map((x) => ({ value: x, label: x }))}
                 />
-                <Text
+                <Input
                   label="Contract Value"
                   value={contractValue}
-                  setValue={(v) => setContractValue(v.replace(/[^0-9.]/g, ""))}
+                  onChange={(v) => setContractValue(v.replace(/[^0-9.]/g, ""))}
                   placeholder="e.g., 12500000.00"
                 />
               </div>
             </Section>
 
-            {/* ========== Attributes ========== */}
             <Section title="Attributes">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Select
+                <SelectStrict
                   label="Area Units"
                   value={areaUnit}
-                  setValue={setAreaUnit}
-                  options={["", ...areaUnits]}
+                  onChange={setAreaUnit}
+                  placeholder="Select (optional)"
+                  options={areaUnits.map((x) => ({ value: x, label: x }))}
                 />
-                <Text
+                <Input
                   label="Plot Area"
                   value={plotArea}
-                  setValue={(v) => setPlotArea(v.replace(/[^0-9.]/g, ""))}
+                  onChange={(v) => setPlotArea(v.replace(/[^0-9.]/g, ""))}
                   placeholder="e.g., 10000.00"
                 />
-                <Text
+                <Input
                   label="Built-up Area"
                   value={builtUpArea}
-                  setValue={(v) => setBuiltUpArea(v.replace(/[^0-9.]/g, ""))}
+                  onChange={(v) => setBuiltUpArea(v.replace(/[^0-9.]/g, ""))}
                   placeholder="e.g., 25000.00"
                 />
-                <Text
+                <Input
                   label="Floors"
                   value={floors}
-                  setValue={(v) =>
-                    setFloors(v.replace(/[^\d]/g, "").slice(0, 3))
-                  }
+                  onChange={(v) => setFloors(v.replace(/[^\d]/g, "").slice(0, 3))}
                   placeholder="e.g., 12"
                 />
               </div>
             </Section>
 
-            {/* ========== Tags ========== */}
             <Section title="Tags">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <MultiSelect
-                  label="Select Tag(s)"
-                  value={selectedTagCodes}
-                  onChange={onPickTags}
-                  options={allTags.map((t) => ({
-                    value: t.tagCode,
-                    label: t.label || t.tagCode,
-                  }))}
-                />
-              </div>
+              <MultiSelect
+                label="Select Tag(s)"
+                value={selectedTagCodes}
+                onChange={onPickTags}
+                options={allTags.map((t) => ({ value: t.tagCode, label: t.label || t.tagCode }))}
+              />
             </Section>
 
-            {/* ========== Notes / Description ========== */}
             <Section title="Notes / Description">
-              <div className="grid grid-cols-1 gap-4">
-                <TextArea
-                  label="Description"
-                  value={description}
-                  setValue={setDescription}
-                />
-              </div>
+              <TextArea label="Description" value={description} onChange={setDescription} rows={4} />
             </Section>
 
-            {/* Footer actions (Create-like) */}
+            {/* Bottom actions (EXACT pattern as CompanyEdit/UserEdit) */}
             <div className="mt-6 flex justify-end gap-2">
-              <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => nav("/admin/projects")}
-                type="button"
-              >
+              <button className={btnOutline} onClick={() => nav("/admin/projects")} type="button">
                 Cancel
               </button>
-              <button
-                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-                onClick={submit}
-                disabled={!canSave || saving}
-                type="button"
-              >
+              <button className={btnPrimary} onClick={submit} disabled={!canSave || saving || loading} type="button">
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* NOTE MODAL (Create-like styling) */}
+      {/* Note modal (CompanyEdit style) */}
       {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowNote(false)} />
+
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-white/10">
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
                 Note for Admins — Editing a Project
-              </h2>
-              <button
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                aria-label="Close"
-                type="button"
-              >
-                ✕
+              </div>
+              <button className={btnOutline} onClick={() => setShowNote(false)} type="button">
+                Close
               </button>
             </div>
 
-            <div className="space-y-3 p-5 text-sm leading-6 text-gray-800 dark:text-gray-100">
+            <div className="space-y-3 p-5 text-sm leading-6 text-slate-800 dark:text-slate-200">
               <div>
                 <b>Required to save:</b> Project Title and Status.
               </div>
-
               <div>
-                <b>Dates rule:</b> if you enter both Start Date and Planned
-                Completion, the completion date cannot be before the start date.
+                <b>Dates rule:</b> if you enter both Start Date and Planned Completion, the completion date cannot be before the start date.
               </div>
-
               <div>
-                <b>Optional but helpful:</b> Stage, Project Type, Structure
-                Type, Construction Mode, Contract Type, Project Health,
+                <b>Optional but helpful:</b> Stage, Project Type, Structure Type, Construction Mode, Contract Type, Project Health,
                 Client/Owner Company, Description/Notes, and Tags.
               </div>
-
               <div>
-                <b>Location (optional):</b> Address, State, District, City/Town,
-                PIN, Latitude, Longitude.
+                <b>Location (optional):</b> Address, State, District, City/Town, PIN, Latitude, Longitude.
                 <ul className="mt-1 list-disc space-y-1 pl-5">
                   <li>PIN should be a 6-digit number.</li>
-                  <li>
-                    Latitude/Longitude accept only numbers, decimal points, and
-                    minus signs.
-                  </li>
+                  <li>Latitude/Longitude accept only numbers, decimal points, and minus signs.</li>
                 </ul>
               </div>
-
               <div>
-                <b>Currency &amp; Contract Value (optional):</b> Currency
-                defaults to INR; Contract Value accepts numbers and decimals.
+                <b>Currency &amp; Contract Value (optional):</b> Currency defaults to INR; Contract Value accepts numbers and decimals.
               </div>
-
               <div>
                 <b>Tags (optional):</b> You can select multiple tags.
               </div>
-
               <div>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Projects page.
+                <b>After a successful save:</b> you’ll be taken back to the Projects page.
               </div>
-
               <div>
                 <b>Cancel:</b> returns to the Projects list without saving.
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-neutral-800">
-              <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                type="button"
-              >
-                Close
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
+              <button className={btnPrimary} onClick={() => setShowNote(false)} type="button">
+                Done
               </button>
             </div>
           </div>
@@ -810,56 +672,53 @@ export default function ProjectEdit() {
   );
 }
 
-/* ------------------------ Small UI helpers (match Create) ------------------------ */
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+/* ========================= CompanyEdit-style components ========================= */
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
           {title}
         </div>
-        {children}
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
-    </section>
+      {children}
+    </div>
   );
 }
 
-function Text({
+function Input({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
   type = "text",
   required = false,
-  placeholder,
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
   type?: string;
   required?: boolean;
-  placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required ? <span className="text-rose-600"> *</span> : null}
       </span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        type={type}
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        type={type}
         disabled={disabled}
       />
     </label>
@@ -869,60 +728,103 @@ function Text({
 function TextArea({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
+  rows = 4,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
 }) {
   return (
-    <label className="block md:col-span-2">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
       />
     </label>
   );
 }
 
-function Select({
+function SelectStrict({
   label,
   value,
-  setValue,
+  onChange,
   options,
+  placeholder = "Select…",
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
-  options: (string | { value: string; label: string })[];
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
+        onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        onChange={(e) => setValue(e.target.value)}
       >
-        {options.map((o, i) => {
-          const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? o || "—" : o.label;
-          return (
-            <option key={v || `empty-${i}`} value={v}>
-              {l || "—"}
-            </option>
-          );
-        })}
+        <option value="">{placeholder}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
+    </label>
+  );
+}
+
+function DateInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  min?: string;
+  max?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <input
+        type="date"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </label>
   );
 }
@@ -936,18 +838,22 @@ function MultiSelect({
 }: {
   label: string;
   value: string[];
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
   options: { value: string; label: string }[];
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
+
       <select
         multiple
-        className="w-full min-h-[8rem] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full min-h-[8rem] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -958,39 +864,10 @@ function MultiSelect({
           </option>
         ))}
       </select>
-      <span className="text-xs text-gray-600 dark:text-gray-400">
-        Hold Ctrl/Cmd to select multiple.
-      </span>
-    </label>
-  );
-}
 
-function DateInput({
-  label,
-  value,
-  setValue,
-  min,
-  max,
-}: {
-  label: string;
-  value: string;
-  setValue: (v: string) => void;
-  min?: string;
-  max?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <input
-        type="date"
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-        value={value}
-        min={min}
-        max={max}
-        onChange={(e) => setValue(e.target.value)}
-      />
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Hold Ctrl/Cmd to select multiple.
+      </div>
     </label>
   );
 }

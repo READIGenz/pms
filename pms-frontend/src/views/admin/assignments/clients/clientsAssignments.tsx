@@ -93,7 +93,13 @@ function displayName(u: UserLite) {
     .trim();
 }
 function phoneDisplay(u: UserLite) {
-  return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+  const cc = String(u.countryCode ?? "")
+    .trim()
+    .replace(/^\+/, "");
+  const ph = String(u.phone ?? "").trim();
+  if (cc && ph) return `+${cc}${ph}`;
+  if (ph) return ph;
+  return "";
 }
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
@@ -157,17 +163,25 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   return "Valid";
 }
 
-const TileHeader = ({
+/** CompanyEdit-style section header */
+const SectionHeader = ({
   title,
   subtitle,
 }: {
   title: string;
   subtitle?: string;
 }) => (
-  <div className="mb-3">
-    <div className="text-sm font-semibold dark:text-white">{title}</div>
+  <div className="mb-4">
+    <div className="flex items-center gap-3">
+      <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
+      <div className="text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
+        {title}
+      </div>
+    </div>
     {subtitle ? (
-      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        {subtitle}
+      </div>
     ) : null}
   </div>
 );
@@ -175,17 +189,17 @@ const TileHeader = ({
 function ValidityBadge({ value }: { value: string }) {
   const v = (value || "").toLowerCase();
   let cls =
-    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-slate-200 dark:border-neutral-700";
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/5 dark:text-slate-200 dark:border-white/10";
 
   if (v === "valid") {
     cls =
-      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800";
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-900/40";
   } else if (v === "yet to start") {
     cls =
-      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800";
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-900/40";
   } else if (v === "expired") {
     cls =
-      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800";
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-900/40";
   }
 
   return (
@@ -200,22 +214,66 @@ function ValidityBadge({ value }: { value: string }) {
   );
 }
 
-const SOFT_SELECT =
-  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
-  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 pr-8 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-neutral-100 placeholder:text-gray-400 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70 appearance-none";
+// ===== UI constants (CompanyEdit look) =====
+const CARD =
+  "bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm p-5";
 
-const SOFT_DATE =
-  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
-  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-neutral-100 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70";
+const PILL_INPUT =
+  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-4 text-sm text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent";
+
+const PILL_SELECT =
+  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-4 pr-10 text-sm text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent appearance-none";
+
+const PILL_DATE = PILL_INPUT;
+
+// Compact toolbar controls (for Browse Clients) — smaller + cleaner than full form pills
+const FILTER_LABEL =
+  "text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-300 mb-1 block";
+
+const FILTER_INPUT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-4 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent";
+
+const FILTER_SELECT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-4 pr-10 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent appearance-none";
+
+const FILTER_ICON_BTN =
+  "inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 hover:bg-slate-50 dark:hover:bg-white/5 shadow-sm";
+
+// Buttons EXACT same sizing as CompanyEdit/UserEdit pages
+const btnSmBase =
+  "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_SECONDARY =
+  `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+  "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+const BTN_PRIMARY = `${btnSmBase} bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35`;
+// Use same size everywhere (pagination / table actions too)
+const BTN_TINY = BTN_SECONDARY;
+
+const ICON_BTN =
+  "inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 hover:bg-slate-50 dark:hover:bg-white/5";
+
+const TABLE_WRAP =
+  "rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-neutral-950";
+
+const TABLE_HEAD =
+  "bg-slate-50 dark:bg-white/5 sticky top-0 z-10 text-slate-600 dark:text-slate-300";
 
 export default function ClientsAssignments() {
   const nav = useNavigate();
 
-  // --- Auth gate ---
+  // --- Auth gate only (keep Assignments page heading consistent) ---
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) nav("/login", { replace: true });
@@ -619,7 +677,6 @@ export default function ClientsAssignments() {
     });
   };
 
-  const validToMin = validFrom ? addDaysISO(validFrom, 1) : "";
   useEffect(() => {
     if (validFrom && validTo && validTo <= validFrom) setValidTo("");
   }, [validFrom, validTo]);
@@ -638,14 +695,12 @@ export default function ClientsAssignments() {
     statusFilter !== "all" ||
     stateFilter !== "" ||
     districtFilter !== "";
-  //companyFilter !== "";
 
   const clearFilters = () => {
     setQ("");
     setStatusFilter("all");
     setStateFilter("");
     setDistrictFilter("");
-    //setCompanyFilter("");
     setPage(1);
   };
 
@@ -718,7 +773,6 @@ export default function ClientsAssignments() {
       if (a === b) return 0;
       if (a == null) return -1;
       if (b == null) return 1;
-      // date-like?
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
@@ -736,7 +790,7 @@ export default function ClientsAssignments() {
 
   // ===== Tile 4 pagination =====
   const [aPage, setAPage] = useState(1);
-  const aPageSize = pageSize; // <-- use the same selector value as Browse Clients
+  const aPageSize = pageSize; // use same selector value as Browse Clients
   const aTotal = assignedSortedRows.length;
   const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
   const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
@@ -768,11 +822,9 @@ export default function ClientsAssignments() {
     const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
     const currentTo = fmtLocalDateOnly(row.validTo) || "";
 
-    // same behavior as contractors/consultants
     setEditFrom(currentFrom || todayLocalISO());
     setEditTo(currentTo || addDaysISO(todayLocalISO(), 1));
 
-    // remember originals
     setOrigFrom(currentFrom);
     setOrigTo(currentTo);
 
@@ -830,7 +882,6 @@ export default function ClientsAssignments() {
 
       if (candidates.length === 0) return null;
 
-      // Sort by updatedAt desc, then validFrom desc, then id for stability
       candidates.sort((a, b) => {
         const au = Date.parse(a?.updatedAt ?? "") || 0;
         const bu = Date.parse(b?.updatedAt ?? "") || 0;
@@ -858,7 +909,6 @@ export default function ClientsAssignments() {
     return id ?? null;
   };
 
-  // reuse existing pendingEditAlert + useEffect
   const onHardDeleteFromEdit = async () => {
     if (!editRow) return;
     const resolvedId =
@@ -903,7 +953,6 @@ export default function ClientsAssignments() {
           e?.response?.data?.error ||
           e?.message ||
           "Unassign failed.";
-        // keep modal open so users can retry or update dates instead
         alert(errMsg);
       }
     } finally {
@@ -912,40 +961,36 @@ export default function ClientsAssignments() {
   };
 
   const existingFromForMin = fmtLocalDateOnly(editRow?.validFrom || "");
-  const editFromMin = floorForEditFrom(existingFromForMin); // "" means no min (kept for future use)
+  const _editFromMin = floorForEditFrom(existingFromForMin);
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">
-          Client Assignments
-        </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles &amp; Options · Browse Clients · Client Assignments
-        </p>
-        {err && (
-          <p className="mt-3 text-sm text-red-700 dark:text-red-400">{err}</p>
-        )}
-      </div>
+    // Remove extra padding (Assignments wrapper already provides spacing)
+    <div className="w-full">
+      {err && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+          {err}
+        </div>
+      )}
 
-      {/* Tile 1 — Projects */}
+      {/* Section 1 — Projects */}
       <section
-        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
-        aria-label="Tile: Projects"
+        className={CARD + " mb-4"}
+        aria-label="Projects"
         data-tile-name="Projects"
       >
-        <TileHeader
+        <SectionHeader
           title="Projects"
           subtitle="Choose the project to assign clients to."
         />
 
-        <div className="max-w-xl mt-2">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+        <div className="max-w-xl">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
             Project
           </label>
+
           <div className="relative">
             <select
-              className={SOFT_SELECT}
+              className={PILL_SELECT}
               value={selectedProjectId}
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
@@ -960,52 +1005,49 @@ export default function ClientsAssignments() {
                 </option>
               ))}
             </select>
-            {/* soft chevron */}
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+
+            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
               ▼
             </span>
           </div>
         </div>
       </section>
 
-      {/* Tile 2 — Roles & Options (Client) */}
+      {/* Section 2 — Roles & Options */}
       <section
-        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
-        aria-label="Tile: Roles & Options"
+        className={CARD + " mb-4"}
+        aria-label="Roles & Options"
         data-tile-name="Roles & Options"
       >
-        <TileHeader
+        <SectionHeader
           title="Roles & Options"
           subtitle="Pick from moved clients and set validity."
         />
 
-        {/* Moved clients + validity underneath */}
-        <div className="mt-3 space-y-4">
-          {/* Moved clients list */}
-          <div className="space-y-3" aria-label="Subtile: Moved Clients">
+        <div className="mt-2 space-y-5">
+          {/* Moved clients */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+              <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
                 Moved Clients
-              </span>
+              </div>
+
               {movedClientsList.length > 0 && (
-                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   {selectedClientIds.size}/{movedClientsList.length} selected
-                </span>
+                </div>
               )}
             </div>
 
-            <div
-              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
-              style={{ maxHeight: 300 }}
-            >
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 overflow-auto bg-slate-50/60 dark:bg-white/5">
               {movedClientIds.size === 0 ? (
-                <div className="p-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                  <b>Move clients</b> from the list below to assign them as
-                  Clients for the selected project.
+                <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                  <b>Move clients</b> from the list below to assign them for the
+                  selected project.
                 </div>
               ) : (
-                <ul className="divide-y divide-slate-200/80 dark:divide-neutral-800">
-                  {movedClientsList.map((u: UserLite) => {
+                <ul className="divide-y divide-slate-200 dark:divide-white/10">
+                  {movedClientsList.map((u) => {
                     const checked = selectedClientIds.has(u.userId);
                     return (
                       <li
@@ -1015,15 +1057,15 @@ export default function ClientsAssignments() {
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300 text-emerald-700 accent-emerald-600 focus:ring-emerald-500/70 focus:ring-offset-0"
+                            className="h-4 w-4 rounded border-slate-300 dark:border-white/20 accent-[#00379C]"
                             checked={checked}
                             onChange={() => toggleClientChecked(u.userId)}
                           />
                           <div className="flex flex-col">
-                            <div className="text-sm font-medium dark:text-white">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
                               {displayName(u) || "(No name)"}
                             </div>
-                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                               {u.code || ""}
                               {u.code ? " · " : ""}
                               {u.email || ""}
@@ -1032,7 +1074,8 @@ export default function ClientsAssignments() {
                             </div>
                           </div>
                         </label>
-                        <span className="inline-flex items-center rounded-full border border-slate-200/80 dark:border-neutral-700 px-2 py-0.5 text-[11px] text-gray-700 dark:text-gray-200 bg-white dark:bg-neutral-900">
+
+                        <span className="inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-neutral-950">
                           {u.userStatus || "—"}
                         </span>
                       </li>
@@ -1045,7 +1088,7 @@ export default function ClientsAssignments() {
             {movedClientsList.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 <button
-                  className="h-8 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() =>
                     setSelectedClientIds(
                       new Set(movedClientsList.map((m) => m.userId))
@@ -1055,7 +1098,7 @@ export default function ClientsAssignments() {
                   Select All
                 </button>
                 <button
-                  className="h-8 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() => setSelectedClientIds(new Set())}
                 >
                   Clear Selection
@@ -1064,32 +1107,33 @@ export default function ClientsAssignments() {
             )}
           </div>
 
-          {/* Validity section under moved clients */}
-          <div className="space-y-3" aria-label="Subtile: Validity">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+          {/* Validity */}
+          <div className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
               Validity
-            </span>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   Valid From
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   Valid To
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validTo}
                   min={validFrom || todayLocalISO() || undefined}
                   onChange={(e) => setValidTo(e.target.value)}
@@ -1100,29 +1144,24 @@ export default function ClientsAssignments() {
                   }
                 />
                 {validFrom && !validTo && (
-                  <div className="mt-1 text-[11px] text-gray-500">
+                  <div className="mt-1 text-[11px] text-slate-500">
                     Choose a date on or after <b>{validFrom}</b>.
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="mt-2 flex items-center justify-end gap-2">
+            <div className="mt-1 flex items-center justify-end gap-2">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                className={BTN_SECONDARY}
                 onClick={onCancelTile2}
                 title="Clear dates and move clients back to Browse Clients"
               >
                 Cancel
               </button>
+
               <button
-                className={
-                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
-                  (canSubmit
-                    ? "bg-emerald-600 hover:bg-emerald-700"
-                    : "bg-emerald-600/60 cursor-not-allowed")
-                }
+                className={BTN_PRIMARY}
                 onClick={onAssign}
                 disabled={!canSubmit}
                 title={
@@ -1138,28 +1177,25 @@ export default function ClientsAssignments() {
         </div>
       </section>
 
-      {/* Tile 3 — Browse Clients */}
+      {/* Section 3 — Browse Clients */}
       <section
-        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
-        aria-label="Tile: Browse Clients"
+        className={CARD + " mb-4"}
+        aria-label="Browse Clients"
         data-tile-name="Browse Clients"
       >
-        <TileHeader
+        <SectionHeader
           title="Browse Clients"
           subtitle="Search, filter, sort and move clients into the selection."
         />
 
         {/* Controls */}
         <div className="mb-3 space-y-3">
-          {/* Top grid: search + filters */}
-          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {/* Search */}
             <div>
-              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                Search
-              </label>
+              <label className={FILTER_LABEL}>Search</label>
               <input
-                className="h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 px-3 text-xs bg-white dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/70 focus:border-transparent placeholder:text-gray-400"
+                className={FILTER_INPUT}
                 placeholder="Code, name, project, phone, email…"
                 value={q}
                 onChange={(e) => {
@@ -1171,113 +1207,129 @@ export default function ClientsAssignments() {
 
             {/* Status */}
             <div>
-              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                Status
-              </label>
-              <select
-                className={SOFT_SELECT}
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as any);
-                  setPage(1);
-                }}
-              >
-                <option value="all">All</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
+              <label className={FILTER_LABEL}>Status</label>
+              <div className="relative">
+                <select
+                  className={FILTER_SELECT}
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as any);
+                    setPage(1);
+                  }}
+                >
+                  <option value="all">All</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                  ▼
+                </span>
+              </div>
             </div>
 
             {/* State */}
             <div>
-              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                State
-              </label>
-              <select
-                className={SOFT_SELECT}
-                value={stateFilter}
-                onChange={(e) => {
-                  setStateFilter(e.target.value);
-                  setDistrictFilter("");
-                  setPage(1);
-                }}
-              >
-                <option value="">All States</option>
-                {statesRef.map((s) => (
-                  <option key={s.stateId} value={s.name}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              <label className={FILTER_LABEL}>State</label>
+              <div className="relative">
+                <select
+                  className={FILTER_SELECT}
+                  value={stateFilter}
+                  onChange={(e) => {
+                    setStateFilter(e.target.value);
+                    setDistrictFilter("");
+                    setPage(1);
+                  }}
+                >
+                  <option value="">All States</option>
+                  {statesRef.map((s) => (
+                    <option key={s.stateId} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                  ▼
+                </span>
+              </div>
             </div>
 
             {/* District */}
             <div>
-              <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                District
-              </label>
-              <select
-                className={SOFT_SELECT}
-                value={districtFilter}
-                onChange={(e) => {
-                  setDistrictFilter(e.target.value);
-                  setPage(1);
-                }}
-                disabled={!stateFilter}
-                title={
-                  stateFilter ? "Filter by district" : "Select a state first"
-                }
-              >
-                <option value="">All Districts</option>
-                {districtsRef.map((d) => (
-                  <option key={d.districtId} value={d.name}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <label className={FILTER_LABEL}>District</label>
+              <div className="relative">
+                <select
+                  className={FILTER_SELECT}
+                  value={districtFilter}
+                  onChange={(e) => {
+                    setDistrictFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  disabled={!stateFilter}
+                  title={
+                    stateFilter ? "Filter by district" : "Select a state first"
+                  }
+                >
+                  <option value="">All Districts</option>
+                  {districtsRef.map((d) => (
+                    <option key={d.districtId} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                  ▼
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Bottom controls: sort + rows + clear */}
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div className="flex flex-wrap items-end gap-2">
+          {/* Bottom controls */}
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                  Sort By
-                </label>
-                <div className="flex gap-1.5">
-                  <select
-                    className={SOFT_SELECT}
-                    value={sortKey}
-                    onChange={(e) => {
-                      setSortKey(e.target.value as any);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="code">Code</option>
-                    <option value="name">Name</option>
-                    <option value="projects">Projects</option>
-                    <option value="mobile">Mobile</option>
-                    <option value="email">Email</option>
-                    <option value="state">State</option>
-                    <option value="zone">Zone</option>
-                    <option value="status">Status</option>
-                    <option value="updated">Updated</option>
-                  </select>
+                <label className={FILTER_LABEL}>Sort By</label>
+
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <select
+                      className={FILTER_SELECT + " w-44"}
+                      value={sortKey}
+                      onChange={(e) => {
+                        setSortKey(e.target.value as any);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="code">Code</option>
+                      <option value="name">Name</option>
+                      <option value="projects">Projects</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="email">Email</option>
+                      <option value="state">State</option>
+                      <option value="zone">Zone</option>
+                      <option value="status">Status</option>
+                      <option value="updated">Updated</option>
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                      ▼
+                    </span>
+                  </div>
+
                   <button
-                    className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    className={FILTER_ICON_BTN}
                     onClick={() =>
                       setSortDir((d) => (d === "asc" ? "desc" : "asc"))
                     }
                     title="Toggle sort direction"
                   >
-                    {sortDir === "asc" ? "▲" : "▼"}
+                    <span className="text-[12px]">
+                      {sortDir === "asc" ? "▲" : "▼"}
+                    </span>
                   </button>
                 </div>
               </div>
 
               <button
-                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
                 title="Clear all filters"
@@ -1288,51 +1340,55 @@ export default function ClientsAssignments() {
 
             <div className="flex items-end gap-2">
               <div>
-                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1 block">
-                  Rows per page
-                </label>
-                <select
-                  className={SOFT_SELECT}
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                    setAPage(1);
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
+                <label className={FILTER_LABEL}>Rows per page</label>
+                <div className="relative">
+                  <select
+                    className={FILTER_SELECT + " w-28"}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                      setAPage(1);
+                    }}
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                    ▼
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
+        <div className={TABLE_WRAP}>
           <div
-            className="overflow-x-auto overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300/60 dark:scrollbar-thumb-neutral-700/60"
+            className="overflow-x-auto overflow-y-auto"
             style={{ maxHeight: "55vh" }}
           >
             {usersErr && (
-              <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
+              <div className="p-3 text-sm text-rose-700 dark:text-rose-200 border-b border-slate-200 dark:border-white/10 bg-rose-50 dark:bg-rose-950/20">
                 {usersErr}
               </div>
             )}
+
             {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                 Loading clients…
               </div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                 No clients match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-xs sm:text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full text-sm">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     {[
                       { key: "action", label: "Action" },
@@ -1352,9 +1408,9 @@ export default function ClientsAssignments() {
                         <th
                           key={h.key}
                           className={[
-                            "px-3 py-2 border-b dark:border-neutral-800 text-left font-semibold whitespace-nowrap text-[11px] sm:text-xs select-none",
+                            "px-3 py-2 border-b border-slate-200 dark:border-white/10 text-left font-semibold whitespace-nowrap text-[11px] sm:text-xs select-none",
                             sortable
-                              ? "cursor-pointer hover:bg-gray-100/70 dark:hover:bg-neutral-700/80"
+                              ? "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-white/10"
                               : "",
                           ].join(" ")}
                           title={sortable ? `Sort by ${h.label}` : undefined}
@@ -1382,24 +1438,24 @@ export default function ClientsAssignments() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
                   {rowsPaged.map((r, idx) => (
                     <tr
                       key={r._id}
                       className={
                         (idx % 2
-                          ? "bg-white dark:bg-neutral-900"
-                          : "bg-gray-50/50 dark:bg-neutral-900/60") +
-                        " hover:bg-gray-100/70 dark:hover:bg-neutral-800/80 transition-colors"
+                          ? "bg-white dark:bg-neutral-950"
+                          : "bg-slate-50/50 dark:bg-white/[0.03]") +
+                        " hover:bg-slate-100/60 dark:hover:bg-white/10 transition-colors"
                       }
                     >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         <button
-                          className="inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                          className={ICON_BTN}
                           title="Move this client to selection"
                           onClick={() => r._raw && onMoveToTile2(r._raw)}
                         >
-                          {/* Up-arrow icon */}
                           <svg
                             viewBox="0 0 24 24"
                             className="w-3.5 h-3.5"
@@ -1414,20 +1470,21 @@ export default function ClientsAssignments() {
                           </svg>
                         </button>
                       </td>
+
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.code}
                       >
                         {r.code}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.name}
                       >
                         {r.name}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10"
                         title={r.projects}
                       >
                         <div className="truncate max-w-[360px]">
@@ -1435,37 +1492,37 @@ export default function ClientsAssignments() {
                         </div>
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.mobile}
                       >
                         {r.mobile}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.email}
                       >
                         {r.email}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.state}
                       >
                         {r.state}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.zone}
                       >
                         {r.zone}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={r.status}
                       >
                         {r.status}
                       </td>
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
                         title={fmtLocalDateTime(r.updated)}
                       >
                         {fmtLocalDateTime(r.updated)}
@@ -1478,8 +1535,8 @@ export default function ClientsAssignments() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{rowsPaged.length}</b> of <b>{total}</b> clients
               {stateFilter ? (
@@ -1501,9 +1558,10 @@ export default function ClientsAssignments() {
                 </>
               ) : null}
             </div>
+
             <div className="flex items-center gap-1">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -1511,7 +1569,7 @@ export default function ClientsAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -1519,7 +1577,7 @@ export default function ClientsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -1527,7 +1585,7 @@ export default function ClientsAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200/80 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -1539,33 +1597,34 @@ export default function ClientsAssignments() {
         </div>
       </section>
 
-      {/* Tile 4 — Client Assignments */}
+      {/* Section 4 — Client Assignments */}
       <section
-        className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4"
-        aria-label="Tile: Client Assignments"
+        className={CARD + " mb-4"}
+        aria-label="Client Assignments"
         data-tile-name="Client Assignments"
       >
-        <TileHeader
+        <SectionHeader
           title="Client Assignments"
           subtitle="All clients who have been assigned to projects."
         />
 
-        <div className="border rounded-2xl dark:border-neutral-800 overflow-hidden mt-2">
+        <div className={TABLE_WRAP}>
           <div
-            className="overflow-x-auto overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300/60 dark:scrollbar-thumb-neutral-700/60"
+            className="overflow-x-auto overflow-y-auto"
             style={{ maxHeight: "55vh" }}
           >
             {assignedSortedRows.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No client assignments found.
               </div>
             ) : (
-              <table className="min-w-full text-xs sm:text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full text-sm">
+                <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="px-3 py-2 border-b dark:border-neutral-700 text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap text-left">
+                    <th className="px-3 py-2 border-b border-slate-200 dark:border-white/10 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-left">
                       Action
                     </th>
+
                     {[
                       { key: "userName", label: "Client" },
                       { key: "projectTitle", label: "Project" },
@@ -1579,7 +1638,7 @@ export default function ClientsAssignments() {
                       return (
                         <th
                           key={h.key}
-                          className="px-3 py-2 border-b dark:border-neutral-700 text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap text-left select-none cursor-pointer hover:bg-gray-100/70 dark:hover:bg-neutral-700/80"
+                          className="px-3 py-2 border-b border-slate-200 dark:border-white/10 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-left select-none cursor-pointer hover:bg-slate-100/60 dark:hover:bg-white/10"
                           title={`Sort by ${h.label}`}
                           onClick={() => {
                             if (aSortKey !== (h.key as any)) {
@@ -1603,28 +1662,29 @@ export default function ClientsAssignments() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
                   {assignedRowsPaged.map((r, i) => (
                     <tr
                       key={`${r.userId}-${r.projectId}-${i}`}
                       className={
                         (i % 2
-                          ? "bg-white dark:bg-neutral-900"
-                          : "bg-gray-50/40 dark:bg-neutral-900/60") +
-                        " text-xs sm:text-sm"
+                          ? "bg-white dark:bg-neutral-950"
+                          : "bg-slate-50/50 dark:bg-white/[0.03]") +
+                        " hover:bg-slate-100/60 dark:hover:bg-white/10 transition-colors"
                       }
                     >
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <button
-                            className="h-7 px-3 rounded-full border border-slate-200 dark:border-neutral-700 text-[11px] font-semibold text-slate-700 dark:text-neutral-100 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                            className={BTN_TINY}
                             title="View assignment"
                             onClick={() => openView(r)}
                           >
                             View
                           </button>
                           <button
-                            className="h-7 px-3 rounded-full border border-slate-200 dark:border-neutral-700 text-[11px] font-semibold text-slate-700 dark:text-neutral-100 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                            className={BTN_TINY}
                             title="Edit validity dates"
                             onClick={() => openEdit(r)}
                             disabled={!r.membershipId}
@@ -1633,31 +1693,38 @@ export default function ClientsAssignments() {
                           </button>
                         </div>
                       </td>
+
                       <td
-                        className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
                         title={r.userName}
                       >
                         {r.userName}
                       </td>
+
                       <td
-                        className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
                         title={r.projectTitle}
                       >
                         {r.projectTitle}
                       </td>
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         {r.status || "—"}
                       </td>
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         {fmtLocalDateOnly(r.validFrom) || "—"}
                       </td>
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         {fmtLocalDateOnly(r.validTo) || "—"}
                       </td>
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         <ValidityBadge value={r.validity || "—"} />
                       </td>
-                      <td className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
                         {fmtLocalDateTime(r.updated) || "—"}
                       </td>
                     </tr>
@@ -1668,15 +1735,16 @@ export default function ClientsAssignments() {
           </div>
 
           {/* Pagination for assignments */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-100 dark:border-neutral-800">
-            <div className="text-gray-600 dark:text-gray-300">
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
               <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> client
               assignments
             </div>
+
             <div className="flex items-center gap-1">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
                 title="First"
@@ -1684,7 +1752,7 @@ export default function ClientsAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
                 title="Previous"
@@ -1692,7 +1760,7 @@ export default function ClientsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
                 title="Next"
@@ -1700,7 +1768,7 @@ export default function ClientsAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_TINY}
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
                 title="Last"
@@ -1714,77 +1782,61 @@ export default function ClientsAssignments() {
 
       {/* ===== View Modal (read-only) ===== */}
       {viewOpen && viewRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setViewOpen(false)}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">
-              Client Assignment
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {viewRow.userName} · {viewRow.projectTitle}
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Client Assignment
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {viewRow.userName} · {viewRow.projectTitle}
+                </div>
+              </div>
+
+              <button
+                className={BTN_SECONDARY + " h-8 px-3 text-[11px]"}
+                onClick={() => setViewOpen(false)}
+              >
+                Close
+              </button>
             </div>
 
-            <div className="mb-4 overflow-hidden rounded-lg border dark:border-neutral-800">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Client
-                    </td>
-                    <td className="px-3 py-2">{viewRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{viewRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{viewRow.status || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid From
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validFrom) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid To
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validTo) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Validity
-                    </td>
-                    <td className="px-3 py-2">{viewRow.validity || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Updated
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateTime(viewRow.updated) || "—"}
-                    </td>
-                  </tr>
+                  {[
+                    ["Client", viewRow.userName || "—"],
+                    ["Project", viewRow.projectTitle || "—"],
+                    ["Status", viewRow.status || "—"],
+                    ["Valid From", fmtLocalDateOnly(viewRow.validFrom) || "—"],
+                    ["Valid To", fmtLocalDateOnly(viewRow.validTo) || "—"],
+                    ["Validity", viewRow.validity || "—"],
+                    ["Last Updated", fmtLocalDateTime(viewRow.updated) || "—"],
+                  ].map(([k, v]) => (
+                    <tr
+                      key={k}
+                      className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]"
+                    >
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">
+                        {v}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="mt-2 flex justify-end">
+            <div className="mt-4 flex justify-end">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className={BTN_PRIMARY}
                 onClick={() => setViewOpen(false)}
               >
                 OK
@@ -1796,21 +1848,32 @@ export default function ClientsAssignments() {
 
       {/* ===== Edit Modal (with date updates + hard delete button) ===== */}
       {editOpen && editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => {
               if (!deleting) setEditOpen(false);
             }}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            {/* Header with delete at top-right */}
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">
-                Edit Validity
+
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Edit Validity
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {editRow.userName} · {editRow.projectTitle}
+                </div>
               </div>
+
               <button
-                className="px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                className={
+                  "h-8 px-3 rounded-full text-[11px] font-semibold text-white shadow-sm " +
+                  (deleting || !editRow?.membershipId
+                    ? "bg-rose-600/60 cursor-not-allowed"
+                    : "bg-rose-600 hover:bg-rose-700")
+                }
                 onClick={onHardDeleteFromEdit}
                 disabled={deleting || !editRow?.membershipId}
                 title={
@@ -1823,62 +1886,56 @@ export default function ClientsAssignments() {
               </button>
             </div>
 
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {editRow.userName} · {editRow.projectTitle}
-            </div>
-
-            <div className="mb-4 overflow-hidden rounded-lg border dark:border-neutral-800">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Client
-                    </td>
-                    <td className="px-3 py-2">{editRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{editRow.status || "—"}</td>
-                  </tr>
+                  {[
+                    ["Client", editRow.userName || "—"],
+                    ["Project", editRow.projectTitle || "—"],
+                    ["Status", editRow.status || "—"],
+                  ].map(([k, v]) => (
+                    <tr
+                      key={k}
+                      className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]"
+                    >
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">
+                        {v}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   Valid From
                 </div>
-                {/* Valid From */}
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editFrom}
                   min={todayLocalISO()}
                   disabled={deleting}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
-                    if (editTo && editTo < v) setEditTo(v); // keep To >= From
+                    if (editTo && editTo < v) setEditTo(v);
                   }}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   Valid To
                 </div>
-                {/* Valid To */}
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editTo}
                   min={
                     editFrom && editFrom > todayLocalISO()
@@ -1891,24 +1948,25 @@ export default function ClientsAssignments() {
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-5 flex justify-end gap-2">
               <button
-                className="px-4 py-2 rounded border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className={BTN_SECONDARY}
                 onClick={() => setEditOpen(false)}
                 disabled={deleting}
               >
                 Cancel
               </button>
+
               <button
-                className="px-4 py-2 rounded text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                className={BTN_PRIMARY}
+                title="Update validity dates"
+                disabled={!editRow?.membershipId || deleting}
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) {
                     alert("Both Valid From and Valid To are required.");
                     return;
                   }
-
-                  // same rules as contractors/consultants
                   if (editTo < today) {
                     alert("Valid To cannot be before today.");
                     return;
@@ -1928,16 +1986,14 @@ export default function ClientsAssignments() {
                       scopeType: "Project",
                       projectId: editRow.projectId,
                     };
-                    if (!origFrom || editFrom !== origFrom) {
+                    if (!origFrom || editFrom !== origFrom)
                       payload.validFrom = editFrom;
-                    }
 
                     await api.patch(
                       `/admin/assignments/${editRow.membershipId}`,
                       payload
                     );
 
-                    // refresh data so table reflects the change
                     const { data: fresh } = await api.get("/admin/users", {
                       params: { includeMemberships: "1" },
                     });
@@ -1945,7 +2001,6 @@ export default function ClientsAssignments() {
                       Array.isArray(fresh) ? fresh : fresh?.users ?? []
                     );
 
-                    // close first, then alert
                     const successMsg = [
                       `Updated validity`,
                       ``,
@@ -1968,8 +2023,6 @@ export default function ClientsAssignments() {
                     alert(msg);
                   }
                 }}
-                title="Update validity dates"
-                disabled={!editRow?.membershipId || deleting}
               >
                 Update
               </button>

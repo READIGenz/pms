@@ -1,6 +1,6 @@
 // pms-frontend/src/views/admin/ref/checklist/ChecklistLib.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { api } from "../../../../api/client";
 
@@ -28,124 +28,66 @@ const STAGE_LIBRARY: Record<string, string[]> = {
   Civil: [
     "Structural • Foundation",
     "Structural • Footing",
-    "Structural • Column",
-    "Structural • Beam",
+    "Structural • Columns",
     "Structural • Slab",
-    "Structural • Staircase",
-    "Masonry • Blockwork",
     "Masonry • Brickwork",
     "Plaster • Internal",
     "Plaster • External",
   ],
   MEP: [
-    "Services • Electrical",
-    "Services • Lighting",
-    "Services • Conduits / Wiring",
-    "Services • Plumbing",
-    "Services • Drainage",
-    "Services • Firefighting",
-    "Services • HVAC",
-    "Services • Earthing",
-    "Services • BMS",
+    "Electrical • Conduits",
+    "Electrical • Wiring",
+    "Plumbing • Piping",
+    "Plumbing • Fixtures",
+    "Fire • Sprinklers",
   ],
-  Finishes: [
-    "Finishes • Flooring",
-    "Finishes • Tiling",
-    "Finishes • Skirting",
-    "Finishes • Painting",
-    "Finishes • False Ceiling",
-    "Finishes • Doors",
-    "Finishes • Windows",
-    "Finishes • Waterproofing",
-  ],
-  Architecture: [
-    "Architecture • Design",
-    "Architecture • External Works",
-    "Architecture • Interiors",
-  ],
+  Finishes: ["Flooring", "Painting", "Doors", "Windows", "Kitchen", "Toilets"],
 };
 
-const itemsCount = (r: ChecklistLite) =>
-  Number(
-    (r as any).itemsCount ??
-      (r as any)._count?.items ??
-      (Array.isArray(r.items) ? r.items.length : 0)
-  );
-
-/* ========================= Types ========================= */
-export type RefChecklist = {
+type ChecklistRow = {
   id: string;
-  code: string | null; // prisma has code: String @unique
-  title: string; // prisma: title
-  discipline: Discipline; // prisma: Discipline
-  stageLabel: string | null; // prisma: stageLabel
-  tags?: string[] | null; // prisma: tags (string[])
-  status: ChecklistStatus; // prisma: status
-  version: number | null; // prisma: Int @default(1)
-  // tolerant extras so UI can show 1.2.3 if backend adds them later:
-
-  versionLabel?: string | null;
+  code?: string | null;
+  title: string;
+  discipline?: string | null;
+  stageLabel?: string | null;
+  status: ChecklistStatus;
+  aiDefault?: boolean | null;
+  tags?: string[] | null;
   versionMajor?: number | null;
   versionMinor?: number | null;
   versionPatch?: number | null;
-  items?: Array<any> | null; // when backend expands relation
-  itemsCount?: number | null; // or when backend sends count only
-  _count?: { items?: number } | null;
-  aiDefault?: boolean | null; // optional UI flag (HTML prototype)
-  updatedAt: string; // prisma: updatedAt
-  createdAt?: string;
+  itemsCount?: number | null;
+  updatedAt?: string | null;
 };
 
-type ChecklistLite = RefChecklist;
-type ListResp = { items: ChecklistLite[]; total: number } | ChecklistLite[];
+type SortKey =
+  | "code"
+  | "discStage"
+  | "version"
+  | "items"
+  | "aiDefault"
+  | "tags"
+  | "updated"
+  | "status";
 
-/* ========================= Small UI bits ========================= */
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-5 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/70 dark:border-neutral-800 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-2.5">
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
+/* ========================= Bits ========================= */
 function StatusPill({ value }: { value: ChecklistStatus }) {
   const cls =
     value === "Active"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900"
+      ? "bg-[#23A192]/10 text-[#23A192] border-[#23A192]/25 dark:bg-[#23A192]/15 dark:text-[#23A192] dark:border-[#23A192]/30"
       : value === "Draft"
-      ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/20 dark:text-sky-300 dark:border-sky-900"
+      ? "bg-[#FCC020]/15 text-[#8A5D00] border-[#FCC020]/35 dark:bg-[#FCC020]/10 dark:text-[#FCC020] dark:border-[#FCC020]/25"
       : value === "Inactive"
-      ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900"
-      : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900";
+      ? "bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-slate-200 dark:border-neutral-700"
+      : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-slate-200 dark:border-neutral-700";
   return (
     <span
-      className={`inline-block px-2 py-0.5 rounded-full border text-xs font-medium ${cls}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cls}`}
     >
       {value}
     </span>
   );
 }
-
-const SortIcon = ({
-  active,
-  dir,
-}: {
-  active: boolean;
-  dir: "asc" | "desc";
-}) => (
-  <span className="inline-block ml-1 text-[10px] opacity-70">
-    {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
-  </span>
-);
 
 function Th({
   children,
@@ -154,7 +96,7 @@ function Th({
   dir,
   className = "",
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   onClick: () => void;
   active: boolean;
   dir: "asc" | "desc";
@@ -168,8 +110,10 @@ function Th({
         className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-200 select-none hover:underline"
         title="Sort"
       >
-        <span>{children}</span>
-        <SortIcon active={active} dir={dir} />
+        {children}
+        <span className="text-slate-400 dark:text-slate-500">
+          {active ? (dir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
       </button>
     </th>
   );
@@ -194,7 +138,7 @@ function Input({
         {label}
       </span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+        className="h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-900 shadow-sm outline-none transition focus:ring-2 focus:ring-[#00379C]/20 dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -209,12 +153,12 @@ function SelectStrict({
   value,
   onChange,
   options,
-  placeholder = "Select…",
+  placeholder = "All",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: { value: string; label: string }[];
   placeholder?: string;
 }) {
   return (
@@ -223,7 +167,7 @@ function SelectStrict({
         {label}
       </span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+        className="h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition focus:ring-2 focus:ring-[#00379C]/20 dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -238,19 +182,122 @@ function SelectStrict({
   );
 }
 
-function fmt(iso?: string) {
+function Kpi({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-300">
+        {label}
+      </div>
+      <div className="mt-0.5 text-xl font-extrabold text-slate-900 dark:text-white tabular-nums">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function IconBtn({
+  title,
+  onClick,
+  variant,
+}: {
+  title: string;
+  onClick: () => void;
+  variant: "view" | "edit";
+}) {
+  const base =
+    "inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm transition hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:bg-neutral-800";
+  const color = variant === "view" ? "text-[#23A192]" : "text-[#00379C]";
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      className={`${base} ${color}`}
+      onClick={onClick}
+    >
+      {variant === "view" ? (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      ) : (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function fmt(iso?: string | null) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString();
+    const d = new Date(iso);
+    return d.toLocaleString();
   } catch {
-    return iso!;
+    return iso;
   }
+}
+
+function versionText(r: ChecklistRow) {
+  const a = r.versionMajor ?? 0;
+  const b = r.versionMinor ?? 0;
+  const c = r.versionPatch ?? 0;
+  return `v${a}.${b}.${c}`;
+}
+
+function itemsCountLocal(r: ChecklistRow) {
+  return Number(r.itemsCount ?? 0);
+}
+
+function KV({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[140px,1fr] gap-3 rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-950/40">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+        {k}
+      </div>
+      <div className="text-slate-900 dark:text-white break-words">{v}</div>
+    </div>
+  );
 }
 
 /* ========================= Page ========================= */
 export default function ChecklistLib() {
   const location = useLocation();
   const nav = useNavigate();
+
+  // Set page title/subtitle in the shared Admin header
+  useEffect(() => {
+    document.title = "Trinity PMS — Checklist Library";
+    (window as any).__ADMIN_SUBTITLE__ =
+      "Reusable checklists that power inspections and workflows.";
+    return () => {
+      // optional cleanup
+      if ((window as any).__ADMIN_SUBTITLE__) (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
 
   useEffect(() => {
     const refreshFlag = (location.state as any)?.refresh;
@@ -262,38 +309,38 @@ export default function ChecklistLib() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  /* ---- Admin gate ---- */
+  // ---------- auth guard ----------
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) {
-      nav("/login", { replace: true });
-      return;
-    }
-    const payload = decodeJwtPayload(token);
-    const isAdmin = !!(
-      payload &&
-      (payload.isSuperAdmin ||
-        payload.role === "Admin" ||
-        payload.userRole === "Admin")
-    );
-    if (!isAdmin) nav("/landing", { replace: true });
-  }, [nav]);
+    if (!token) return;
 
-  /* ---- List state ---- */
+    const payload = decodeJwtPayload(token);
+    const isSuperAdmin = Boolean(payload?.isSuperAdmin);
+    if (!isSuperAdmin) {
+      nav("/admin", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- filters ----------
   const [q, setQ] = useState("");
   const [discipline, setDiscipline] = useState<Discipline | "">("");
-  const [stageLabel, setStageLabel] = useState<string>("");
+  const [stageLabel, setStageLabel] = useState("");
   const [status, setStatus] = useState<ChecklistStatus | "">("");
-  const [aiDefault, setAiDefault] = useState<"" | "on" | "off">("");
+  const [aiDefault, setAiDefault] = useState<"on" | "off" | "">("");
+
+  // ---------- pagination ----------
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const [rows, setRows] = useState<ChecklistLite[]>([]);
+  // ---------- data ----------
+  const [rows, setRows] = useState<ChecklistRow[]>([]);
   const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // ---------- status / errors ----------
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   /* ---- KPIs ---- */
   const [stats, setStats] = useState({
@@ -315,796 +362,692 @@ export default function ChecklistLib() {
           Archived: Number(data?.byStatus?.Archived ?? 0),
         },
       });
+    } catch {
+      // ignore KPI errors
     } finally {
       setStatsLoading(false);
     }
   }
 
-  /* ---- Sorting ---- */
-  type SortKey =
-    | "checklist"
-    | "discStage"
-    | "version"
-    | "items"
-    | "aiDefault"
-    | "tags"
-    | "updated"
-    | "status";
-
-  const [sortBy, setSortBy] = useState<SortKey>("updated");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  const cmp = (a: any, b: any) => (a < b ? -1 : a > b ? 1 : 0);
-  function parseSemverParts(v?: string | number | null) {
-    const s = v == null ? "" : String(v);
-    const m = s.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
-    if (!m) return [0, 0, 0];
-    return [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)];
-  }
-
-  const sortedRows = useMemo(() => {
-    const copy = [...rows];
-    copy.sort((A, B) => {
-      let av: any = "",
-        bv: any = "";
-      switch (sortBy) {
-        case "checklist":
-          av = `${A.code ? A.code + " • " : ""}${A.title || ""}`;
-          bv = `${B.code ? B.code + " • " : ""}${B.title || ""}`;
-          break;
-        case "discStage":
-          av = `${A.discipline || ""} • ${A.stageLabel || ""}`;
-          bv = `${B.discipline || ""} • ${B.stageLabel || ""}`;
-          break;
-        case "version": {
-          const [a1, a2, a3] = parseSemverParts(
-            (A as any).versionLabel ?? A.version
-          );
-          const [b1, b2, b3] = parseSemverParts(
-            (B as any).versionLabel ?? B.version
-          );
-          av = a1 * 1e6 + a2 * 1e3 + a3;
-          bv = b1 * 1e6 + b2 * 1e3 + b3;
-          break;
-        }
-        case "items": {
-          const ai = Number(
-            A.itemsCount ?? (Array.isArray(A.items) ? A.items.length : 0)
-          );
-          const bi = Number(
-            B.itemsCount ?? (Array.isArray(B.items) ? B.items.length : 0)
-          );
-          av = ai;
-          bv = bi;
-          break;
-        }
-        case "aiDefault":
-          av = A.aiDefault ? 1 : 0;
-          bv = B.aiDefault ? 1 : 0;
-          break;
-        case "tags":
-          av = (A.tags || []).join(", ");
-          bv = (B.tags || []).join(", ");
-          break;
-        case "updated":
-          av = new Date(A.updatedAt || 0).getTime();
-          bv = new Date(B.updatedAt || 0).getTime();
-          break;
-        case "status":
-          av = A.status || "";
-          bv = B.status || "";
-          break;
-      }
-      const res = cmp(av, bv);
-      return sortDir === "asc" ? res : -res;
-    });
-    return copy;
-  }, [rows, sortBy, sortDir]);
-
-  const requestSort = (key: SortKey) => {
-    if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortBy(key);
-      setSortDir("asc");
-    }
-  };
-
-  /* ========================= API ========================= */
-  const fetchList = async () => {
-    setErr(null);
+  async function fetchList() {
     setLoading(true);
+    setErr(null);
+
     try {
-      const params: any = { q, discipline, stageLabel, status, page, pageSize };
-      if (aiDefault) params.aiDefault = aiDefault === "on";
+      const { data } = await api.get("/admin/ref/checklists", {
+        params: {
+          q: q || undefined,
+          discipline: discipline || undefined,
+          stageLabel: stageLabel || undefined,
+          status: status || undefined,
+          aiDefault: aiDefault || undefined,
+          page,
+          pageSize,
+        },
+      });
 
-      const { data } = await api
-        .get("/admin/ref/checklists", { params })
-        .catch(async (e: any) => {
-          if (e?.response?.status === 404) {
-            const { data: all } = await api.get("/admin/ref/checklists");
-            return { data: all };
-          }
-          throw e;
-        });
-
-      let items: ChecklistLite[] = [];
-      let ttl = 0;
-      if (Array.isArray(data)) {
-        items = data;
-        ttl = data.length;
-      } else {
-        items = Array.isArray((data as any).items) ? (data as any).items : [];
-        ttl =
-          typeof (data as any).total === "number"
-            ? (data as any).total
-            : items.length;
-      }
-
-      setRows(items);
-      setTotal(ttl);
+      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      setTotal(Number(data?.total ?? 0));
     } catch (e: any) {
-      const s = e?.response?.status;
-      if (s === 401) {
-        localStorage.removeItem("token");
-        nav("/login", { replace: true });
-        return;
-      }
+      setErr(e?.response?.data?.message || "Failed to load checklists.");
       setRows([]);
       setTotal(0);
-      setErr(
-        e?.response?.data?.error || e?.message || "Failed to load checklists."
-      );
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  useEffect(() => {
+  function refresh() {
     fetchList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, discipline, stageLabel, status, aiDefault, page, pageSize]);
-  useEffect(() => {
     fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    const refreshFlag = (location.state as any)?.refresh;
-    if (refreshFlag) {
-      fetchList();
-      fetchStats();
-      // clear state so it doesn't refire on next renders
-      nav(location.pathname, { replace: true, state: {} });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state]);
-
-  /* ---- View Modal ---- */
-  const [viewOpen, setViewOpen] = useState(false);
-  const [viewItem, setViewItem] = useState<ChecklistLite | null>(null);
-  const [viewLoading, setViewLoading] = useState(false);
-
-  async function openView(id: string) {
-    setViewOpen(true);
-    setViewLoading(true);
-    try {
-      const { data } = await api.get(`/admin/ref/checklists/${id}`);
-      setViewItem(data);
-    } catch {
-      setViewItem(null);
-    } finally {
-      setViewLoading(false);
-    }
-  }
-  function closeView() {
-    setViewOpen(false);
-    setViewItem(null);
   }
 
-  /* ---- UI helpers ---- */
-  const asChips = (arr?: string[] | null) =>
-    arr && arr.length
-      ? arr.map((t) => (
-          <span
-            key={t}
-            className="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full border text-xs bg-gray-50 dark:bg-neutral-800 dark:border-neutral-700"
-          >
-            {t}
-          </span>
-        ))
-      : "—";
-
-  const versionText = (r: ChecklistLite) =>
-    `v${(r as any).versionLabel ?? r.version ?? 1}`;
-
-  const itemsCountLocal = (r: ChecklistLite) =>
-    Number(r.itemsCount ?? (Array.isArray(r.items) ? r.items.length : 0));
-
-  /* ---- UI actions ---- */
-  const openNew = () =>
-    nav("/admin/ref/checklistlib/new", {
-      state: { from: location.pathname },
-    });
-
-  const openEdit = (id: string) =>
-    nav(`/admin/ref/checklistlib/${id}/edit`, {
-      state: { from: location.pathname },
-    });
-
-  const exportCsv = () => {
-    const header = [
-      "Checklist",
-      "Discipline • Stage",
-      "Version",
-      "Items",
-      "AI Default",
-      "Tags",
-      "Updated",
-      "Status",
-      "Id",
-    ];
-    const rowsToExport = sortedRows.map((r) => [
-      r.code ? `${r.code} • ${r.title}` : r.title,
-      `${r.discipline || ""} • ${r.stageLabel || "—"}`,
-      versionText(r),
-      String(itemsCountLocal(r)),
-      r.aiDefault ? "On" : "Off",
-      (r.tags || []).join("|"),
-      fmt(r.updatedAt),
-      r.status,
-      r.id,
-    ]);
-    const escapeCsv = (v: string) =>
-      /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-    const csv =
-      header.map(escapeCsv).join(",") +
-      "\n" +
-      rowsToExport.map((row) => row.map(escapeCsv).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    a.download = `checklist-lib-${date}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const clearFilters = () => {
+  function clearFilters() {
     setQ("");
     setDiscipline("");
     setStageLabel("");
     setStatus("");
     setAiDefault("");
     setPage(1);
-  };
+  }
 
-  const refresh = () => {
+  function openNew() {
+    nav("/admin/ref/checklistlib/new");
+  }
+  function openEdit(id: string) {
+    nav(`/admin/ref/checklistlib/${id}/edit`);
+  }
+
+  // ---------- sorting ----------
+  const [sortBy, setSortBy] = useState<SortKey>("updated");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function requestSort(key: SortKey) {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    const safe = (v: any) => (v ?? "").toString().toLowerCase();
+
+    copy.sort((a, b) => {
+      let av: any = "";
+      let bv: any = "";
+
+      switch (sortBy) {
+        case "code":
+          av = safe(a.code || a.title);
+          bv = safe(b.code || b.title);
+          break;
+        case "discStage":
+          av = safe(`${a.discipline || ""} ${a.stageLabel || ""}`);
+          bv = safe(`${b.discipline || ""} ${b.stageLabel || ""}`);
+          break;
+        case "version":
+          av = `${a.versionMajor ?? 0}.${a.versionMinor ?? 0}.${a.versionPatch ?? 0}`;
+          bv = `${b.versionMajor ?? 0}.${b.versionMinor ?? 0}.${b.versionPatch ?? 0}`;
+          break;
+        case "items":
+          av = itemsCountLocal(a);
+          bv = itemsCountLocal(b);
+          break;
+        case "aiDefault":
+          av = a.aiDefault ? 1 : 0;
+          bv = b.aiDefault ? 1 : 0;
+          break;
+        case "tags":
+          av = safe((a.tags || []).join(","));
+          bv = safe((b.tags || []).join(","));
+          break;
+        case "updated":
+          av = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          bv = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          break;
+        case "status":
+          av = safe(a.status);
+          bv = safe(b.status);
+          break;
+        default:
+          av = safe(a.title);
+          bv = safe(b.title);
+      }
+
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * dir;
+      }
+      return av > bv ? dir : av < bv ? -dir : 0;
+    });
+
+    return copy;
+  }, [rows, sortBy, sortDir]);
+
+  // ---------- export ----------
+  function exportCsv() {
+    const headers = [
+      "id",
+      "code",
+      "title",
+      "discipline",
+      "stageLabel",
+      "status",
+      "aiDefault",
+      "version",
+      "itemsCount",
+      "tags",
+      "updatedAt",
+    ];
+
+    const csv = [
+      headers.join(","),
+      ...sortedRows.map((r) => {
+        const line = [
+          r.id,
+          r.code || "",
+          r.title || "",
+          r.discipline || "",
+          r.stageLabel || "",
+          r.status || "",
+          r.aiDefault ? "on" : "off",
+          versionText(r),
+          String(itemsCountLocal(r)),
+          (r.tags || []).join("|"),
+          r.updatedAt || "",
+        ]
+          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .join(",");
+        return line;
+      }),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `checklists_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- view modal ----------
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewItem, setViewItem] = useState<ChecklistRow | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  async function openView(id: string) {
+    setViewOpen(true);
+    setViewLoading(true);
+    setViewItem(null);
+    try {
+      const { data } = await api.get(`/admin/ref/checklists/${id}`);
+      setViewItem(data as ChecklistRow);
+    } catch {
+      setViewItem(null);
+    } finally {
+      setViewLoading(false);
+    }
+  }
+
+  function closeView() {
+    setViewOpen(false);
+    setViewItem(null);
+    setViewLoading(false);
+  }
+
+  // initial load
+  useEffect(() => {
     fetchList();
     fetchStats();
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize]);
 
   /* ========================= UI ========================= */
+  const btnOutline =
+    "inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800";
+  const btnTeal =
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#23A192] px-3 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60";
+  const btnPrimary =
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60";
+
+  const pagerBtn =
+    "h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800";
+  const iconCloseBtn =
+    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-neutral-800";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
+    <div className="min-h-screen px-0 py-0 sm:px-0 lg:px-0">
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
-              Checklist Library
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Standardised checklists for PMS modules.
-            </p>
+        {/* Error */}
+        {err && (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            {err}
           </div>
-          <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
+        )}
+
+        {/* ===== Top row: count left, actions right (like screenshot) ===== */}
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-slate-500 dark:text-slate-400">
+            {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={refresh}
-              type="button"
-            >
-              {loading ? "Loading…" : "Refresh"}
-            </button>
-            <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className={btnOutline}
               onClick={exportCsv}
               type="button"
+              disabled={sortedRows.length === 0}
+              title={sortedRows.length === 0 ? "No rows to export" : "Export CSV"}
             >
               Export CSV
             </button>
-            <button
-              className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
-              onClick={openNew}
-              type="button"
-            >
+
+            <button className={btnTeal} onClick={refresh} type="button">
+              Refresh
+            </button>
+
+            <button className={btnPrimary} onClick={openNew} type="button">
               + Create
             </button>
           </div>
         </div>
 
-        {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-            {err}
-          </div>
-        )}
-
         {/* KPIs */}
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Active
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Active}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Draft
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Draft}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Inactive
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Inactive}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Archived
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Archived}
-            </div>
-          </div>
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Kpi label="Active" value={statsLoading ? "…" : stats.byStatus.Active} />
+          <Kpi label="Draft" value={statsLoading ? "…" : stats.byStatus.Draft} />
+          <Kpi
+            label="Inactive"
+            value={statsLoading ? "…" : stats.byStatus.Inactive}
+          />
+          <Kpi
+            label="Archived"
+            value={statsLoading ? "…" : stats.byStatus.Archived}
+          />
         </div>
 
-        {/* Filters */}
-        <Section title="Find">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
-            <Input
-              label="Search"
-              value={q}
-              onChange={(v) => {
-                setQ(v);
-                setPage(1);
-              }}
-              placeholder="id/code, title, stage…"
-            />
-            <SelectStrict
-              label="Discipline"
-              value={discipline}
-              onChange={(v) => {
-                setDiscipline(v as Discipline | "");
-                setStageLabel("");
-                setPage(1);
-              }}
-              options={["", ...DISCIPLINES].map((d) => ({
-                value: d as any,
-                label: d || "All",
-              }))}
-            />
-            <SelectStrict
-              label="Stage"
-              value={stageLabel}
-              onChange={(v) => {
-                setStageLabel(v);
-                setPage(1);
-              }}
-              options={[
-                "",
-                ...(discipline
-                  ? STAGE_LIBRARY[discipline] || []
-                  : Object.values(STAGE_LIBRARY).flat()),
-              ].map((s) => ({ value: s, label: s || "All" }))}
-            />
-            <SelectStrict
-              label="Status"
-              value={status}
-              onChange={(v) => {
-                setStatus((v as ChecklistStatus) || "");
-                setPage(1);
-              }}
-              options={["", ...STATUS_OPTIONS].map((s) => ({
-                value: s as any,
-                label: s || "All",
-              }))}
-            />
-            <SelectStrict
-              label="AI Default"
-              value={aiDefault}
-              onChange={(v) => setAiDefault((v as any) || "")}
-              options={[
-                { value: "on", label: "On" },
-                { value: "off", label: "Off" },
-              ]}
-              placeholder="Any"
-            />
-          </div>
-          <div className="mt-3">
-            <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={clearFilters}
-              type="button"
-            >
+        {/* ===== Filters arranged like screenshot ===== */}
+        <div className="mb-4">
+          {/* Row 1: filters + clear (same line) */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-[170px] shrink-0">
+              <SelectStrict
+                label="Discipline"
+                value={discipline}
+                onChange={(v) => {
+                  setDiscipline(v as Discipline | "");
+                  setStageLabel("");
+                  setPage(1);
+                }}
+                options={["", ...DISCIPLINES].map((d) => ({
+                  value: d as any,
+                  label: d || "All",
+                }))}
+              />
+            </div>
+
+            <div className="w-[170px] shrink-0">
+              <SelectStrict
+                label="Stage"
+                value={stageLabel}
+                onChange={(v) => {
+                  setStageLabel(v);
+                  setPage(1);
+                }}
+                options={[
+                  "",
+                  ...(discipline
+                    ? STAGE_LIBRARY[discipline] || []
+                    : Object.values(STAGE_LIBRARY).flat()),
+                ].map((s) => ({ value: s, label: s || "All" }))}
+              />
+            </div>
+
+            <div className="w-[170px] shrink-0">
+              <SelectStrict
+                label="Status"
+                value={status}
+                onChange={(v) => {
+                  setStatus((v as ChecklistStatus) || "");
+                  setPage(1);
+                }}
+                options={["", ...STATUS_OPTIONS].map((s) => ({
+                  value: s as any,
+                  label: s || "All",
+                }))}
+              />
+            </div>
+
+            <div className="w-[170px] shrink-0">
+              <SelectStrict
+                label="AI Default"
+                value={aiDefault}
+                onChange={(v) => {
+                  setAiDefault((v as any) || "");
+                  setPage(1);
+                }}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+                placeholder="Any"
+              />
+            </div>
+
+            <button className={btnOutline} onClick={clearFilters} type="button">
               Clear
             </button>
           </div>
-        </Section>
 
-        {/* Table info */}
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-          {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
+          {/* Row 2: search left, page size right */}
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="w-full sm:max-w-[520px]">
+              <Input
+                label="Search"
+                value={q}
+                onChange={(v) => {
+                  setQ(v);
+                  setPage(1);
+                }}
+                placeholder="id/code, title, stage…"
+              />
+            </div>
+
+            <label className="block w-[100px] shrink-0">
+              <span className="block text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                Page size
+              </span>
+              <select
+                className="h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition focus:ring-2 focus:ring-[#00379C]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {[10, 20, 30, 50].map((n) => (
+                  <option key={n} value={n}>
+                    {n}/page
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 overflow-hidden">
-          <div className="overflow-auto max-h-[70vh] thin-scrollbar">
-            <table className="w-full min-w-[1400px] text-sm table-fixed [word-break:break-word] [overflow-wrap:anywhere]">
-              <colgroup>
-                <col className="w-[160px]" /> {/* Actions */}
-                <col className="w-[360px]" /> {/* Checklist */}
-                <col span={7} />
-              </colgroup>
-              <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
+        <div className="rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="overflow-x-auto thin-scrollbar">
+            <table className="min-w-[1100px] w-full text-[12.5px]">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-600 dark:bg-neutral-800/60 dark:text-slate-200">
                 <tr>
-                  <th className="sticky left-0 z-10 bg-gray-50/90 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 border-b border-slate-200 dark:bg-neutral-800/95 dark:text-slate-200 dark:border-neutral-700">
-                    Actions
-                  </th>
+                  <th className="px-3 py-2">ACTIONS</th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("checklist")}
-                    active={sortBy === "checklist"}
+                    active={sortBy === "code"}
                     dir={sortDir}
+                    onClick={() => requestSort("code")}
                   >
-                    Checklist (Code • Title)
+                    CHECKLIST
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("discStage")}
                     active={sortBy === "discStage"}
                     dir={sortDir}
+                    onClick={() => requestSort("discStage")}
                   >
-                    Discipline • Stage
+                    DISCIPLINE • STAGE
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("version")}
                     active={sortBy === "version"}
                     dir={sortDir}
+                    onClick={() => requestSort("version")}
+                    className="w-[120px]"
                   >
-                    Version
+                    VERSION
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("items")}
                     active={sortBy === "items"}
                     dir={sortDir}
+                    onClick={() => requestSort("items")}
+                    className="w-[90px] text-right"
                   >
-                    Items
+                    ITEMS
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("aiDefault")}
                     active={sortBy === "aiDefault"}
                     dir={sortDir}
+                    onClick={() => requestSort("aiDefault")}
+                    className="w-[110px]"
                   >
-                    AI (Default)
+                    AI DEFAULT
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("tags")}
                     active={sortBy === "tags"}
                     dir={sortDir}
+                    onClick={() => requestSort("tags")}
+                    className="min-w-[240px]"
                   >
-                    Tags
+                    TAGS
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("updated")}
                     active={sortBy === "updated"}
                     dir={sortDir}
+                    onClick={() => requestSort("updated")}
+                    className="w-[160px]"
                   >
-                    Updated
+                    UPDATED
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
-                    onClick={() => requestSort("status")}
                     active={sortBy === "status"}
                     dir={sortDir}
+                    onClick={() => requestSort("status")}
+                    className="w-[140px]"
                   >
-                    Status
+                    STATUS
                   </Th>
                 </tr>
               </thead>
 
-              <tbody>
-                {sortedRows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-t border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
-                  >
-                    {/* Actions */}
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 dark:bg-neutral-900">
-                      <div className="flex items-center gap-2">
-                        {/* View (eye) – green line icon */}
-                        <button
-                          type="button"
-                          aria-label="View checklist"
-                          title="View"
-                          onClick={() => openView(r.id)}
-                          className="inline-flex items-center justify-center w-7 h-7 bg-transparent
-               text-emerald-600 hover:text-emerald-700
-               dark:text-emerald-400 dark:hover:text-emerald-300"
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={1.6}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                            <circle cx="12" cy="12" r="2.5" />
-                          </svg>
-                        </button>
-
-                        {/* Edit (pencil) – red line icon */}
-                        <button
-                          type="button"
-                          aria-label="Edit checklist"
-                          title="Edit"
-                          onClick={() => openEdit(r.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full
-               text-rose-500 hover:text-rose-600 hover:bg-rose-50/70
-               dark:hover:bg-rose-900/40"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.7"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
-                            <path d="M14.5 5.5l4 4" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* Checklist (Code • Title) */}
-                    <td className="px-3 py-2">
-                      <div className="font-semibold text-slate-900 dark:text-slate-50 line-clamp-2 break-words">
-                        {r.code ? `${r.code} • ${r.title}` : r.title}
-                      </div>
-                    </td>
-
-                    {/* Discipline • Stage */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                      {(r.discipline || "—") + " • " + (r.stageLabel || "—")}
-                    </td>
-
-                    {/* Version */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-100">
-                      {versionText(r)}
-                    </td>
-
-                    {/* Items */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                      {itemsCountLocal(r)}
-                    </td>
-
-                    {/* AI (Default) */}
-                    <td className="px-3 py-2">
-                      {r.aiDefault ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full border text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900">
-                          On
-                        </span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full border text-xs bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900">
-                          Off
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Tags */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                      {r.tags && r.tags.length ? r.tags.join(", ") : "—"}
-                    </td>
-
-                    {/* Updated */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                      {fmt(r.updatedAt)}
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-3 py-2">
-                      <StatusPill value={r.status} />
-                    </td>
-                  </tr>
-                ))}
-
-                {!sortedRows.length && !loading && (
+              <tbody className="divide-y divide-slate-100 dark:divide-neutral-800">
+                {loading ? (
                   <tr>
                     <td
-                      className="px-3 py-6 text-center text-gray-500 dark:text-gray-400"
+                      className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-300"
+                      colSpan={9}
+                    >
+                      Loading…
+                    </td>
+                  </tr>
+                ) : sortedRows.length === 0 ? (
+                  <tr>
+                    <td
+                      className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-300"
                       colSpan={9}
                     >
                       No checklists found.
                     </td>
                   </tr>
+                ) : (
+                  sortedRows.map((r) => (
+                    <tr
+                      key={r.id}
+                      className="hover:bg-slate-50/60 dark:hover:bg-neutral-800/40"
+                    >
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <IconBtn
+                            title="View"
+                            onClick={() => openView(r.id)}
+                            variant="view"
+                          />
+                          <IconBtn
+                            title="Edit"
+                            onClick={() => openEdit(r.id)}
+                            variant="edit"
+                          />
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-2">
+                        <div className="font-semibold text-slate-900 dark:text-slate-50 line-clamp-2 break-words">
+                          {r.code ? `${r.code} • ${r.title}` : r.title}
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                        {(r.discipline || "—") + " • " + (r.stageLabel || "—")}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                        {versionText(r)}
+                      </td>
+
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                        {itemsCountLocal(r)}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                        {r.aiDefault ? (
+                          <span className="inline-flex rounded-full bg-[#23A192]/10 px-2 py-0.5 text-[11px] font-semibold text-[#23A192] dark:bg-[#23A192]/20">
+                            On
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-neutral-800 dark:text-slate-200">
+                            Off
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                        {r.tags?.length ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {r.tags.slice(0, 6).map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-slate-200"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            {r.tags.length > 6 && (
+                              <span className="text-[11px] text-slate-500 dark:text-slate-300">
+                                +{r.tags.length - 6}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                        {fmt(r.updatedAt)}
+                      </td>
+
+                      <td className="px-3 py-2">
+                        <StatusPill value={r.status} />
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
           </div>
-        </div>
 
-        {/* Pagination */}
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <div className="text-gray-600 dark:text-gray-400">
-            Page <b>{page}</b> of <b>{totalPages}</b>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-            <select
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setPage(1);
-              }}
-            >
-              {[10, 20, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n}/page
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+          <div className="flex flex-col gap-3 border-t border-slate-200/70 px-4 py-3 text-sm text-slate-600 dark:border-neutral-800 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              Page <b>{page}</b> of <b>{totalPages}</b> · Showing{" "}
+              <b>{sortedRows.length}</b> of <b>{total}</b> records
+            </div>
 
-      {/* View Modal */}
-      {viewOpen && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={closeView} />
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/80 dark:border-neutral-800 shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-neutral-800">
-                <div className="flex flex-col">
-                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Checklist
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-semibold dark:text-white">
-                      {viewItem?.code
-                        ? `${viewItem.code} • ${viewItem.title}`
-                        : viewItem?.title || "—"}
-                    </h3>
-                    {viewItem?.status ? (
-                      <span className="text-xs">
-                        <StatusPill value={viewItem.status} />
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <button
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                  onClick={closeView}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="p-4 text-sm">
-                {viewLoading ? (
-                  <div className="py-10 text-center text-gray-500 dark:text-gray-400">
-                    Loading…
-                  </div>
-                ) : viewItem ? (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <KV k="Code" v={viewItem.code || "—"} />
-                    <KV k="Title" v={viewItem.title || "—"} />
-                    <KV
-                      k="Discipline • Stage"
-                      v={`${viewItem.discipline} • ${
-                        viewItem.stageLabel || "—"
-                      }`}
-                    />
-                    <KV k="Version" v={versionText(viewItem)} />
-                    <KV k="Items" v={String(itemsCountLocal(viewItem))} />
-                    <KV k="AI Default" v={viewItem.aiDefault ? "On" : "Off"} />
-                    <KV
-                      k="Tags"
-                      v={
-                        viewItem.tags && viewItem.tags.length
-                          ? viewItem.tags.join(", ")
-                          : "—"
-                      }
-                    />
-                    <KV k="Updated" v={fmt(viewItem.updatedAt)} />
-                    <div className="sm:col-span-2">
-                      <KV
-                        k="Status"
-                        v={<StatusPill value={viewItem.status} />}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-10 text-center text-red-600">
-                    Failed to load.
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-neutral-800">
-                <button
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  onClick={closeView}
-                >
-                  Done
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={pagerBtn}
+                disabled={page <= 1}
+                onClick={() => setPage(1)}
+              >
+                « First
+              </button>
+              <button
+                className={pagerBtn}
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹ Prev
+              </button>
+              <button
+                className={pagerBtn}
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next ›
+              </button>
+              <button
+                className={pagerBtn}
+                disabled={page >= totalPages}
+                onClick={() => setPage(totalPages)}
+              >
+                Last »
+              </button>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Thin scrollbar styling */}
-      <style>
-        {`
-          .thin-scrollbar::-webkit-scrollbar {
-            height: 6px;
-            width: 6px;
-          }
-          .thin-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          .thin-scrollbar::-webkit-scrollbar-thumb {
-            background-color: rgba(148, 163, 184, 0.7);
-            border-radius: 999px;
-          }
-          .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-            background-color: rgba(100, 116, 139, 0.9);
-          }
-        `}
-      </style>
-    </div>
-  );
-}
+        {/* View Modal */}
+        {viewOpen && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={closeView} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-neutral-800">
+                  <div className="flex flex-col">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                      Checklist
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-base font-semibold text-slate-900 dark:text-white">
+                        {viewItem?.code
+                          ? `${viewItem.code} • ${viewItem.title}`
+                          : viewItem?.title || "—"}
+                      </div>
+                      {viewItem?.status && <StatusPill value={viewItem.status} />}
+                    </div>
+                  </div>
 
-/* ========================= Bits ========================= */
-function KV({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
-      <div className="text-gray-500 dark:text-gray-400">{k}</div>
-      <div className="dark:text-white">{v}</div>
+                  <button
+                    className={iconCloseBtn}
+                    onClick={closeView}
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  {viewLoading ? (
+                    <div className="py-10 text-center text-slate-500 dark:text-slate-300">
+                      Loading…
+                    </div>
+                  ) : viewItem ? (
+                    <div className="grid gap-3">
+                      <KV k="Discipline" v={viewItem.discipline || "—"} />
+                      <KV k="Stage" v={viewItem.stageLabel || "—"} />
+                      <KV k="Version" v={versionText(viewItem)} />
+                      <KV k="Items" v={itemsCountLocal(viewItem)} />
+                      <KV k="AI Default" v={viewItem.aiDefault ? "On" : "Off"} />
+                      <KV k="Tags" v={(viewItem.tags || []).join(", ") || "—"} />
+                      <KV k="Updated" v={fmt(viewItem.updatedAt)} />
+                      <KV k="Id" v={viewItem.id} />
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center text-red-600">
+                      Failed to load.
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-neutral-800">
+                  <button className={btnPrimary} onClick={closeView}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Thin scrollbar styling */}
+        <style>
+          {`
+            .thin-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+            .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+            .thin-scrollbar::-webkit-scrollbar-thumb {
+              background: rgba(148, 163, 184, 0.55);
+              border-radius: 999px;
+              border: 2px solid transparent;
+              background-clip: padding-box;
+            }
+            .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+            .thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.55) transparent; }
+            .thin-scrollbar::-webkit-scrollbar-button { width: 0; height: 0; display: none; }
+            .thin-scrollbar::-webkit-scrollbar-corner { background: transparent; }
+          `}
+        </style>
+      </div>
     </div>
   );
 }

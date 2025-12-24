@@ -129,6 +129,16 @@ export default function AdminPermProjectOverrides() {
     msg: string;
   } | null>(null);
 
+  // Title + subtitle at top (Admin shell reads __ADMIN_SUBTITLE__)
+  useEffect(() => {
+    document.title = "Trinity PMS — Project Overrides";
+    (window as any).__ADMIN_SUBTITLE__ =
+      "Override role templates for a specific project (per-module actions).";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
   // Load projects once
   useEffect(() => {
     (async () => {
@@ -228,109 +238,125 @@ export default function AdminPermProjectOverrides() {
     }
   };
 
+  /* ========================= UI tokens (latest theme) ========================= */
+
+  const controlBase =
+    "h-10 rounded-full border bg-white px-4 text-[13px] font-semibold text-slate-700 shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:bg-neutral-950 " +
+    "transition active:scale-[0.99]";
+  const controlBorder =
+    "border-slate-200 placeholder:text-slate-400 dark:border-white/10 dark:text-neutral-100";
+  const controlFocus =
+    "focus:ring-[#00379C]/25 focus:border-[#00379C] dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]";
+
+  const btnOutline =
+    "inline-flex h-10 items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold " +
+    "text-slate-700 shadow-sm transition hover:bg-slate-50 active:translate-y-[0.5px] " +
+    "disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-white/5";
+
+  const btnPrimary =
+    "inline-flex h-10 items-center justify-center rounded-full bg-[#00379C] px-4 text-sm font-semibold text-white " +
+    "shadow-sm transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60";
+
+  const btnTeal =
+    "inline-flex h-10 items-center justify-center rounded-full bg-[#23A192] px-4 text-sm font-semibold text-white " +
+    "shadow-sm transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60";
+
+  const backBtnYellow =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full " +
+    "bg-[#FCC020] text-[#00379C] shadow-sm ring-1 ring-[#FCC020]/60 transition " +
+    "hover:brightness-105 hover:shadow active:translate-y-[0.5px] " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#FCC020]/60 dark:ring-[#FCC020]/40";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 flex items-start justify-between">
-          {/* Left block */}
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Project Overrides
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Override role templates for a specific project.
-            </p>
-
-            {/* Project + Role selectors under subtitle (left side) */}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              {/* Project selector */}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Project
-                </span>
-                <select
-                  className="h-9 rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                  aria-label="Select Project"
-                  disabled={!projects.length}
-                >
-                  {!projects.length && <option value="">No projects</option>}
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Role selector */}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Role
-                </span>
-                <select
-                  className="h-9 rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as RoleKey)}
-                  aria-label="Select Role"
-                  disabled={!projects.length}
-                >
-                  {ROLE_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Right block: premium back icon button */}
-          <div className="flex items-start">
-            <button
-              type="button"
-              onClick={() => navigate("/admin/permissions")}
-              title="Back to Permissions"
-              aria-label="Back to Permissions"
-              className="
-        group inline-flex h-10 w-10 items-center justify-center
-        rounded-full
-        border border-slate-200/70
-        bg-white/80 backdrop-blur
-        text-slate-700
-        shadow-sm
-        transition-all duration-200
-        hover:-translate-y-[1px]
-        hover:border-emerald-200
-        hover:bg-emerald-50/60
-        hover:shadow-md
-        active:translate-y-0
-        dark:border-neutral-700/70
-        dark:bg-neutral-900/70
-        dark:text-neutral-100
-        dark:hover:border-emerald-700/40
-        dark:hover:bg-emerald-900/10
-      "
-            >
-              <span className="text-[18px] leading-none transition-transform duration-200 group-hover:-translate-x-0.5">
-                ←
+    <div className="w-full">
+      <div className="mx-auto max-w-6xl">
+        {/* Top bar: selectors (left) + back (right) */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Project selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Project
               </span>
-            </button>
+              <select
+                className={`${controlBase} ${controlBorder} ${controlFocus} min-w-[240px]`}
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                aria-label="Select Project"
+                disabled={!projects.length}
+              >
+                {!projects.length && <option value="">No projects</option>}
+                {projects.map((p) => (
+                  <option key={p.projectId} value={p.projectId}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Role selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Role
+              </span>
+              <select
+                className={`${controlBase} ${controlBorder} ${controlFocus} min-w-[160px]`}
+                value={role}
+                onChange={(e) => setRole(e.target.value as RoleKey)}
+                aria-label="Select Role"
+                disabled={!projects.length}
+              >
+                {ROLE_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(loading || saving) && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {saving ? "Saving…" : "Loading…"}
+              </span>
+            )}
           </div>
+
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={() => navigate("/admin/permissions")}
+            title="Back to Permissions"
+            aria-label="Back to Permissions"
+            className={backBtnYellow}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M19 12H7" />
+              <path d="M11 6l-6 6 6 6" />
+            </svg>
+          </button>
         </div>
 
         {/* Toast */}
         {toast && (
           <div
             className={
-              "mb-4 rounded-xl border p-3 text-sm " +
+              "mb-4 rounded-2xl border px-4 py-3 text-sm shadow-sm " +
               (toast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200"
+                ? "border-[#23A192]/25 bg-[#23A192]/10 text-slate-800 dark:text-slate-100"
                 : toast.type === "warn"
-                ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
-                : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300")
+                ? "border-[#FCC020]/45 bg-[#FCC020]/15 text-slate-800 dark:text-slate-100"
+                : "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-200")
             }
           >
             {toast.msg}
@@ -339,7 +365,7 @@ export default function AdminPermProjectOverrides() {
 
         {!projects.length ? (
           <Section title="No projects">
-            <div className="text-sm text-gray-600 dark:text-gray-300">
+            <div className="text-sm text-slate-600 dark:text-slate-300">
               No projects found. Create a project in <b>Admin → Projects</b>,
               then come back here.
             </div>
@@ -347,22 +373,22 @@ export default function AdminPermProjectOverrides() {
         ) : (
           <Section title="Module Permissions Matrix">
             {loading && (
-              <div className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+              <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                 Loading override for <b>{role}</b>…
               </div>
             )}
 
-            <div className="overflow-auto rounded-2xl border border-slate-200 bg-white/95 dark:border-neutral-800 dark:bg-neutral-900">
-              <table className="min-w-full text-sm">
-                <thead className="sticky top-0 bg-slate-50 dark:bg-neutral-950">
+            <div className="overflow-x-auto thin-scrollbar rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-neutral-950">
+              <table className="min-w-full text-[13px]">
+                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-neutral-900">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                    <th className="px-4 py-3 text-left text-xs font-extrabold uppercase tracking-widest text-slate-600 dark:text-slate-200">
                       Module
                     </th>
                     {ACTIONS.map((a) => (
                       <th
                         key={a}
-                        className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
+                        className="px-3 py-3 text-center text-xs font-extrabold uppercase tracking-widest text-slate-600 dark:text-slate-200"
                       >
                         {a}
                       </th>
@@ -371,17 +397,23 @@ export default function AdminPermProjectOverrides() {
                 </thead>
 
                 <tbody>
-                  {MODULES.map((m) => (
+                  {MODULES.map((m, idx) => (
                     <tr
                       key={m}
-                      className="border-t border-slate-100 dark:border-neutral-800"
+                      className={
+                        "border-t border-slate-100 dark:border-white/10 " +
+                        (idx % 2
+                          ? "bg-white dark:bg-neutral-950"
+                          : "bg-slate-50/40 dark:bg-neutral-950/60") +
+                        " hover:bg-slate-50/70 dark:hover:bg-white/5"
+                      }
                     >
                       <td className="px-4 py-3">
-                        <div className="text-[13px] font-medium text-slate-900 dark:text-white">
+                        <div className="text-[13px] font-semibold text-slate-900 dark:text-white">
                           {MODULE_LABELS[m]}
                         </div>
                         {m === "LTR" && (
-                          <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                          <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                             Review/Approve not applicable for Letters.
                           </div>
                         )}
@@ -396,10 +428,9 @@ export default function AdminPermProjectOverrides() {
                             <input
                               type="checkbox"
                               className={
-                                "h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 " +
-                                (disabled
-                                  ? "opacity-40 cursor-not-allowed"
-                                  : "")
+                                "h-4 w-4 rounded border-slate-300 text-[#23A192] focus:ring-[#00379C]/30 " +
+                                "dark:border-white/20 " +
+                                (disabled ? "opacity-40 cursor-not-allowed" : "")
                               }
                               checked={disabled ? false : checked}
                               disabled={disabled || loading || saving}
@@ -420,32 +451,34 @@ export default function AdminPermProjectOverrides() {
               </table>
             </div>
 
-            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
               This override applies only to the selected project and role.
             </div>
           </Section>
         )}
 
-        {/* Footer actions (your consistent pattern) */}
+        {/* Footer actions */}
         {!!projects.length && (
           <div className="mt-6 flex justify-end gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className={btnOutline}
               onClick={() => navigate("/admin/permissions")}
               type="button"
             >
               Cancel
             </button>
+
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className={btnOutline}
               onClick={onReset}
               disabled={!projectId || loading || saving}
               type="button"
             >
               Reset To Role Template
             </button>
+
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+              className={btnTeal}
               onClick={onSave}
               disabled={!canSave}
               type="button"
@@ -454,6 +487,20 @@ export default function AdminPermProjectOverrides() {
             </button>
           </div>
         )}
+
+        {/* Scrollbar styling (consistent across pages) */}
+        <style>{`
+          .thin-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+          .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .thin-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.55);
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+          }
+          .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+          .thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.55) transparent; }
+        `}</style>
       </div>
     </div>
   );
@@ -470,9 +517,12 @@ function Section({
 }) {
   return (
     <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-          {title}
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-xs font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
         </div>
         {children}
       </div>

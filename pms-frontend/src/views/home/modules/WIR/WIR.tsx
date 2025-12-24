@@ -128,24 +128,27 @@ const canonicalDisc = (
 
 function StatusBadge({ value }: { value?: string | null }) {
   const v = canonicalWirStatus(value);
+
+  // UI ONLY: client palette (no logic change)
   const map: Record<WirStatusCanonical, string> = {
     Draft:
-      "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+      "bg-slate-50 text-slate-800 border-slate-200 dark:bg-neutral-800/70 dark:text-neutral-200 dark:border-white/10",
     Submitted:
-      "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+      "bg-[#FCC020]/15 text-[#7A5200] border-[#FCC020]/40 dark:bg-[#FCC020]/10 dark:text-[#FCC020] dark:border-[#FCC020]/25",
     InspectorRecommended:
-      "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+      "bg-[#23A192]/12 text-[#0F6F63] border-[#23A192]/35 dark:bg-[#23A192]/10 dark:text-[#23A192] dark:border-[#23A192]/25",
     HODApproved:
-      "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+      "bg-[#00379C]/10 text-[#00379C] border-[#00379C]/25 dark:bg-[#00379C]/20 dark:text-[#FCC020] dark:border-[#00379C]/35",
     HODRejected:
-      "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+      "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-900/40",
     OnHold:
-      "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-800",
+      "bg-[#FCC020]/12 text-[#7A5200] border-[#FCC020]/35 dark:bg-[#FCC020]/10 dark:text-[#FCC020] dark:border-[#FCC020]/25",
     Closed:
-      "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
+      "bg-slate-50 text-slate-800 border-slate-200 dark:bg-neutral-800/70 dark:text-neutral-200 dark:border-white/10",
     Unknown:
-      "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+      "bg-slate-50 text-slate-800 border-slate-200 dark:bg-neutral-800/70 dark:text-neutral-200 dark:border-white/10",
   };
+
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded border ${map[v]}`}>
       {v}
@@ -162,18 +165,19 @@ function KPI({
   value: number | string;
   tone?: "base" | "info" | "warn" | "alert";
 }) {
+  // UI ONLY: client palette
   const toneClasses =
     tone === "info"
-      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+      ? "bg-[#00379C]/10 text-[#00379C] dark:bg-[#00379C]/20 dark:text-[#FCC020]"
       : tone === "warn"
-      ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+      ? "bg-[#FCC020]/12 text-[#7A5200] dark:bg-[#FCC020]/10 dark:text-[#FCC020]"
       : tone === "alert"
-      ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
-      : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
+      ? "bg-rose-50 text-rose-800 dark:bg-rose-900/20 dark:text-rose-200"
+      : "bg-slate-50 text-slate-800 dark:bg-neutral-800/70 dark:text-neutral-200";
 
   return (
     <div
-      className={`rounded-3xl border border-slate-200/80 dark:border-neutral-800 px-4 py-3 sm:px-5 sm:py-4 ${toneClasses}`}
+      className={`rounded-3xl border border-slate-200/80 dark:border-white/10 px-4 py-3 sm:px-5 sm:py-4 ${toneClasses}`}
     >
       <div className="text-xs sm:text-sm opacity-80">{label}</div>
       <div className="text-xl sm:text-2xl font-semibold mt-1">{value}</div>
@@ -922,6 +926,7 @@ export default function WIR() {
       },
     });
   };
+
   const applyFilterSheet = () => {
     setFStatus(dStatus);
     setFDisc(dDisc);
@@ -938,7 +943,7 @@ export default function WIR() {
   };
 
   return (
-    <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 md:p-6">
+    <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/10 p-4 sm:p-5 md:p-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -957,7 +962,9 @@ export default function WIR() {
             type="button"
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
                        hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/25 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900
+                       dark:focus-visible:ring-[#FCC020]/30 dark:focus-visible:ring-offset-neutral-950"
             title="Back to My Projects"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
@@ -973,8 +980,10 @@ export default function WIR() {
             <button
               onClick={createWir}
               type="button"
-              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-xs sm:text-sm font-medium text-white shadow-sm
-                         hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 dark:border-emerald-700"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#00379C] px-4 py-2 text-xs sm:text-sm font-medium text-white shadow-sm
+                         hover:brightness-110 active:scale-[0.99] transition
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                         dark:focus-visible:ring-[#FCC020]/35 dark:focus-visible:ring-offset-neutral-950"
               title="Create WIR"
             >
               <span className="text-base leading-none">+</span>
@@ -1004,17 +1013,12 @@ export default function WIR() {
         />
       </div>
 
-      {/* ✅ Search + Sort + Filter row (ABOVE quick tabs) */}
+      {/* Search + Sort + Filter row */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="w-full sm:max-w-md">
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M10 4a6 6 0 014.472 9.938l3.795 3.795-1.414 1.414-3.795-3.795A6 6 0 1110 4zm0 2a4 4 0 100 8 4 4 0 000-8z"
                   className="fill-current"
@@ -1027,8 +1031,9 @@ export default function WIR() {
               placeholder="Search by code, title, or status…"
               className="w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-gray-900
                          outline-none transition
-                         focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
-                         dark:bg-neutral-900 dark:border-neutral-800 dark:text-white"
+                         focus:ring-2 focus:ring-[#00379C]/20 focus:border-[#00379C]/30
+                         dark:bg-neutral-950 dark:border-white/10 dark:text-white
+                         dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]/30"
             />
           </div>
         </div>
@@ -1039,10 +1044,11 @@ export default function WIR() {
             onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
             className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
                        hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/25 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900
+                       dark:focus-visible:ring-[#FCC020]/30 dark:focus-visible:ring-offset-neutral-950"
             title="Sort"
           >
-            {/* ✅ sort icon like MyProjects (↑↓) */}
             <svg
               width="16"
               height="16"
@@ -1074,16 +1080,12 @@ export default function WIR() {
             onClick={openFilterSheet}
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
                        hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/25 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900
+                       dark:focus-visible:ring-[#FCC020]/30 dark:focus-visible:ring-offset-neutral-950"
             title="Filter"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="shrink-0"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M4 5h16v2l-6 7v5l-4-2v-3L4 7V5z"
                 className="fill-current"
@@ -1093,7 +1095,8 @@ export default function WIR() {
           </button>
         </div>
       </div>
-      {/* Group row (like MyProjects) */}
+
+      {/* Group row */}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <span className="text-gray-500 dark:text-gray-400">Group</span>
 
@@ -1111,8 +1114,8 @@ export default function WIR() {
               className={
                 "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
                 (active
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                  : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800")
+                  ? "bg-[#00379C] text-white border-[#00379C] shadow-sm"
+                  : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-950 dark:border-white/10 dark:text-gray-100 dark:hover:bg-neutral-900")
               }
             >
               {g.label}
@@ -1121,7 +1124,7 @@ export default function WIR() {
         })}
       </div>
 
-      {/* ✅ Quick tabs (All / Today / Upcoming) */}
+      {/* Quick tabs */}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <span className="text-gray-500 dark:text-gray-400">Quick</span>
         {[
@@ -1138,8 +1141,8 @@ export default function WIR() {
               className={
                 "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
                 (active
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                  : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800")
+                  ? "bg-[#00379C] text-white border-[#00379C] shadow-sm"
+                  : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-950 dark:border-white/10 dark:text-gray-100 dark:hover:bg-neutral-900")
               }
             >
               {q.label}
@@ -1173,7 +1176,7 @@ export default function WIR() {
               {groupBy !== "none" && (
                 <div className="px-1 flex items-center justify-between text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   <span>{g.label}</span>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-neutral-800/70 dark:text-neutral-200">
                     {g.items.length}
                   </span>
                 </div>
@@ -1192,7 +1195,7 @@ export default function WIR() {
                   ? "relative z-[5] mt-[-10px] ml-4"
                   : "relative z-[10]";
 
-                                const busy = preflightId === w.wirId;
+                const busy = preflightId === w.wirId;
                 const isHL = highlightId && w.wirId === highlightId;
 
                 const any = w as any;
@@ -1216,7 +1219,9 @@ export default function WIR() {
                     ? (w as any).itemsCount
                     : (any?.itemsCount ?? any?.items_count ?? "—");
 
-                const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
+                const isRescheduled = !!(
+                  w.rescheduleForDate || w.rescheduleForTime
+                );
                 const reschedTimeRaw =
                   w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
                 const reschedTimeDisp = fmtTime12(reschedTimeRaw);
@@ -1259,7 +1264,9 @@ export default function WIR() {
                   typeof w.version === "number" &&
                   (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
 
-                const discKey = canonicalDisc(w.discipline ?? any?.discipline ?? null);
+                const discKey = canonicalDisc(
+                  w.discipline ?? any?.discipline ?? null
+                );
                 const discLabel =
                   discKey === "civil"
                     ? "Civil"
@@ -1279,9 +1286,10 @@ export default function WIR() {
                     className={
                       stackClasses +
                       " group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition " +
-                      "hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500/30 " +
+                      "hover:border-[#23A192] hover:shadow-md focus:outline-none " +
+                      "focus:ring-2 focus:ring-[#00379C]/20 " +
                       "disabled:opacity-60 disabled:cursor-not-allowed " +
-                      "dark:bg-neutral-900 dark:border-neutral-800"
+                      "dark:bg-neutral-950 dark:border-white/10 dark:hover:border-[#23A192]/60 dark:focus:ring-[#FCC020]/25"
                     }
                     title={reschedTip || undefined}
                   >
@@ -1298,17 +1306,17 @@ export default function WIR() {
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <StatusBadge value={st} />
                         {isAwdC && (
-                          <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
+                          <span className="text-[11px] rounded-full bg-[#FCC020]/15 text-[#7A5200] border border-[#FCC020]/40 px-2 py-0.5 dark:bg-[#FCC020]/10 dark:border-[#FCC020]/25 dark:text-[#FCC020]">
                             AWC
                           </span>
                         )}
                         {hasChild && (
-                          <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
+                          <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800/70 dark:border-white/10 dark:text-neutral-200">
                             Has Follow-up
                           </span>
                         )}
                         {isRescheduled && (
-                          <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
+                          <span className="text-[11px] rounded-full bg-[#00379C]/10 text-[#00379C] border border-[#00379C]/25 px-2 py-0.5 dark:bg-[#00379C]/20 dark:border-[#00379C]/35 dark:text-[#FCC020]">
                             Rescheduled
                           </span>
                         )}
@@ -1316,20 +1324,20 @@ export default function WIR() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800/70 dark:border-white/10 dark:text-gray-200">
                         Discipline: {discLabel}
                       </span>
                       {forDateDisp !== "—" && (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800/70 dark:border-white/10 dark:text-gray-200">
                           {forDateDisp}
                           {forTimeDisp ? ` • ${forTimeDisp}` : ""}
                         </span>
                       )}
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800/70 dark:border-white/10 dark:text-gray-200">
                         Items: {itemsDisp}
                       </span>
                       {bicName && (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800/70 dark:border-white/10 dark:text-gray-200">
                           BIC: {bicName}
                         </span>
                       )}
@@ -1337,8 +1345,8 @@ export default function WIR() {
 
                     <div
                       className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
-                                group-hover:border-emerald-500 group-hover:text-emerald-700
-                                dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
+                                group-hover:border-[#23A192] group-hover:text-[#23A192]
+                                dark:bg-neutral-950 dark:border-white/10 dark:text-gray-100"
                     >
                       {busy ? "Opening…" : "Open"}
                     </div>
@@ -1350,36 +1358,28 @@ export default function WIR() {
         })}
       </div>
 
-      {/* ✅ Filter bottom sheet (UI like screenshot) */}
+      {/* Filter bottom sheet */}
       {showFilter && (
         <div className="fixed inset-0 z-40">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40"
             onClick={() => setShowFilter(false)}
             aria-hidden="true"
           />
 
-          {/* Sheet */}
           <div className="absolute inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <div className="w-full sm:max-w-lg bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xl max-h-[88vh] overflow-hidden flex flex-col">
-              {/* drag handle */}
+            <div className="w-full sm:max-w-lg bg-white dark:bg-neutral-950 rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl max-h-[88vh] overflow-hidden flex flex-col">
               <div className="pt-3 pb-1 flex justify-center">
                 <div className="h-1 w-12 rounded-full bg-slate-200 dark:bg-neutral-700" />
               </div>
 
-              {/* Header */}
               <div className="px-5 sm:px-6 pt-3 pb-2">
                 <div className="text-lg font-semibold text-gray-900 dark:text-white">
                   Filters
                 </div>
               </div>
 
-              {/* Body (scrollable) */}
               <div className="px-5 sm:px-6 pb-4 overflow-auto">
-                {/* helper for pill */}
-                {(() => null)()}
-
                 {/* Status */}
                 <div className="mt-4">
                   <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -1405,8 +1405,8 @@ export default function WIR() {
                           className={
                             "px-4 py-2 rounded-full border text-sm font-medium transition-colors " +
                             (active
-                              ? "bg-emerald-600 text-white border-emerald-600"
-                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800")
+                              ? "bg-[#00379C] text-white border-[#00379C]"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900")
                           }
                         >
                           {opt.label}
@@ -1437,8 +1437,8 @@ export default function WIR() {
                           className={
                             "px-4 py-2 rounded-full border text-sm font-medium transition-colors " +
                             (active
-                              ? "bg-emerald-600 text-white border-emerald-600"
-                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800")
+                              ? "bg-[#00379C] text-white border-[#00379C]"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900")
                           }
                         >
                           {opt.label}
@@ -1463,7 +1463,10 @@ export default function WIR() {
                         value={dFrom}
                         onChange={(e) => setDFrom(e.target.value)}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-gray-900
-                             dark:bg-neutral-900 dark:border-neutral-700 dark:text-white"
+                             outline-none
+                             focus:ring-2 focus:ring-[#00379C]/20 focus:border-[#00379C]/30
+                             dark:bg-neutral-950 dark:border-white/10 dark:text-white
+                             dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]/30"
                       />
                     </div>
                     <div>
@@ -1475,32 +1478,34 @@ export default function WIR() {
                         value={dTo}
                         onChange={(e) => setDTo(e.target.value)}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-gray-900
-                             dark:bg-neutral-900 dark:border-neutral-700 dark:text-white"
+                             outline-none
+                             focus:ring-2 focus:ring-[#00379C]/20 focus:border-[#00379C]/30
+                             dark:bg-neutral-950 dark:border-white/10 dark:text-white
+                             dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]/30"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* space so content doesn't hide behind footer buttons */}
                 <div className="h-24" />
               </div>
 
-              {/* Footer buttons (fixed) */}
-              <div className="px-5 sm:px-6 pb-5 pt-3 border-t border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+              <div className="px-5 sm:px-6 pb-5 pt-3 border-t border-slate-200/80 dark:border-white/10 bg-white dark:bg-neutral-950">
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     type="button"
                     onClick={resetFilterSheet}
                     className="w-full rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800
-                         hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                         hover:bg-slate-50
+                         dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900"
                   >
                     Clear
                   </button>
                   <button
                     type="button"
                     onClick={applyFilterSheet}
-                    className="w-full rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white
-                         hover:bg-emerald-700"
+                    className="w-full rounded-full bg-[#00379C] px-5 py-3 text-sm font-semibold text-white
+                         hover:brightness-110 active:scale-[0.99] transition"
                   >
                     Apply
                   </button>
@@ -1511,10 +1516,10 @@ export default function WIR() {
         </div>
       )}
 
-      {/* Permission modal (kept as-is) */}
+      {/* Permission modal (kept as-is, UI themed only) */}
       {permOpen && (
         <div className="fixed inset-0 z-50 bg-black/40">
-          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[70vh] sm:h-auto rounded-t-2xl sm:rounded-2xl overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border dark:border-white/10 p-4 sm:p-5 h-[70vh] sm:h-auto rounded-t-2xl sm:rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="text-base font-semibold dark:text-white">
                 View Permission Required
@@ -1522,7 +1527,7 @@ export default function WIR() {
               <button
                 onClick={() => setPermOpen(false)}
                 className="text-sm px-3 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50
-                           dark:bg-neutral-900 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                           dark:bg-neutral-950 dark:border-white/10 dark:hover:bg-neutral-900"
               >
                 Close
               </button>
@@ -1534,7 +1539,7 @@ export default function WIR() {
             </div>
 
             <div className="mt-4 space-y-3">
-              <div className="rounded-xl border dark:border-neutral-800 p-3">
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-3">
                 <div className="text-[12px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                   Selected WIR
                 </div>
@@ -1547,7 +1552,7 @@ export default function WIR() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-xl border dark:border-neutral-800 p-3">
+                <div className="rounded-xl border border-slate-200 dark:border-white/10 p-3">
                   <div className="text-[12px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                     Signed in as
                   </div>
@@ -1556,7 +1561,7 @@ export default function WIR() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border dark:border-neutral-800 p-3">
+                <div className="rounded-xl border border-slate-200 dark:border-white/10 p-3">
                   <div className="text-[12px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                     Your Role (derived)
                   </div>
@@ -1566,14 +1571,14 @@ export default function WIR() {
                 </div>
               </div>
 
-              <div className="rounded-xl border dark:border-neutral-800 p-3 bg-amber-50/60 dark:bg-amber-900/20">
-                <div className="text-[12px] sm:text-xs uppercase tracking-wide text-amber-800 dark:text-amber-200 mb-1">
+              <div className="rounded-xl border border-[#FCC020]/35 dark:border-[#FCC020]/20 p-3 bg-[#FCC020]/12 dark:bg-[#FCC020]/10">
+                <div className="text-[12px] sm:text-xs uppercase tracking-wide text-[#7A5200] dark:text-[#FCC020] mb-1">
                   Requirement
                 </div>
-                <div className="text-[13px] sm:text-sm text-amber-900 dark:text-amber-100">
+                <div className="text-[13px] sm:text-sm text-[#6A4800] dark:text-neutral-100">
                   {permMsg}
                 </div>
-                <div className="mt-2 text-[12px] text-amber-800/80 dark:text-amber-200/80">
+                <div className="mt-2 text-[12px] text-[#6A4800]/80 dark:text-[#FCC020]/80">
                   Allowed roles: Admin, Contractor, PMC, IH-PMT, Inspector, HOD
                 </div>
               </div>
@@ -1583,14 +1588,14 @@ export default function WIR() {
               <button
                 onClick={() => setPermOpen(false)}
                 className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50
-                           dark:bg-neutral-900 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                           dark:bg-neutral-950 dark:border-white/10 dark:hover:bg-neutral-900"
               >
                 Cancel
               </button>
 
               <button
                 onClick={() => setPermOpen(false)}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-full bg-emerald-600 text-white font-medium shadow-sm hover:bg-emerald-700 dark:border-emerald-700"
+                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-full bg-[#00379C] text-white font-medium shadow-sm hover:brightness-110 active:scale-[0.99] transition"
               >
                 OK
               </button>

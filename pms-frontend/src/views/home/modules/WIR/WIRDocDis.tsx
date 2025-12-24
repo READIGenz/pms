@@ -179,10 +179,10 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`px-4 py-2 rounded-full border text-sm font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+            className={`px-4 py-2 rounded-full border text-sm font-medium shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 ${
                 active
-                    ? "bg-emerald-600 text-white border-emerald-700/30"
-                    : "bg-white/80 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900/40 dark:text-gray-100 dark:border-neutral-800/60 dark:hover:bg-neutral-800/60"
+                    ? "bg-[#00379C] text-white border-[#00379C]/25 shadow-sm hover:brightness-110"
+                    : "bg-white/80 text-gray-800 hover:bg-[#00379C]/5 dark:bg-neutral-900/40 dark:text-gray-100 dark:border-neutral-800/60 dark:hover:bg-neutral-800/60"
             }`}
         >
             {children}
@@ -898,8 +898,8 @@ export default function WIRDocDis() {
             Recommended:
                 "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
             Approved:
-                "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-            APPROVE_WITH_COMMENTS: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+                "bg-[#23A192]/15 text-[#0f6e62] border-[#23A192]/30 dark:bg-[#23A192]/20 dark:text-[#23A192] dark:border-[#23A192]/30",
+            APPROVE_WITH_COMMENTS: "bg-[#FCC020]/20 text-[#7a5b00] border-[#FCC020]/40 dark:bg-[#FCC020]/15 dark:text-[#FCC020] dark:border-[#FCC020]/30",
             Rejected:
                 "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
             Returned:
@@ -1386,7 +1386,7 @@ export default function WIRDocDis() {
                         <button
                             type="button"
                             onClick={() => setNotesOpen(true)}
-                            className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                            className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 shadow-sm transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                             title="Notes"
                             aria-label="Notes"
                         >
@@ -1405,7 +1405,7 @@ export default function WIRDocDis() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={backToList}
-                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                         aria-label="Back"
                         title="Back"
                     >
@@ -1511,7 +1511,7 @@ export default function WIRDocDis() {
                                         <button
                                             type="button"
                                             onClick={() => setHistoryOpen(true)}
-                                            className="text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                            className="text-[12px] underline underline-offset-2 text-[#00379C] hover:text-[#002f86] dark:text-[#FCC020] dark:hover:opacity-90"
                                             title="View complete WIR change history"
                                         >
                                             View WIR History{typeof row.histories?.length === "number" ? ` (${row.histories.length})` : ""}
@@ -1522,7 +1522,7 @@ export default function WIRDocDis() {
                                         <button
                                             type="button"
                                             onClick={() => setRunnerHistoryOpen(true)}
-                                            className="text-[12px] underline underline-offset-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                            className="text-[12px] underline underline-offset-2 text-[#00379C] hover:text-[#002f86] dark:text-[#FCC020] dark:hover:opacity-90"
                                             title="View item-wise runner entries history"
                                         >
                                             View Runner History{totalRunnerRuns ? ` (${totalRunnerRuns})` : ""}
@@ -1633,7 +1633,7 @@ export default function WIRDocDis() {
                                                 <div className="pt-1">
                                                     <button
                                                         onClick={() => setFinalizeOpen(true)}
-                                                        className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-blue-600 text-white disabled:opacity-60"
+                                                        className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60"
                                                         disabled={
                                                             !(actingRole && (actingRole === "HOD" || actingRole === "Inspector+HOD")) ||
                                                             canonicalWirStatus(row.status) !== "Recommended"
@@ -1689,7 +1689,7 @@ export default function WIRDocDis() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setFollowupOpen(true)}
-                                                    className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white hover:opacity-95"
+                                                    className="text-sm px-3 py-2 rounded-lg border border-gray-200/70 dark:border-neutral-800/60 bg-[#00379C] text-white hover:brightness-110"
                                                     title="Schedule a follow-up inspection as next version"
                                                 >
                                                     {`Schedule Followup ${nextVersionLabel}`}
@@ -1717,7 +1717,7 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={saveAllItems}
                                         disabled={savingAll}
-                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white disabled:opacity-60 hover:opacity-95 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60 hover:opacity-95 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                     >
                                         {savingAll ? "Saving…" : "Save Progress"}
                                     </button>
@@ -1859,7 +1859,7 @@ export default function WIRDocDis() {
                                                                                             accept="image/*"
                                                                                             capture="environment"
                                                                                             multiple
-                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                                                                             ref={registerFileRef(it.id, 0)}
                                                                                             onChange={(e) => {
                                                                                                 if (!e.target.files) return;
@@ -1877,7 +1877,7 @@ export default function WIRDocDis() {
                                                                                             type="file"
                                                                                             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
                                                                                             multiple
-                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                                                                            className="hidden focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                                                                             ref={registerFileRef(it.id, 1)}
                                                                                             onChange={(e) => {
                                                                                                 if (!e.target.files) return;
@@ -1942,7 +1942,7 @@ export default function WIRDocDis() {
                                                             <button
                                                                 onClick={() => setEdit(it.id, { status: "PASS" })}
                                                                 className={`text-sm px-3 py-2 rounded-full border ${buf.status === "PASS"
-                                                                    ? "bg-emerald-600 text-white border-emerald-700"
+                                                                    ? "bg-[#00379C] text-white border-[#00379C]/30 hover:brightness-110"
                                                                     : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                                     }`}
                                                             >
@@ -1991,7 +1991,7 @@ export default function WIRDocDis() {
                                         <button
                                             onClick={() => onRecommend("APPROVE")}
                                             className={`text-sm px-3 py-2 rounded-full border ${rec === "APPROVE"
-                                                ? "bg-emerald-600 text-white border-emerald-700"
+                                                ? "bg-[#00379C] text-white border-[#00379C]/30 hover:brightness-110"
                                                 : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                 }`}
                                         >
@@ -2001,7 +2001,7 @@ export default function WIRDocDis() {
                                         <button
                                             onClick={() => onRecommend("APPROVE_WITH_COMMENTS")}
                                             className={`text-sm px-3 py-2 rounded-full border ${rec === "APPROVE_WITH_COMMENTS"
-                                                ? "bg-blue-600 text-white border-blue-700"
+                                                ? "bg-[#FCC020] text-slate-900 border-[#FCC020]/60 hover:brightness-105"
                                                 : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                                 }`}
                                         >
@@ -2042,7 +2042,7 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={saveAllItems}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-emerald-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                     >
                                         {savingAll ? "Saving…" : "Save Progress"}
                                     </button>
@@ -2050,14 +2050,14 @@ export default function WIRDocDis() {
                                     <button
                                         onClick={onPreview}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                     >
                                         Preview
                                     </button>
                                     <button
                                         onClick={onSendToHodClick}
                                         disabled={savingAll || !!recSubmitting}
-                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                     >
                                         {recSubmitting === "APPROVE" ? "Sending…" : "Send to HOD"}
                                     </button>
@@ -2091,7 +2091,7 @@ export default function WIRDocDis() {
                                     Notes — How this screen works
                                 </div>
                                 <button
-                                    className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                     onClick={() => setNotesOpen(false)}
                                 >
                                     Close
@@ -2222,7 +2222,7 @@ export default function WIRDocDis() {
                         <div className="flex items-center justify-between">
                             <div className="text-base font-semibold dark:text-white">Reschedule Inspection</div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setReschedOpen(false)}
                             >
                                 Close
@@ -2293,13 +2293,13 @@ export default function WIRDocDis() {
                         {/* Footer */}
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setReschedOpen(false)}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-4 py-2 text-sm rounded-full bg-amber-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full bg-amber-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 disabled={reschedSubmitting || !reschedDate || !reschedTime || !reschedReason.trim()}
                                 onClick={async () => {
                                     try {
@@ -2337,7 +2337,7 @@ export default function WIRDocDis() {
                                 WIR History — {row.code || row.wirId}
                             </div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setHistoryOpen(false)}
                             >
                                 Close
@@ -2405,7 +2405,7 @@ export default function WIRDocDis() {
                                 Runner Items History — {row.code || row.wirId}
                             </div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setRunnerHistoryOpen(false)}
                             >
                                 Close
@@ -2490,7 +2490,7 @@ export default function WIRDocDis() {
                                 Preview — Runner (Read only)
                             </div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setPreviewOpen(false)}
                             >
                                 Close
@@ -2594,7 +2594,7 @@ export default function WIRDocDis() {
                                                         <b>Status:</b>
                                                         <span
                                                             className={`text-[11px] px-2 py-0.5 rounded border ${buf.status === "PASS"
-                                                                ? "bg-emerald-600 text-white border-emerald-700"
+                                                                ? "bg-[#00379C] text-white border-[#00379C]/30 hover:brightness-110"
                                                                 : "dark:border-neutral-800"
                                                                 }`}
                                                         >
@@ -2652,7 +2652,7 @@ export default function WIRDocDis() {
                         <div className="flex items-center justify-between">
                             <div className="text-base font-semibold dark:text-white">Send to HOD — Confirmation</div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setHodConfirmOpen(false)}
                             >
                                 Close
@@ -2685,7 +2685,7 @@ export default function WIRDocDis() {
                                                     <input
                                                         type="radio"
                                                         name="hod-pick"
-                                                        className="shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                                        className="shrink-0 focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                                         checked={checked}
                                                         onChange={() => setHodSelectedUserId(u.userId)}
                                                     />
@@ -2703,13 +2703,13 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setHodConfirmOpen(false)}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-4 py-2 text-sm rounded-full bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={onConfirmSendToHod}
                                 disabled={hodLoading || !hodSelectedUserId}   // <— gate by selection
                             >
@@ -2737,13 +2737,13 @@ export default function WIRDocDis() {
 
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => { setHodReviewOpen(false); setHodPlannedPatch(null); }}
                             >
                                 Cancel
                             </button>
                             <button
-                                className="px-4 py-2 text-sm rounded-full bg-blue-600 text-white disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full bg-[#00379C] text-white hover:brightness-110 disabled:opacity-60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={async () => {
                                     try {
                                         setRecSubmitting(hodPlannedPatch.inspectorRecommendation);
@@ -2800,7 +2800,7 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end gap-2">
                             <button
-                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => {
                                     const id = valErrItemId;
                                     setValErrItemId(null);
@@ -2811,7 +2811,7 @@ export default function WIRDocDis() {
                                 Go to field
                             </button>
                             <button
-                                className="px-4 py-2 text-sm rounded-full bg-emerald-600 text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full bg-[#00379C] text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setValErrItemId(null)}
                             >
                                 Dismiss
@@ -2840,7 +2840,7 @@ export default function WIRDocDis() {
                         )}
                         <div className="mt-4 flex justify-end">
                             <button
-                                className="px-4 py-2 text-sm rounded-full bg-emerald-600 text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full bg-[#00379C] text-white font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setSendWarnOpen(false)}
                             >
                                 Got it
@@ -2874,7 +2874,7 @@ export default function WIRDocDis() {
                         </div>
                         <div className="mt-4 flex justify-end">
                             <button
-                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="px-4 py-2 text-sm rounded-full border border-gray-200/70 dark:border-neutral-800/60 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setNoEditPermOpen(false)}
                             >
                                 OK
@@ -2891,7 +2891,7 @@ export default function WIRDocDis() {
                         <div className="flex items-center justify-between">
                             <div className="text-base sm:text-lg font-semibold dark:text-white">Finalize Outcome</div>
                             <button
-                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                className="text-sm px-4 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25"
                                 onClick={() => setFinalizeOpen(false)}
                             >
                                 Close
@@ -2920,7 +2920,7 @@ export default function WIRDocDis() {
                                     type="button"
                                     onClick={() => setFinalizeOutcome("ACCEPT")}
                                     className={`text-sm px-3 py-2 rounded-lg border ${finalizeOutcome === "ACCEPT"
-                                        ? "bg-emerald-600 text-white border-emerald-700"
+                                        ? "bg-[#00379C] text-white border-[#00379C]/30 hover:brightness-110"
                                         : "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                         }`}
                                 >
@@ -3029,8 +3029,8 @@ export default function WIRDocDis() {
                                 onClick={onFinalizeNow}
                                 disabled={!finalizeOutcome || !!finalizeSubmitting}
                                 className={`w-full sm:w-auto text-sm px-3 py-2 rounded-lg border ${finalizeOutcome && !recSubmitting
-                                    ? "bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-700"
-                                    : "bg-blue-600/60 text-white cursor-not-allowed dark:border-blue-700"
+                                    ? "bg-[#00379C] text-white hover:bg-blue-700 dark:border-[#00379C]/30"
+                                    : "bg-[#00379C]/60 text-white cursor-not-allowed dark:border-[#00379C]/30"
                                     }`}
                                 title={finalizeOutcome ? "Finalize this WIR" : "Pick Approve or Reject"}
                             >
