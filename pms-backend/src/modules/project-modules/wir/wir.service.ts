@@ -1077,7 +1077,7 @@ export class WirService {
             itemId: null, // header-level (not tied to any item)
             runId: null,
             kind,
-            url: s.url,
+            url: s.url || s.relPath,
             thumbUrl: s.thumbUrl || undefined,
             fileName: s.fileName || undefined,
             fileSize: s.size ?? undefined,
@@ -1492,7 +1492,7 @@ export class WirService {
             wirId,
             itemId: m.itemId,
             kind,
-            url: s.url,
+            url: s.url || s.relPath,
             thumbUrl: s.thumbUrl || undefined,
             fileName: s.fileName || undefined,
             fileSize: s.size ?? undefined,

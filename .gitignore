@@ -1,4 +1,8 @@
-pms-backend/uploads/
+/pms-frontend/index.html
+/pms-backend/.env
+/pms-frontend/.env
+/pms-frontend/vite.config.ts
+/pms-backend/uploads/
 seed1.ts
 seed2.ts
 postgreSQL_Comm.txt

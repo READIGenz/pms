@@ -32,6 +32,7 @@ import HomeLayout from './views/home/HomeLayout';
 import Welcome from './views/home/Welcome';
 import Tiles from './views/home/Tiles';
 import MyProjects from './views/home/MyProjects';
+import MyModules from "./views/home/MyModules";
 import WIR from './views/home/modules/WIR/WIR';
 import CreateWIR from './views/home/modules/WIR/CreateWIR';
 import WIRDocDis from './views/home/modules/WIR/WIRDocDis';
@@ -140,6 +141,7 @@ export default function App() {
           <Route index element={<Welcome />} />
           <Route path="tiles" element={<Tiles />} />
           <Route path="my-projects" element={<MyProjects />} />
+          <Route path="projects/:projectId/modules" element={<MyModules />} />
           <Route path="projects/:projectId/wir" element={<WIR />} />
           <Route path="projects/:projectId/wir/new" element={<CreateWIR />} />
           <Route path="projects/:projectId/wir/:wirId/doc" element={<WIRDocDis />} />

@@ -57,6 +57,24 @@ const normalizeRole = (raw?: string) => {
   }
 };
 
+const gotoModules = (
+  navigate: ReturnType<typeof useNavigate>,
+  role: string,
+  proj: Project
+) => {
+  navigate(`/home/projects/${proj.projectId}/modules`, {
+    state: {
+      role: normalizeRole(role),
+      project: {
+        projectId: proj.projectId,
+        code: proj.code,
+        title: proj.title,
+      },
+    },
+    replace: false,
+  });
+};
+
 // --- Role → WIR path resolver ---
 const wirPathForRole = (role: string, projectId: string) => {
   switch (normalizeRole(role)) {
@@ -909,7 +927,7 @@ export default function MyProjects() {
             <button
               key={p.projectId}
               type="button"
-              onClick={() => gotoWir(navigate, role, p)}
+              onClick={() => gotoModules(navigate, role, p)}
               className="group w-full text-left rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-neutral-950 px-4 py-4 sm:px-5 sm:py-5 shadow-sm
                          hover:shadow-md hover:-translate-y-0.5 transition
                          focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/25 focus-visible:ring-offset-2 focus-visible:ring-offset-white
