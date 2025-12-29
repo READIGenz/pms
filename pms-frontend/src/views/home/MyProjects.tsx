@@ -715,7 +715,11 @@ export default function MyProjects() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/home/tiles")}
+<<<<<<< Updated upstream
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+=======
+            className="inline-flex items-center gap-1.5 h-8 rounded-full border border-slate-200 bg-white px-4 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+>>>>>>> Stashed changes
                        hover:bg-slate-50 hover:border-slate-300
                        dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
             type="button"

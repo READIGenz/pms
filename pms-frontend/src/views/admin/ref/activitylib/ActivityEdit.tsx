@@ -1,5 +1,6 @@
 // pms-frontend/src/views/admin/ref/ActivityEdit.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// UI/theme updated to match ActivityCreate.tsx exactly (no logic/API changes). :contentReference[oaicite:0]{index=0}
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
 
@@ -18,10 +19,10 @@ function decodeJwtPayload(token: string): any | null {
 
 /* ========================= Types (shared with ActivityLib) ========================= */
 const DISCIPLINES = ["Civil", "MEP", "Finishes"] as const;
-type Discipline = typeof DISCIPLINES[number];
+type Discipline = (typeof DISCIPLINES)[number];
 
 const STATUS_OPTIONS = ["Active", "Draft", "Inactive", "Archived"] as const;
-type ActivityStatus = typeof STATUS_OPTIONS[number];
+type ActivityStatus = (typeof STATUS_OPTIONS)[number];
 
 export type RefActivity = {
   id: string;
@@ -132,6 +133,15 @@ const FACETS = {
 export default function ActivityEdit() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
+
+  // Page title + shell subtitle
+  // useEffect(() => {
+  //   document.title = "Trinity PMS — Edit Activity";
+  //   (window as any).__ADMIN_SUBTITLE__ = "Edit existing activity.";
+  //   return () => {
+  //     (window as any).__ADMIN_SUBTITLE__ = "";
+  //   };
+  // }, []);
 
   /* ---- Admin gate (same behavior as your other file) ---- */
   useEffect(() => {
@@ -285,57 +295,65 @@ export default function ActivityEdit() {
     }
   };
 
+  // Loading state (styled like reference)
   if (loading) {
     return (
-      <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
-        Loading…
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4 text-sm text-slate-600 dark:text-slate-300">
+          Loading…
+        </div>
       </div>
     );
   }
+
+  // Error state (styled like reference but same behavior)
   if (err) {
     return (
-      <div className="p-6">
-        <div className="mb-3 p-3 rounded-xl text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
-          {err}
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+            {err}
+          </div>
+          <button
+            className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => nav(-1)}
+            type="button"
+          >
+            Back
+          </button>
         </div>
-        <button
-          className="px-3 py-2 rounded-xl border text-sm bg-white hover:bg-gray-50 border-gray-200
-                     dark:bg-neutral-900 dark:border-neutral-800 dark:hover:bg-neutral-800"
-          onClick={() => nav(-1)}
-        >
-          Back
-        </button>
       </div>
     );
   }
+
   if (!form) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-yellow-50 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
       <div className="mx-auto max-w-4xl">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+        {/* Header (match ActivityCreate) */}
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
               Edit Activity
             </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {form.code ? `${form.code} • ${form.title}` : form.title || "Untitled"}
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              {form.code ? `${form.code} • ` : ""}
+              {form.title || "Untitled"}
             </p>
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="px-3.5 py-2 rounded-xl border text-sm font-medium
-                         bg-white hover:bg-gray-50 border-gray-200 hover:border-gray-300
-                         dark:bg-neutral-900 dark:border-neutral-800 dark:text-gray-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/ref/activitylib")}
               type="button"
             >
               Back
             </button>
+
             <button
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium
-                         shadow-sm disabled:opacity-60 disabled:hover:bg-emerald-600"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               onClick={handleSave}
               type="button"
               disabled={!canSave || !!saving}
@@ -347,7 +365,7 @@ export default function ActivityEdit() {
 
         {/* Flash error */}
         {err && (
-          <div className="mb-4 p-3 rounded-xl text-sm text-red-700 bg-red-50 dark:bg-red-950/30 dark:text-red-300 border border-red-200 dark:border-red-900">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
@@ -355,7 +373,7 @@ export default function ActivityEdit() {
         {/* Form */}
         <div className="space-y-6">
           <Section title="Basics">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label="Business Code (optional unique)"
                 value={form.code ?? ""}
@@ -366,7 +384,9 @@ export default function ActivityEdit() {
                 label="Version (e.g., 1, 1.2, 1.2.3)"
                 value={
                   (form.versionLabel ??
-                    (form.version != null ? String(form.version) : "")) as string
+                    (form.version != null
+                      ? String(form.version)
+                      : "")) as string
                 }
                 onChange={(v) => setField("versionLabel", v as any)}
                 placeholder="1.2.3"
@@ -379,18 +399,21 @@ export default function ActivityEdit() {
                 options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
               />
               <div />
+
               <Input
                 label="Title"
                 value={form.title ?? ""}
                 onChange={(v) => setField("title", v as any)}
                 placeholder="Describe the activity clearly"
               />
+
               <SelectStrict
                 label="Discipline"
                 value={(form.discipline as any) ?? "Civil"}
                 onChange={(v) => setField("discipline", v as Discipline as any)}
                 options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
               />
+
               <SelectStrict
                 label="Stage"
                 value={form.stageLabel ?? ""}
@@ -451,7 +474,7 @@ export default function ActivityEdit() {
               placeholder="Any internal notes or description…"
               rows={4}
             />
-            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               Last updated: {fmt(form.updatedAt)}
             </div>
           </Section>
@@ -461,7 +484,20 @@ export default function ActivityEdit() {
   );
 }
 
-/* ========================= Small UI bits ========================= */
+/* ========================= UI bits (match ActivityCreate) ========================= */
+
+const labelCls =
+  "mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400";
+
+const inputCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
+const selectCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
+const textareaCls =
+  "w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
 function Section({
   title,
   children,
@@ -470,11 +506,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-2">
-        {title}
-      </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-emerald-100/60 dark:border-neutral-800 p-4 sm:p-5">
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
+        </div>
         {children}
       </div>
     </section>
@@ -498,15 +537,9 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <input
-        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
-                   outline-none transition
-                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
-                   disabled:opacity-60
-                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
+        className={inputCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -532,14 +565,9 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <textarea
-        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
-                   outline-none transition resize-y
-                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
-                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
+        className={textareaCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -564,14 +592,9 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <select
-        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900
-                   outline-none transition
-                   focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
-                   dark:border-neutral-800 dark:bg-neutral-950 dark:text-white"
+        className={selectCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -599,6 +622,7 @@ function TagPicker({
 }) {
   const norm = (s: string) => s.trim().toLowerCase();
   const selectedSet = new Set(selected.map(norm));
+
   const toggle = (v: string) => {
     const has = selectedSet.has(norm(v));
     const next = has
@@ -609,9 +633,7 @@ function TagPicker({
 
   return (
     <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </div>
+      <div className={labelCls}>{label}</div>
       <div className="flex flex-wrap gap-2">
         {all.map((v) => {
           const active = selectedSet.has(norm(v));
@@ -620,12 +642,11 @@ function TagPicker({
               key={v}
               type="button"
               onClick={() => toggle(v)}
-              className={[
-                "px-2.5 py-1 rounded-full border text-xs font-medium transition",
+              className={
                 active
-                  ? "bg-neutral-900 text-white border-neutral-900 shadow-sm dark:bg-white dark:text-neutral-900 dark:border-white"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300 dark:bg-neutral-950 dark:text-gray-200 dark:border-neutral-800 dark:hover:bg-neutral-800",
-              ].join(" ")}
+                  ? "rounded-full border border-[#23A192]/30 bg-[#23A192]/10 px-3 py-1 text-xs font-semibold text-[#0F6F64] shadow-sm dark:border-[#23A192]/40 dark:bg-[#23A192]/15 dark:text-[#7FE3D6]"
+                  : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              }
             >
               {v}
             </button>

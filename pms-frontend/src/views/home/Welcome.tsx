@@ -120,8 +120,14 @@ export default function Welcome() {
               </div>
             )}
 
+<<<<<<< Updated upstream
             <p className="text-sm md:text-base text-gray-600 dark:text-gray-400">
               Your personalized workspace brings together inspections, approvals, and project updates in one place.
+=======
+            <p className="text-sm md:text-base text-slate-600 dark:text-neutral-400">
+              Your personalized workspace brings together inspections, approvals,
+              and project updates in one place.
+>>>>>>> Stashed changes
             </p>
 
             <div className="pt-4 flex justify-center md:justify-start">
@@ -135,6 +141,22 @@ export default function Welcome() {
                 </svg>
               </button>
             </div>
+<<<<<<< Updated upstream
+=======
+
+            {/* Optional quick chips */}
+            <div className="pt-3 flex flex-wrap justify-center md:justify-start gap-2">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-200">
+                Fast approvals
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-200">
+                Centralized updates
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-200">
+                One dashboard
+              </span>
+            </div>
+>>>>>>> Stashed changes
           </div>
         </div>
       </section>

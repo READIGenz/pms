@@ -1405,7 +1405,7 @@ export default function WIRDocDis() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={backToList}
-                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                        className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full border border-gray-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-neutral-900/60 hover:bg-gray-50 dark:hover:bg-neutral-800 font-medium transition active:scale-[0.99] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                         aria-label="Back"
                         title="Back"
                     >

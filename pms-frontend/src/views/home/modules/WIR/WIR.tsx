@@ -375,7 +375,7 @@ export default function WIR() {
   const [search, setSearch] = useState("");
 
   // Sort
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // ✅ Quick tabs: All / Today / Upcoming
   const [quickTab, setQuickTab] = useState<QuickTab>("all");

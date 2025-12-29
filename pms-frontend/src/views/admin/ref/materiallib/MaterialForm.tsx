@@ -1,48 +1,27 @@
 // pms-frontend/src/views/admin/ref/MaterialForm.tsx
-import { useEffect, useMemo, useState } from "react";
+// UI/theme updated to match ActivityCreate.tsx exactly (NO logic/API changes).
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
 
 // ---- Error helpers ----
 function extractServerError(e: any): string {
-  // Axios-style payload
   const data = e?.response?.data;
-
-  // 1) Prisma known errors (very common)
-  //    If your backend forwards `code`, this turns P2002 (unique) into a friendly line.
   const prismaCode = data?.code || data?.meta?.code || e?.code;
   if (prismaCode === "P2002") {
-    // Prisma P2002 typically includes `meta.target` like ['RefMaterial_code_key']
     const target = data?.meta?.target || data?.target || "Unique field";
     return `Duplicate value: ${
       Array.isArray(target) ? target.join(", ") : target
     } must be unique.`;
   }
-
-  // 2) Nest ValidationPipe: message can be string[] or string
-  //    e.g. { statusCode: 400, message: ["name must be a string", ...], error: "Bad Request" }
   if (Array.isArray(data?.message) && data?.message.length) {
     return data.message.join(", ");
   }
-  if (typeof data?.message === "string" && data.message) {
-    return data.message;
-  }
-
-  // 3) Common server shapes
-  if (typeof data?.error === "string" && data.error) {
-    return data.error;
-  }
-  if (typeof data?.detail === "string" && data.detail) {
-    return data.detail;
-  }
-  if (typeof data === "string" && data) {
-    return data;
-  }
-
-  // 4) Axios top-level message / fallback
-  if (typeof e?.message === "string" && e.message) {
-    return e.message;
-  }
+  if (typeof data?.message === "string" && data.message) return data.message;
+  if (typeof data?.error === "string" && data.error) return data.error;
+  if (typeof data?.detail === "string" && data.detail) return data.detail;
+  if (typeof data === "string" && data) return data;
+  if (typeof e?.message === "string" && e.message) return e.message;
   return "Request failed (400). Please check the field values and try again.";
 }
 
@@ -72,7 +51,6 @@ export type RefMaterial = {
   versionMajor?: number | null;
   versionMinor?: number | null;
   versionPatch?: number | null;
-
   notes?: string | null;
   status: string;
   createdAt: string;
@@ -97,7 +75,25 @@ const CATEGORIES = [
 ] as const;
 const STATUSES = ["Active", "Draft", "Inactive", "Archived"] as const;
 
-/* ========================= Helpers ========================= */
+/* ========================= Helpers (styled like ActivityCreate.tsx) ========================= */
+const labelCls =
+  "mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400";
+
+const inputCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25 ";
+
+const selectCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25 ";
+
+const textareaCls =
+  "w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25 ";
+
 function Field({
   label,
   children,
@@ -109,9 +105,8 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}{" "}
-        {required ? <span className="text-red-500">*</span> : null}
+      <span className={labelCls}>
+        {label} {required ? <span className="text-red-500">*</span> : null}
       </span>
       {children}
     </label>
@@ -119,43 +114,15 @@ function Field({
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={
-        "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
-        "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 " +
-        "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white " +
-        (props.className || "")
-      }
-    />
-  );
+  return <input {...props} className={inputCls + (props.className || "")} />;
 }
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
-    <textarea
-      {...props}
-      className={
-        "w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm " +
-        "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 " +
-        "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white " +
-        (props.className || "")
-      }
-    />
+    <textarea {...props} className={textareaCls + (props.className || "")} />
   );
 }
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className={
-        "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm " +
-        "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 " +
-        "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white " +
-        (props.className || "")
-      }
-    />
-  );
+  return <select {...props} className={selectCls + (props.className || "")} />;
 }
 
 function toCSV(a?: string[] | null) {
@@ -346,6 +313,29 @@ function FormBody({
   );
 }
 
+/* ========================= Shared Section (match ActivityCreate) ========================= */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
+
 /* ========================= Create Page ========================= */
 export function MaterialNewPage() {
   const nav = useNavigate();
@@ -370,20 +360,19 @@ export function MaterialNewPage() {
         standards: data.standards || [],
         fireRating: data.fireRating || null,
         keyProps: data.keyProps || [],
-        //version: Number(data.version ?? 1),
         versionLabel:
           (data as any).versionLabel ??
           (data.version != null ? String(data.version) : null),
         notes: data.notes || null,
         status: data.status || "Active",
       };
+
       const problems: string[] = [];
       if (!payload.name?.trim()) problems.push("Name is required.");
       if (payload.code && payload.code.length > 120)
         problems.push("Code must be ≤ 120 characters.");
       if (payload.name && payload.name.length > 240)
         problems.push("Name must be ≤ 240 characters.");
-      //if (!Number.isFinite(payload.version) || Number(payload.version) < 1) problems.push('Version must be a positive number.');
 
       const vlabel = payload.versionLabel?.trim();
       if (vlabel && !/^\d+(\.\d+){0,2}$/.test(vlabel)) {
@@ -406,46 +395,50 @@ export function MaterialNewPage() {
   }
 
   if (!data) return null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+        {/* Header (match ActivityCreate) */}
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
               New Material
             </h1>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              {data.code ? `${data.code} • ` : ""}
+              {data.name || "New material"}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav(-1)}
               type="button"
             >
-              Cancel
+              Back
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               disabled={saving}
               onClick={onSave}
               type="button"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
-        <section className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-            Basics
-          </div>
+        <Section title="Basics">
           <FormBody data={data} setData={setData as any} />
-        </section>
+        </Section>
       </div>
     </div>
   );
@@ -476,13 +469,13 @@ export function MaterialEditPage() {
         standards: data.standards || [],
         fireRating: data.fireRating || null,
         keyProps: data.keyProps || [],
-        //version: Number(data.version ?? 1),
         versionLabel:
           (data as any).versionLabel ??
           (data.version != null ? String(data.version) : null),
         notes: data.notes || null,
         status: data.status || "Active",
       };
+
       const problems: string[] = [];
       if (!payload.name?.trim()) problems.push("Name is required.");
       if (payload.code && payload.code.length > 120)
@@ -511,63 +504,91 @@ export function MaterialEditPage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-slate-200/80 bg-white/95 p-5 text-sm text-gray-600 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-gray-300">
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4 text-sm text-slate-600 dark:text-slate-300">
           Loading…
         </div>
       </div>
     );
+
   if (error)
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-        <div className="mx-auto max-w-4xl rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          {error}
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+            {error}
+          </div>
+          <button
+            className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => nav(-1)}
+            type="button"
+          >
+            Back
+          </button>
         </div>
       </div>
     );
+
   if (!data) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+        {/* Header (match ActivityCreate) */}
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
               Edit Material
             </h1>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              {data.code ? `${data.code} • ` : ""}
+              {data.name || "Material"}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav(-1)}
               type="button"
             >
-              Cancel
+              Back
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               disabled={saving}
               onClick={onSave}
               type="button"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
-        <section className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-            Basics
-          </div>
+        <Section title="Basics">
           <FormBody data={data} setData={setData as any} />
-        </section>
+        </Section>
+
+        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          Last updated: {data.updatedAt ? fmt(data.updatedAt) : "—"}
+        </div>
       </div>
     </div>
   );
+}
+
+function fmt(iso?: string) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  } catch {
+    return iso!;
+  }
 }
