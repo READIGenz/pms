@@ -128,27 +128,38 @@ const canonicalDisc = (
 
 function StatusBadge({ value }: { value?: string | null }) {
   const v = canonicalWirStatus(value);
-  const map: Record<WirStatusCanonical, string> = {
-    Draft:
-      "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
-    Submitted:
-      "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-    InspectorRecommended:
-      "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+
+  // style classes per canonical status
+  const styleMap: Record<WirStatusCanonical, string> = {
+    Draft: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/40 dark:text-slate-200 dark:border-slate-700",
+    Submitted: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800",
+    InspectorRecommended: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800",
     HODApproved:
       "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-    HODRejected:
-      "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
-    OnHold:
-      "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-800",
-    Closed:
-      "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
-    Unknown:
-      "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+    HODRejected: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800",
+    OnHold: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800",
+    Closed: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
+    Unknown: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/20 dark:text-slate-200 dark:border-slate-700",
   };
+
+  // human-facing labels per canonical status
+  const labelMap: Record<WirStatusCanonical, string> = {
+    Draft: "Draft",
+    Submitted: "Submitted",
+    InspectorRecommended: "Inspector Recommended",
+    // 👇 change only this label
+    HODApproved: "HODAccepted",
+    HODRejected: "HOD Rejected",
+    OnHold: "On Hold",
+    Closed: "Closed",
+    Unknown: "Unknown",
+  };
+
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${map[v]}`}>
-      {v}
+    <span
+      className={`text-[10px] px-1.5 py-0.5 rounded border ${styleMap[v]}`}
+    >
+      {labelMap[v] ?? v}
     </span>
   );
 }
@@ -166,10 +177,10 @@ function KPI({
     tone === "info"
       ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
       : tone === "warn"
-      ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-      : tone === "alert"
-      ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
-      : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
+        ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+        : tone === "alert"
+          ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
+          : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
 
   return (
     <div
@@ -208,10 +219,10 @@ type WirLite = {
   rescheduleReason?: string | null;
 
   inspectorRecommendation?:
-    | "APPROVE"
-    | "APPROVE_WITH_COMMENTS"
-    | "REJECT"
-    | null;
+  | "APPROVE"
+  | "APPROVE_WITH_COMMENTS"
+  | "REJECT"
+  | null;
   hodOutcome?: "ACCEPT" | "REJECT" | null;
 };
 
@@ -319,11 +330,11 @@ export default function WIR() {
 
   const role = normalizeRole(
     (user as any)?.role ??
-      (claims as any)?.role ??
-      (claims as any)?.userRole ??
-      (claims as any)?.roleName ??
-      (loc.state as NavState | undefined)?.role ??
-      ""
+    (claims as any)?.role ??
+    (claims as any)?.userRole ??
+    (claims as any)?.roleName ??
+    (loc.state as NavState | undefined)?.role ??
+    ""
   );
   const projectId =
     params.projectId ||
@@ -334,10 +345,10 @@ export default function WIR() {
   // current user id (stringify for stable comparisons)
   const currentUserId = String(
     (user as any)?.id ??
-      (claims as any)?.userId ??
-      (claims as any)?.sub ??
-      (claims as any)?.id ??
-      ""
+    (claims as any)?.userId ??
+    (claims as any)?.sub ??
+    (claims as any)?.id ??
+    ""
   );
 
   // Member-safe role & matrix (server authoritative when ready)
@@ -664,11 +675,11 @@ export default function WIR() {
     // 1) Search
     let out = q
       ? list.filter((w) => {
-          const hay = [w.code, w.title, w.status].map((v) =>
-            (v || "").toString().toLowerCase()
-          );
-          return hay.some((s) => s.includes(q));
-        })
+        const hay = [w.code, w.title, w.status].map((v) =>
+          (v || "").toString().toLowerCase()
+        );
+        return hay.some((s) => s.includes(q));
+      })
       : list;
 
     // 2) Hide Drafts not created by me (master logic)
@@ -851,12 +862,12 @@ export default function WIR() {
           effectiveRole === "Contractor"
             ? `/home/projects/${projectId}/wir/new`
             : effectiveRole === "PMC"
-            ? `/home/pmc/projects/${projectId}/wir/new`
-            : effectiveRole === "IH-PMT"
-            ? `/home/ihpmt/projects/${projectId}/wir/new`
-            : effectiveRole === "Client"
-            ? `/home/client/projects/${projectId}/wir/new`
-            : `/home/projects/${projectId}/wir/new`;
+              ? `/home/pmc/projects/${projectId}/wir/new`
+              : effectiveRole === "IH-PMT"
+                ? `/home/ihpmt/projects/${projectId}/wir/new`
+                : effectiveRole === "Client"
+                  ? `/home/client/projects/${projectId}/wir/new`
+                  : `/home/projects/${projectId}/wir/new`;
 
         navigate(`${baseCreate}?editId=${w.wirId}`, {
           state: {
@@ -883,8 +894,8 @@ export default function WIR() {
         status === 401
           ? "You are not signed in or your session expired. Please sign in to view this WIR."
           : status === 403
-          ? "You don’t have permission on this project to open this WIR. Ask an Admin to assign you a viewing role."
-          : VIEW_REQUIREMENT_TEXT;
+            ? "You don’t have permission on this project to open this WIR. Ask an Admin to assign you a viewing role."
+            : VIEW_REQUIREMENT_TEXT;
 
       setPermForWir(w);
       setPermMsg(msg);
@@ -908,12 +919,12 @@ export default function WIR() {
       effectiveRole === "Contractor"
         ? `/home/projects/${projectId}/wir/new`
         : effectiveRole === "PMC"
-        ? `/home/pmc/projects/${projectId}/wir/new`
-        : effectiveRole === "IH-PMT"
-        ? `/home/ihpmt/projects/${projectId}/wir/new`
-        : effectiveRole === "Client"
-        ? `/home/client/projects/${projectId}/wir/new`
-        : `/home/projects/${projectId}/wir/new`;
+          ? `/home/pmc/projects/${projectId}/wir/new`
+          : effectiveRole === "IH-PMT"
+            ? `/home/ihpmt/projects/${projectId}/wir/new`
+            : effectiveRole === "Client"
+              ? `/home/client/projects/${projectId}/wir/new`
+              : `/home/projects/${projectId}/wir/new`;
 
     navigate(base, {
       state: {
@@ -1192,7 +1203,7 @@ export default function WIR() {
                   ? "relative z-[5] mt-[-10px] ml-4"
                   : "relative z-[10]";
 
-                                const busy = preflightId === w.wirId;
+                const busy = preflightId === w.wirId;
                 const isHL = highlightId && w.wirId === highlightId;
 
                 const any = w as any;
@@ -1222,13 +1233,11 @@ export default function WIR() {
                 const reschedTimeDisp = fmtTime12(reschedTimeRaw);
 
                 const reschedTip = isRescheduled
-                  ? `Rescheduled → ${
-                      w.rescheduleForDate
-                        ? new Date(w.rescheduleForDate).toLocaleDateString()
-                        : "—"
-                    } • ${reschedTimeDisp || "—"}${
-                      w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
-                    }`
+                  ? `Rescheduled → ${w.rescheduleForDate
+                    ? new Date(w.rescheduleForDate).toLocaleDateString()
+                    : "—"
+                  } • ${reschedTimeDisp || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+                  }`
                   : "";
 
                 const titleLine = [
@@ -1254,6 +1263,9 @@ export default function WIR() {
                 const isAwdC =
                   (w.inspectorRecommendation || "").toUpperCase() ===
                   "APPROVE_WITH_COMMENTS";
+                const isClosedPill =
+                  (w.inspectorRecommendation || "").toUpperCase() === "APPROVE" &&
+                  (w.hodOutcome || "").toUpperCase() === "ACCEPT";
                 const hasChild =
                   w.code &&
                   typeof w.version === "number" &&
@@ -1264,10 +1276,10 @@ export default function WIR() {
                   discKey === "civil"
                     ? "Civil"
                     : discKey === "finishes"
-                    ? "Finishes"
-                    : discKey === "mep"
-                    ? "MEP"
-                    : "Unknown";
+                      ? "Finishes"
+                      : discKey === "mep"
+                        ? "MEP"
+                        : "Unknown";
 
                 return (
                   <button
@@ -1296,23 +1308,34 @@ export default function WIR() {
                       </div>
 
                       <div className="shrink-0 flex flex-col items-end gap-1">
-                        <StatusBadge value={st} />
-                        {isAwdC && (
-                          <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
-                            AWC
+                        {isClosedPill ? (
+                          // When Closed pill is active -> show ONLY this
+                          <span className="text-[11px] rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 dark:bg-emerald-900/20 dark:border-emerald-800/40 dark:text-emerald-200">
+                            Closed
                           </span>
-                        )}
-                        {hasChild && (
-                          <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
-                            Has Follow-up
-                          </span>
-                        )}
-                        {isRescheduled && (
-                          <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
-                            Rescheduled
-                          </span>
+                        ) : (
+                          <>
+                            <StatusBadge value={st} />
+
+                            {isAwdC && (
+                              <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
+                                AWC
+                              </span>
+                            )}
+                            {hasChild && (
+                              <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
+                                Has Follow-up
+                              </span>
+                            )}
+                            {isRescheduled && (
+                              <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
+                                Rescheduled
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
+
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">

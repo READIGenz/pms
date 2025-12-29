@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "start:dev": "nest start --watch",
+    "build": "nest build",
+    "start-prod": "node dist/main.js",
     "prisma:gen": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:seed": "ts-node prisma/seed.ts"
