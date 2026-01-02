@@ -1,4 +1,6 @@
 // pms-frontend/src/views/admin/ref/checklist/ChecklistForm.tsx
+// UI/theme updated to match ActivityCreate.tsx exactly (NO logic/API changes).
+// Source: :contentReference[oaicite:0]{index=0}
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
@@ -85,14 +87,32 @@ export type RefChecklist = {
   versionMinor?: number | null;
   versionPatch?: number | null;
   aiDefault?: boolean | null;
-  items?: any[] | null; // will carry rich item fields in FE
+  items?: any[] | null;
   itemsCount?: number | null;
   _count?: { items?: number } | null;
   updatedAt: string;
   createdAt?: string;
 };
 
-/* ========================= UI helpers (same vibe as MaterialForm) ========================= */
+/* ========================= ActivityCreate-aligned UI helpers ========================= */
+const labelCls =
+  "mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400";
+
+const inputCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500 dark:focus:ring-[#FCC020]/25 ";
+
+const selectCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25 ";
+
+const textareaCls =
+  "w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm " +
+  "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 " +
+  "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500 dark:focus:ring-[#FCC020]/25 ";
+
 function Field({
   label,
   children,
@@ -104,9 +124,8 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-        {label}{" "}
-        {required ? <span className="text-rose-500">*</span> : null}
+      <span className={labelCls}>
+        {label} {required ? <span className="text-rose-500">*</span> : null}
       </span>
       {children}
     </label>
@@ -114,29 +133,14 @@ function Field({
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={
-        "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
-        "outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 " +
-        "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500 " +
-        (props.className || "")
-      }
-    />
-  );
+  return <input {...props} className={inputCls + (props.className || "")} />;
 }
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={selectCls + (props.className || "")} />;
+}
+function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
-    <select
-      {...props}
-      className={
-        "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm " +
-        "outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 " +
-        "dark:border-neutral-700 dark:bg-neutral-900 dark:text-white " +
-        (props.className || "")
-      }
-    />
+    <textarea {...props} className={textareaCls + (props.className || "")} />
   );
 }
 
@@ -159,7 +163,6 @@ function useChecklist(id?: string) {
 
   useEffect(() => {
     if (!id) {
-      // Defaults for NEW
       setData({
         code: "",
         title: "",
@@ -178,9 +181,7 @@ function useChecklist(id?: string) {
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get(
-          `/admin/ref/checklists/${id}?includeItems=1`
-        );
+        const res = await api.get(`/admin/ref/checklists/${id}?includeItems=1`);
         if (!cancelled) {
           const r = res.data;
           setData({
@@ -208,21 +209,20 @@ function useChecklist(id?: string) {
 
 /* ========================= Items Editor (rich fields + preview) ========================= */
 type UiItem = {
-  text?: string; // Title
-  requirement?: "Mandatory" | "Optional" | null; // Requirement
-  itemCode?: string | null; // Item Code
-  critical?: boolean | null; // Critical (Yes/No)
-  aiEnabled?: boolean | null; // AI (Yes/No)
-  aiConfidence?: number | null; // 0..1
-  units?: string | null; // mm, N/mm2, etc
-  tolerance?: "<=" | "+-" | "=" | null; // tolerance selector
-  base?: number | null; // base value
-  plus?: number | null; // + tolerance
-  minus?: number | null; // - tolerance
-  tags?: string[] | null; // ['visual','measurement','evidence','document']
+  text?: string;
+  requirement?: "Mandatory" | "Optional" | null;
+  itemCode?: string | null;
+  critical?: boolean | null;
+  aiEnabled?: boolean | null;
+  aiConfidence?: number | null;
+  units?: string | null;
+  tolerance?: "<=" | "+-" | "=" | null;
+  base?: number | null;
+  plus?: number | null;
+  minus?: number | null;
+  tags?: string[] | null;
 };
 
-// preview string builder
 function previewString(
   tol?: string | null,
   base?: number | null,
@@ -248,7 +248,6 @@ function ItemsEditor({
   items: UiItem[];
   onChange: (next: UiItem[]) => void;
 }) {
-  // Single "new item" draft and toggle
   const [showForm, setShowForm] = useState(false);
   const emptyDraft: UiItem = {
     text: "",
@@ -309,10 +308,8 @@ function ItemsEditor({
     };
 
     if (editingIndex == null) {
-      // Add new
       onChange([...(items || []), normalized]);
     } else {
-      // Save edit
       const next = [...(items || [])];
       next[editingIndex] = normalized;
       onChange(next);
@@ -350,41 +347,46 @@ function ItemsEditor({
 
   return (
     <div className="grid gap-3">
-      {/* Toggle New Item form */}
       {!showForm ? (
         <div>
           <button
             type="button"
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
             onClick={() => setShowForm(true)}
           >
             + Add Item
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-          <div className="font-medium text-sm text-slate-800 dark:text-white">
-            New Item
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+              {editingIndex == null ? "New Item" : "Edit Item"}
+            </div>
+            <button
+              type="button"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              onClick={() => {
+                setDraft(emptyDraft);
+                setEditingIndex(null);
+                setShowForm(false);
+                setFormErr(null);
+              }}
+            >
+              Close
+            </button>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* Title */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Title
-              </span>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Field label="Title" required>
               <Input
                 placeholder="e.g., Beam depth measurement"
                 value={draft.text || ""}
                 onChange={(e) => patchDraft({ text: e.target.value })}
               />
-            </label>
+            </Field>
 
-            {/* Requirement */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Requirement
-              </span>
+            <Field label="Requirement">
               <Select
                 value={draft.requirement || "Mandatory"}
                 onChange={(e) =>
@@ -394,27 +396,19 @@ function ItemsEditor({
                 <option value="Mandatory">Mandatory</option>
                 <option value="Optional">Optional</option>
               </Select>
-            </label>
+            </Field>
 
-            {/* Item Code */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Item Code
-              </span>
+            <Field label="Item Code">
               <Input
                 placeholder="e.g., STR-BM-001"
                 value={draft.itemCode || ""}
                 onChange={(e) => patchDraft({ itemCode: e.target.value })}
               />
-            </label>
+            </Field>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-            {/* Critical */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Critical
-              </span>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Field label="Critical">
               <Select
                 value={draft.critical ? "Yes" : "No"}
                 onChange={(e) =>
@@ -424,13 +418,9 @@ function ItemsEditor({
                 <option>No</option>
                 <option>Yes</option>
               </Select>
-            </label>
+            </Field>
 
-            {/* AI */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                AI
-              </span>
+            <Field label="AI">
               <Select
                 value={draft.aiEnabled ? "Yes" : "No"}
                 onChange={(e) =>
@@ -440,13 +430,9 @@ function ItemsEditor({
                 <option>No</option>
                 <option>Yes</option>
               </Select>
-            </label>
+            </Field>
 
-            {/* AI Confidence */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                AI Confidence (0–1)
-              </span>
+            <Field label="AI Confidence (0–1)">
               <Input
                 type="number"
                 step="0.01"
@@ -458,27 +444,19 @@ function ItemsEditor({
                   patchDraft({ aiConfidence: v === "" ? null : Number(v) });
                 }}
               />
-            </label>
+            </Field>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
-            {/* Units */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Units
-              </span>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Field label="Units">
               <Input
                 placeholder="e.g., mm, N/mm2, mm/m"
                 value={draft.units || ""}
                 onChange={(e) => patchDraft({ units: e.target.value })}
               />
-            </label>
+            </Field>
 
-            {/* Tolerance */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Tolerance
-              </span>
+            <Field label="Tolerance">
               <Select
                 value={draft.tolerance || "+-"}
                 onChange={(e) =>
@@ -490,13 +468,9 @@ function ItemsEditor({
                 <option value="+-">Range (±)</option>
                 <option value="=">Equal (=)</option>
               </Select>
-            </label>
+            </Field>
 
-            {/* Base */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                Base
-              </span>
+            <Field label="Base">
               <Input
                 type="number"
                 step="0.001"
@@ -507,13 +481,9 @@ function ItemsEditor({
                   })
                 }
               />
-            </label>
+            </Field>
 
-            {/* Plus */}
-            <label className="grid gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                + Plus
-              </span>
+            <Field label="+ Plus">
               <Input
                 type="number"
                 step="0.001"
@@ -524,29 +494,26 @@ function ItemsEditor({
                   })
                 }
               />
-            </label>
+            </Field>
 
-            {/* Minus */}
-            <label className="grid gap-1 md:col-start-4">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-                - Minus
-              </span>
-              <Input
-                type="number"
-                step="0.001"
-                value={draft.minus == null ? "" : String(draft.minus)}
-                onChange={(e) =>
-                  patchDraft({
-                    minus:
-                      e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-              />
-            </label>
+            <div className="md:col-start-4">
+              <Field label="- Minus">
+                <Input
+                  type="number"
+                  step="0.001"
+                  value={draft.minus == null ? "" : String(draft.minus)}
+                  onChange={(e) =>
+                    patchDraft({
+                      minus:
+                        e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+            </div>
           </div>
 
-          {/* Preview */}
-          <div className="mt-2 text-xs text-slate-600 dark:text-neutral-300">
+          <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
             Preview:{" "}
             <span className="font-medium">
               {previewString(
@@ -559,11 +526,8 @@ function ItemsEditor({
             {draft.units ? ` ${draft.units}` : ""}
           </div>
 
-          {/* Tag picker */}
-          <div className="grid gap-2 mt-3">
-            <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-400">
-              Tags
-            </div>
+          <div className="mt-3">
+            <div className={labelCls}>Tags</div>
             <div className="flex flex-wrap gap-2">
               {TAG_OPTIONS.map((tag) => {
                 const active = (draft.tags || []).includes(tag);
@@ -571,11 +535,11 @@ function ItemsEditor({
                   <button
                     key={tag}
                     type="button"
-                    className={`px-2 py-1 rounded-full border text-[11px] font-medium transition ${
+                    className={
                       active
-                        ? "bg-emerald-600 text-white border-emerald-600"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                    }`}
+                        ? "rounded-full border border-[#23A192]/30 bg-[#23A192]/10 px-3 py-1 text-xs font-semibold text-[#0F6F64] shadow-sm dark:border-[#23A192]/40 dark:bg-[#23A192]/15 dark:text-[#7FE3D6]"
+                        : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                    }
                     onClick={() => toggleTagDraft(tag)}
                   >
                     {tag}
@@ -589,17 +553,17 @@ function ItemsEditor({
             <div className="mt-2 text-xs text-rose-600">{formErr}</div>
           )}
 
-          <div className="flex gap-2 pt-3">
+          <div className="flex gap-2 pt-4">
             <button
               type="button"
-              className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+              className="h-8 rounded-full bg-[#00379C] px-4 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110"
               onClick={onCommit}
             >
               {editingIndex == null ? "Add" : "Save"}
             </button>
             <button
               type="button"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-4 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => {
                 setDraft(emptyDraft);
                 setEditingIndex(null);
@@ -618,30 +582,23 @@ function ItemsEditor({
         <table className="w-full min-w-[1000px] text-sm border-collapse">
           <thead className="sticky top-0">
             <tr className="text-left bg-slate-50 dark:bg-neutral-900/60">
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                #
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Title &amp; Description
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Requirement
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Critical
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Tags
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Tolerance
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Value
-              </th>
-              <th className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] uppercase tracking-wide text-slate-500">
-                Actions
-              </th>
+              {[
+                "#",
+                "Title & Description",
+                "Requirement",
+                "Critical",
+                "Tags",
+                "Tolerance",
+                "Value",
+                "Actions",
+              ].map((h) => (
+                <th
+                  key={h}
+                  className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -662,12 +619,10 @@ function ItemsEditor({
                       {i + 1}
                     </td>
 
-                    {/* Title & Description */}
                     <td className="px-3 py-2">
                       <div className="font-medium text-slate-800 dark:text-white">
                         {it.text || "—"}
                       </div>
-                      {/* Use itemCode as lightweight description if present */}
                       {it.itemCode ? (
                         <div className="text-xs text-slate-500 dark:text-neutral-400">
                           {it.itemCode}
@@ -675,52 +630,46 @@ function ItemsEditor({
                       ) : null}
                     </td>
 
-                    {/* Requirement */}
                     <td className="px-3 py-2 text-slate-700 dark:text-neutral-200">
                       {it.requirement || "—"}
                     </td>
 
-                    {/* Critical */}
                     <td className="px-3 py-2 text-slate-700 dark:text-neutral-200">
                       {it.critical ? "Yes" : "No"}
                     </td>
 
-                    {/* Tags */}
                     <td className="px-3 py-2 text-slate-700 dark:text-neutral-200">
                       {it.tags && it.tags.length ? it.tags.join(", ") : "—"}
                     </td>
 
-                    {/* Tolerance */}
                     <td className="px-3 py-2 text-slate-700 dark:text-neutral-200">
                       {tolSymbol(it.tolerance)}
                     </td>
 
-                    {/* Value (preview) */}
                     <td className="px-3 py-2 text-slate-700 dark:text-neutral-200">
                       {pv}
                       {it.units ? ` ${it.units}` : ""}
                     </td>
 
-                    {/* Actions */}
                     <td className="px-3 py-2">
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                          className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                           onClick={() => editRow(i)}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                          className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
                           onClick={() => duplicateRow(i)}
                         >
                           Duplicate
                         </button>
                         <button
                           type="button"
-                          className="rounded-full border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:bg-neutral-900 dark:hover:bg-rose-950/20"
+                          className="h-8 rounded-full border border-rose-200 bg-white px-3 text-[12.5px] font-semibold text-rose-600 shadow-sm hover:bg-rose-50 dark:border-rose-900 dark:bg-neutral-900 dark:hover:bg-rose-950/20"
                           onClick={() => removeRow(i)}
                         >
                           Delete
@@ -734,7 +683,7 @@ function ItemsEditor({
               <tr>
                 <td
                   colSpan={8}
-                  className="px-3 py-8 text-center text-sm text-slate-500 dark:text-neutral-400"
+                  className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400"
                 >
                   No items yet. Click “+ Add Item” to add one.
                 </td>
@@ -766,7 +715,7 @@ function FormBody({
 
   return (
     <div className="grid gap-5">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Field label="Code" required>
           <Input
             value={String(data.code ?? "")}
@@ -797,7 +746,7 @@ function FormBody({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Field label="Discipline">
           <Select
             value={(data.discipline as any) || "Civil"}
@@ -845,7 +794,7 @@ function FormBody({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Field label="AI Default">
           <Select
             value={(data.aiDefault ? "on" : "off") as string}
@@ -862,7 +811,6 @@ function FormBody({
             placeholder="safety, documentation, structural"
           />
         </Field>
-        {/* spacer */}
         <div />
       </div>
 
@@ -875,7 +823,7 @@ function FormBody({
         </Field>
       </div>
 
-      <div className="text-xs text-slate-500 dark:text-neutral-400">
+      <div className="text-xs text-slate-500 dark:text-slate-400">
         {data.updatedAt
           ? `Last updated: ${new Date(data.updatedAt).toLocaleString()}`
           : "—"}
@@ -884,12 +832,35 @@ function FormBody({
   );
 }
 
+/* ========================= Section shell (match ActivityCreate) ========================= */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
+
 /* ========================= Create Page ========================= */
 export function ChecklistNewPage() {
   const nav = useNavigate();
   const { data, setData } = useChecklist(undefined);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);;
 
   async function onSave() {
     if (!data?.code || !data?.title) {
@@ -923,11 +894,9 @@ export function ChecklistNewPage() {
         return;
       }
 
-      // Create checklist
       const createRes = await api.post("/admin/ref/checklists", payload);
       const newId = createRes?.data?.id;
 
-      // If items exist, send them in a single bulk update call
       if (newId && Array.isArray(data.items) && data.items.length) {
         const items = (data.items as UiItem[]).map((it, seq) => ({
           seq,
@@ -968,39 +937,50 @@ export function ChecklistNewPage() {
   }
 
   if (!data) return null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-            New Checklist
-          </h1>
-          <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
+      <div className="mx-auto max-w-4xl">
+        {/* Header (match ActivityCreate) */}
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
+              New Checklist
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              {data.code ? `${data.code} • ` : ""}
+              {data.title || "New checklist"}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav(-1)}
+              type="button"
             >
-              Cancel
+              Back
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               disabled={saving}
               onClick={onSave}
+              type="button"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
+        <Section title="Basics">
           <FormBody data={data} setData={setData as any} />
-        </div>
+        </Section>
       </div>
     </div>
   );
@@ -1009,12 +989,21 @@ export function ChecklistNewPage() {
 /* ========================= Edit Page ========================= */
 export function ChecklistEditPage() {
   const nav = useNavigate();
-  const { id } = useParams(); // route should be /admin/ref/checklistlib/:id/edit
+  const { id } = useParams();
   const { data, setData, loading, error } = useChecklist(id);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // const [itemsSaving, setItemsSaving] = useState(false);
-  // const [itemsErr, setItemsErr] = useState<string | null>(null);
+
+  // Page title + shell subtitle (UI only)
+  // useEffect(() => {
+  //   document.title = "Trinity PMS — Edit Checklist";
+  //   (window as any).__ADMIN_SUBTITLE__ = data?.title
+  //     ? `Editing: ${data.title}`
+  //     : "Edit checklist.";
+  //   return () => {
+  //     (window as any).__ADMIN_SUBTITLE__ = "";
+  //   };
+  // }, [data?.title]);
 
   async function onSave() {
     if (!data?.code || !data?.title) {
@@ -1048,10 +1037,8 @@ export function ChecklistEditPage() {
         return;
       }
 
-      // 1) Save checklist meta
       await api.patch(`/admin/ref/checklists/${id}`, payload);
 
-      // 2) Save items (if any) in the same action
       if (Array.isArray(data.items)) {
         const items = (data.items as UiItem[]).map((it, seq: number) => ({
           seq,
@@ -1093,55 +1080,74 @@ export function ChecklistEditPage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-        <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200/80 bg-white/95 p-5 text-sm text-slate-600 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4 text-sm text-slate-600 dark:text-slate-300">
           Loading…
         </div>
       </div>
     );
   if (error)
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-        <div className="mx-auto max-w-5xl rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          {error}
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-10 pt-0 pb-6">
+        <div className="mx-auto max-w-4xl pt-4">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+            {error}
+          </div>
+          <button
+            className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => nav(-1)}
+            type="button"
+          >
+            Back
+          </button>
         </div>
       </div>
     );
   if (!data) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-            Edit Checklist
-          </h1>
-          <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
+      <div className="mx-auto max-w-4xl">
+        {/* Header (match ActivityCreate) */}
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
+              Edit Checklist
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              {data.code ? `${data.code} • ` : ""}
+              {data.title || "Checklist"}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav(-1)}
+              type="button"
             >
-              Cancel
+              Back
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               disabled={saving}
               onClick={onSave}
+              type="button"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
+        <Section title="Basics">
           <FormBody data={data} setData={setData as any} />
-        </div>
+        </Section>
       </div>
     </div>
   );

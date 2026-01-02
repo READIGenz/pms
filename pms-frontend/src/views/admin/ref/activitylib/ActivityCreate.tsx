@@ -18,10 +18,10 @@ function decodeJwtPayload(token: string): any | null {
 
 /* ========================= Types (shared with ActivityLib) ========================= */
 const DISCIPLINES = ["Civil", "MEP", "Finishes"] as const;
-type Discipline = typeof DISCIPLINES[number];
+type Discipline = (typeof DISCIPLINES)[number];
 
 const STATUS_OPTIONS = ["Active", "Draft", "Inactive", "Archived"] as const;
-type ActivityStatus = typeof STATUS_OPTIONS[number];
+type ActivityStatus = (typeof STATUS_OPTIONS)[number];
 
 export type RefActivity = {
   id: string;
@@ -132,6 +132,15 @@ const FACETS = {
 export default function ActivityCreate() {
   const nav = useNavigate();
 
+  // Page title + shell subtitle
+  // useEffect(() => {
+  //   document.title = "Trinity PMS — Create Activity";
+  //   (window as any).__ADMIN_SUBTITLE__ = "New activity.";
+  //   return () => {
+  //     (window as any).__ADMIN_SUBTITLE__ = "";
+  //   };
+  // }, []);
+
   /* ---- Admin gate (same behavior as your other file) ---- */
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -240,7 +249,10 @@ export default function ActivityCreate() {
       }
 
       await api.post(`/admin/ref/activities`, out);
-      nav("/admin/ref/activitylib", { replace: true, state: { refresh: true } });
+      nav("/admin/ref/activitylib", {
+        replace: true,
+        state: { refresh: true },
+      });
     } catch (e: any) {
       const s = e?.response?.status;
       const msg =
@@ -260,29 +272,31 @@ export default function ActivityCreate() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8">
+    <div className="min-h-screen bg-white-50 dark:bg-neutral-950 px-4 sm:px-6 lg:px-0 pt-0 pb-6">
       <div className="mx-auto max-w-4xl">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+        <div className="mb-5 flex items-start justify-between gap-4 pt-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
               Create Activity
             </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
               {form.code ? `${form.code} • ` : ""}
               {form.title || "New activity"}
             </p>
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex shrink-0 gap-2">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => nav("/admin/ref/activitylib")}
               type="button"
             >
               Back
             </button>
+
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
               onClick={handleSave}
               type="button"
               disabled={!canSave || !!saving}
@@ -294,7 +308,7 @@ export default function ActivityCreate() {
 
         {/* Flash error */}
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {err}
           </div>
         )}
@@ -302,7 +316,7 @@ export default function ActivityCreate() {
         {/* Form */}
         <div className="space-y-6">
           <Section title="Basics">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label="Business Code (optional unique)"
                 value={form.code ?? ""}
@@ -313,7 +327,9 @@ export default function ActivityCreate() {
                 label="Version (e.g., 1, 1.2, 1.2.3)"
                 value={
                   (form.versionLabel ??
-                    (form.version != null ? String(form.version) : "")) as string
+                    (form.version != null
+                      ? String(form.version)
+                      : "")) as string
                 }
                 onChange={(v) => setField("versionLabel", v as any)}
                 placeholder="1.2.3"
@@ -343,13 +359,12 @@ export default function ActivityCreate() {
                 label="Stage"
                 value={form.stageLabel ?? ""}
                 onChange={(v) => setField("stageLabel", (v || "") as any)}
-                options={[
-                  "",
-                  ...(form.discipline ? stageOptions : []),
-                ].map((s) => ({
-                  value: s,
-                  label: s || "—",
-                }))}
+                options={["", ...(form.discipline ? stageOptions : [])].map(
+                  (s) => ({
+                    value: s,
+                    label: s || "—",
+                  })
+                )}
                 placeholder="— Select Stage —"
               />
             </div>
@@ -400,7 +415,7 @@ export default function ActivityCreate() {
               placeholder="Any internal notes or description…"
               rows={4}
             />
-            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               Last updated: —
             </div>
           </Section>
@@ -411,6 +426,19 @@ export default function ActivityCreate() {
 }
 
 /* ========================= Small UI bits ========================= */
+
+const labelCls =
+  "mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400";
+
+const inputCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
+const selectCls =
+  "h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
+const textareaCls =
+  "w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/25 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:ring-[#FCC020]/25";
+
 function Section({
   title,
   children,
@@ -420,9 +448,12 @@ function Section({
 }) {
   return (
     <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-          {title}
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
         </div>
         {children}
       </div>
@@ -447,11 +478,9 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className={inputCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -477,11 +506,9 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <textarea
-        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className={textareaCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -506,11 +533,9 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
+      <span className={labelCls}>{label}</span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className={selectCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -549,9 +574,7 @@ function TagPicker({
 
   return (
     <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </div>
+      <div className={labelCls}>{label}</div>
       <div className="flex flex-wrap gap-2">
         {all.map((v) => {
           const active = selectedSet.has(norm(v));
@@ -562,7 +585,7 @@ function TagPicker({
               onClick={() => toggle(v)}
               className={
                 active
-                  ? "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                  ? "rounded-full border border-[#23A192]/30 bg-[#23A192]/10 px-3 py-1 text-xs font-semibold text-[#0F6F64] shadow-sm dark:border-[#23A192]/40 dark:bg-[#23A192]/15 dark:text-[#7FE3D6]"
                   : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
               }
             >
