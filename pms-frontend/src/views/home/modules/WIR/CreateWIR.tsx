@@ -262,6 +262,14 @@ export type UiComplianceItem = {
   refTitle: string | null;
 };
 
+type WirFile = File & {
+  existing?: boolean;
+  url?: string;
+  id?: string;
+  category?: string;
+  tag?: string;
+};
+
 function normalizeArrayish(payload: any): any[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -501,12 +509,12 @@ export default function CreateWIR() {
 
   // Section 3:
   const [docs, setDocs] = useState<{
-    drawings?: File[];
-    itp?: File[];
-    other?: File[];
-    photos?: File[];
-    material?: File[];
-    safety?: File[];
+    drawings?: WirFile[];
+    itp?: WirFile[];
+    other?: WirFile[];
+    photos?: WirFile[];
+    material?: WirFile[];
+    safety?: WirFile[];
   }>({});
 
   // Section 4/5:
@@ -778,11 +786,66 @@ export default function CreateWIR() {
           "";
 
         setWorkInspection(String(wiCandidate));
+        // ---------------------------------------------
+        // Hydrate documents/evidences from backend WIR
+        // ---------------------------------------------
+        if (Array.isArray(row.evidences)) {
+          const grouped: any = {
+            drawings: [],
+            itp: [],
+            photos: [],
+            material: [],
+            safety: [],
+            other: [],
+          };
+
+          const detectCategory = (mime: string, name: string) => {
+            const ext = name.toLowerCase();
+
+            if (mime.startsWith("image/")) return "photos";
+            if (ext.endsWith(".pdf") || ext.endsWith(".dwg")) return "drawings";
+            if (ext.includes("itp")) return "itp";
+            if (ext.includes("mat") || ext.includes("material")) return "material";
+            if (ext.includes("sft") || ext.includes("safety")) return "safety";
+            return "other";
+          };
+
+          const tagMap = {
+            drawings: "dwg",
+            itp: "itp",
+            photos: "pic",
+            material: "mat",
+            safety: "sft",
+            other: "doc",
+          };
+
+          row.evidences.forEach((e: any) => {
+            const category = detectCategory(e.mimeType, e.fileName);
+            const tag = tagMap[category];
+
+            const fakeFile: WirFile = {
+              name: e.fileName,
+              size: e.fileSize,
+              type: e.mimeType,
+              url: e.url,
+              existing: true,
+              id: e.id,
+              category,
+              tag,
+            } as WirFile;
+
+            grouped[category].push(fakeFile);
+          });
+
+          setDocs(grouped);
+          console.log("[WIR] hydrated docs from backend:", grouped);
+        }
 
         // ---- Preselect attached reference checklists ----
         const refIds = pickSelectedChecklistIds(row);
         const isFU = inferredFollowup || isFollowupMode;
         setSelectedRefIds(isFU ? [] : refIds);
+
       } catch (e: any) {
         const errMsg = e?.response?.data?.error || e?.message || "Failed to load WIR.";
         console.error("[WIR] edit:GET error:", e?.response?.data ?? e?.message ?? e);
@@ -1170,6 +1233,44 @@ export default function CreateWIR() {
   // }
 
   /* ---------------- submit handlers ---------------- */
+  async function uploadHeaderDocs(projectId: string, wirId: string, docs: any) {
+    const form = new FormData();
+
+    const categories: string[] = [];
+    const tags: string[] = [];
+
+    for (const key of Object.keys(docs || {})) {
+      const arr = docs[key];
+      if (!arr || !arr.length) continue;
+
+      for (const f of arr) {
+        // Skip backend (existing) files
+        if ((f as any).existing) continue;
+
+        // Append file
+        form.append("files", f);
+
+        // Append category/tag aligned by index
+        categories.push(f.category || key);
+        tags.push(f.tag || null);
+      }
+    }
+
+    if (categories.length > 0) {
+      categories.forEach((c) => form.append("categories", c));
+      tags.forEach((t) => form.append("tags", t));
+    }
+
+    if (form.has("files")) {
+      await api.post(
+        `/projects/${projectId}/wir/${wirId}/documents`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+    } else {
+      console.log("[WIR] No NEW files to upload on submit.");
+    }
+  }
 
   const saveDraft = async () => {
     if (!projectId || submitting) return;
@@ -1254,6 +1355,12 @@ export default function CreateWIR() {
       } else {
         await api.post(`/projects/${projectId}/wir`, payload);
       }
+      const wirId = isEdit ? editId : payload?.wirId || null;
+      if (!isEdit && !wirId) {
+        // fetch created WIR to get ID if needed
+        // but normally backend returns ID, adjust if your API returns differently.
+      }
+      await uploadHeaderDocs(projectId, wirIdForModal || wirId, docs);
 
       backToWirList();
     } catch (e: any) {
@@ -1283,7 +1390,10 @@ export default function CreateWIR() {
         String(res?.data?.data?.wirId ?? res?.data?.wir?.wirId ?? res?.data?.wirId ?? res?.data?.id ?? "") ||
         wirIdForModal;
 
-      if (newId) setWirIdForModal(newId);
+      if (newId) {
+        setWirIdForModal(newId);
+        await uploadHeaderDocs(projectId, newId, docs);
+      }
 
       setDispatchOpen(true);
     } catch (e: any) {
@@ -1513,14 +1623,14 @@ export default function CreateWIR() {
             <div className="text-right text-[12px] text-gray-500 dark:text-gray-400">{workInspection.length}/200</div>
           </div>
 
-          {/* Section 3 — Documents & Evidence (NO CHANGE) */}
+          {/* Section 3 — Documents & Evidence */}
           <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
             <SectionTitle>Documents & Evidence</SectionTitle>
 
             {/* auto-fit grid with minimum card width (prevents skinny columns / vertical text) */}
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
               {docTiles.map((tile) => {
-                const files = (docs as any)[tile.key] as File[] | undefined;
+                const files = (docs as any)[tile.key] as WirFile[] | undefined;
                 const has = !!files?.length;
                 const Icon = tile.Icon;
 
@@ -1562,12 +1672,55 @@ export default function CreateWIR() {
                           >
                             Upload: <span className="font-medium">{tile.hint}</span>
                           </div>
-                          <div
-                            className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 truncate"
-                            title={has ? fileSummary(files) : "Tap to choose files"}
-                          >
-                            {has ? fileSummary(files) : "Tap to choose files"}
+                          <div className="mt-2 space-y-1">
+                            {has ? (
+                              files!.map((f, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200 
+               break-all border-b border-gray-200 dark:border-neutral-700 pb-0.5 last:border-none"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-medium text-gray-900 dark:text-gray-100">{f.name}</span>
+                                    {f.tag && (
+                                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-neutral-700 text-gray-800 dark:text-gray-300 uppercase">
+                                        {f.tag}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* --- DELETE BUTTON --- */}
+                                  <button
+                                    type="button"
+                                    className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border 
+                 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 
+                 dark:hover:bg-red-900/20"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+
+                                      setDocs(prev => {
+                                        const list = prev[tile.key] ?? [];
+                                        return {
+                                          ...prev,
+                                          [tile.key]: list.filter((_, i) => i !== idx)
+                                        };
+                                      });
+
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))
+
+                            ) : (
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                Tap to choose files
+                              </div>
+                            )}
                           </div>
+
                         </div>
                       </div>
 
@@ -1590,8 +1743,29 @@ export default function CreateWIR() {
                       accept={tile.accept}
                       onChange={(e) => {
                         const picked = e.target.files ? Array.from(e.target.files) : [];
-                        setDocs((prev) => ({ ...prev, [tile.key]: picked }));
+
+                        const wrapped = picked.map((file) => {
+                          // DO NOT CLONE. DO NOT SLICE. USE ORIGINAL BROWSER FILE.
+                          return Object.assign(file, {
+                            existing: false,
+                            category: tile.key,
+                            tag: {
+                              drawings: "dwg",
+                              itp: "itp",
+                              photos: "pic",
+                              material: "mat",
+                              safety: "sft",
+                              other: "doc",
+                            }[tile.key],
+                          });
+                        });
+
+                        setDocs((prev) => ({
+                          ...prev,
+                          [tile.key]: [...(prev[tile.key] || []), ...wrapped],
+                        }));
                       }}
+
                     />
                   </label>
                 );
@@ -1657,8 +1831,8 @@ export default function CreateWIR() {
                   onClick={openViewCompliance}
                   disabled={!selectedRefIds.length || isFollowupMode}
                   className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${!isFollowupMode && selectedRefIds.length
-                      ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                      : "opacity-60 cursor-not-allowed"
+                    ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    : "opacity-60 cursor-not-allowed"
                     }`}
                   title={isFollowupMode ? "Disabled in follow-up mode" : ""}
                 >
@@ -1767,6 +1941,17 @@ export default function CreateWIR() {
                     const method = saveMethodRef.current;
                     logWir(`saveDraft(confirm) -> ${method} ${path}`, payload);
                     const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+                    // ---- Upload docs for Draft ----
+                    const wirId =
+                      String(res?.data?.data?.wirId ??
+                        res?.data?.wir?.wirId ??
+                        res?.data?.wirId ??
+                        res?.data?.id ?? "");
+
+                    if (wirId) {
+                      await uploadHeaderDocs(projectId, wirId, docs);
+                    }
+
                     logWir("saveDraft(confirm) <- response", res?.data);
                     setSaveDlgBusy(false);
                     setSaveDlgOpen(false);
@@ -1779,8 +1964,8 @@ export default function CreateWIR() {
                   }
                 }}
                 className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${saveDlgBusy
-                    ? "opacity-60 cursor-not-allowed"
-                    : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                  ? "opacity-60 cursor-not-allowed"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                   }`}
                 disabled={saveDlgBusy}
               >

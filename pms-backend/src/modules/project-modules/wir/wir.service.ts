@@ -1036,71 +1036,43 @@ export class WirService {
   async createWirDocuments(
     projectId: string,
     wirId: string,
-    files: Array<Express.Multer.File>,
-    actor?: { userId?: string | null; fullName?: string | null },
+    files: Express.Multer.File[],
+    actor: { userId?: string | null; fullName?: string | null } | undefined,
+    categories: string[] = [],
+    tags: string[] = []
   ) {
-    // Ensure WIR belongs to project
-    await this.ensureWir(projectId, wirId);
-
-    if (!files || !files.length) {
-      throw new BadRequestException('No files uploaded');
-    }
-
-    // Reuse same storage layout as runner attachments
     const saved = await this.files.saveMany(files, {
       subdir: `projects/${projectId}/wir/${wirId}`,
-      makeThumbs: true,
     });
 
-    const results: Array<{
-      itemId: string | null;
-      evidenceId: string;
-      url: string;
-      fileName?: string | null;
-      kind: WirItemEvidenceKind;
-    }> = [];
+    const out = [];
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const s of saved) {
-        // Infer kind from mime-type (image => Photo, video => Video, else File)
-        const mime = s.mimeType || '';
-        const kind: WirItemEvidenceKind =
-          mime.startsWith('image/')
-            ? 'Photo'
-            : mime === 'video/mp4'
-              ? 'Video'
-              : 'File';
+    for (let i = 0; i < saved.length; i++) {
+      const s = saved[i];
 
-        const row = await tx.wirItemEvidence.create({
-          data: {
-            wirId,
-            itemId: null, // header-level (not tied to any item)
-            runId: null,
-            kind,
-            url: s.url || s.relPath,
-            thumbUrl: s.thumbUrl || undefined,
-            fileName: s.fileName || undefined,
-            fileSize: s.size ?? undefined,
-            mimeType: s.mimeType || undefined,
-            capturedAt: new Date(),
+      const category = categories[i] ?? null;
+      const tag = tags[i] ?? null;
+
+      const ev = await this.prisma.wirItemEvidence.create({
+        data: {
+          wirId,
+          kind: s.mimeType?.startsWith("image/") ? "Photo" : "File",
+          url: s.url,
+          thumbUrl: null,
+          fileName: s.fileName,
+          fileSize: s.size,
+          mimeType: s.mimeType,
+          meta: {
+            category,
+            tag,
           },
-          select: { id: true, url: true, fileName: true, kind: true },
-        });
+        },
+      });
 
-        results.push({
-          itemId: null,
-          evidenceId: row.id,
-          url: row.url,
-          fileName: row.fileName ?? null,
-          kind: row.kind,
-        });
-      }
+      out.push(ev);
+    }
 
-      // NOTE: No history write here to avoid messing with existing timeline semantics.
-      // If you later want a timeline entry like "Documents uploaded", we can add it.
-    });
-
-    return results;
+    return { ok: true, items: out };
   }
 
   // Create a new WIR “version” keeping only failed/NCR items (auto-select if dto.itemIds omitted)
@@ -1492,7 +1464,7 @@ export class WirService {
             wirId,
             itemId: m.itemId,
             kind,
-            url: s.url || s.relPath,
+            url: s.url,
             thumbUrl: s.thumbUrl || undefined,
             fileName: s.fileName || undefined,
             fileSize: s.size ?? undefined,
