@@ -46,7 +46,6 @@ export default function AdminHome() {
       to={to}
       end={end}
       className={({ isActive }) =>
-<<<<<<< Updated upstream
         `w-full text-left px-3 py-2 rounded text-sm transition flex items-center gap-2
         ${
           isActive
@@ -63,74 +62,11 @@ export default function AdminHome() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950">
-=======
-        [
-          "w-full text-left px-3 py-2 rounded-xl text-sm transition flex items-center gap-2",
-          "border border-transparent",
-          isActive
-            ? [
-                // ✅ active: gold left bar + soft gold background
-                "bg-[#FCC020]/20 text-slate-900",
-                "border-[#FCC020]/40",
-                "shadow-sm",
-                "dark:bg-[#FCC020]/15 dark:text-white dark:border-[#FCC020]/35",
-              ].join(" ")
-            : [
-                "text-slate-700 hover:bg-[#00379C]/5 hover:border-[#00379C]/15",
-                "dark:text-slate-200 dark:hover:bg-white/5 dark:hover:border-white/10",
-              ].join(" "),
-        ].join(" ")
-      }
-    >
-      {/* ✅ gold selection bar (shows only when active) */}
-      <span
-        className={[
-          "inline-block w-2 h-2 rounded-full transition",
-          "bg-[#00379C] dark:bg-white/70",
-        ].join(" ")}
-        style={{ opacity: 0.85 }}
-      />
-
-      {/* Gold vertical bar */}
-      <span
-        className="ml-1 h-5 w-1 rounded-full bg-[#FCC020]"
-        style={{ display: "none" }}
-      />
-
-      <span className="truncate">{label}</span>
-    </NavLink>
-  );
-
-  const [pageTitle, setPageTitle] = useState("Admin");
-  const [pageSubtitle, setPageSubtitle] = useState("");
-
-  useEffect(() => {
-    const read = () => {
-      const t = (document.title || "").trim();
-      const pretty = t.includes("—") ? t.split("—").pop()!.trim() : t;
-      setPageTitle(pretty || "Admin");
-      setPageSubtitle((window.__ADMIN_SUBTITLE__ || "").trim());
-    };
-
-    read();
-    const id = window.setInterval(read, 250);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <div className="relative min-h-screen bg-white dark:bg-neutral-950">
-      {/* Yellow thin lines background (no ribbon) */}
-      <div className="admin-lines-bg" aria-hidden="true" />
-      {/* Top accent line #00379C, #FCC020, #23A192*/}
-      <div className="h-1 w-full bg-gradient-to-r from-[#FCC020] via-[#23A192] to-[#FCC020]" />
-
->>>>>>> Stashed changes
       {/* Header */}
       <header className="w-full px-4 sm:px-6 lg:px-10 py-4 border-b dark:border-neutral-800">
         <div className="mx-auto max-w-7xl flex items-center justify-between">
           {/* Brand */}
           <div className="flex items-center gap-3">
-<<<<<<< Updated upstream
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 grid place-items-center shadow">
               <svg
                 width="22"
@@ -144,14 +80,6 @@ export default function AdminHome() {
                   className="fill-white/95"
                 />
               </svg>
-=======
-            <div className="h-12 w-12 rounded-xl bg-white border border-slate-200 shadow-sm grid place-items-center overflow-hidden dark:bg-neutral-950 dark:border-white/10">
-              <img
-                src={avaLogo}
-                alt="Trinity PMS"
-                className="h-full w-full object-contain"
-              />
->>>>>>> Stashed changes
             </div>
             <div>
               <div className="text-xl font-bold tracking-tight dark:text-white">
@@ -220,40 +148,6 @@ export default function AdminHome() {
           </section>
         </div>
       </main>
-      <style>{`
-      .admin-lines-bg{
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        z-index: 0;
-      }
-
-      /* keep AdminHome content above it */
-      .admin-lines-bg ~ *{
-        position: relative;
-        z-index: 1;
-      }
-
-      /* ONLY thin yellow lines */
-      .admin-lines-bg::before{
-        content:"";
-        position:absolute;
-        inset:-20%;
-        transform: rotate(-12deg);
-        background:
-          repeating-linear-gradient(
-            90deg,
-            rgba(252,192,32,0.07) 0px,
-            rgba(252,192,32,0.07) 2px,
-            transparent 2px,
-            transparent 18px
-          );
-        opacity: 0.55;
-      }
-
-      /* Dark mode dim */
-      :is(.dark) .admin-lines-bg::before{ opacity: 0.18; }
-    `}</style>
     </div>
   );
 }

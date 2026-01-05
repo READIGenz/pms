@@ -92,24 +92,6 @@ const gotoWir = (
   });
 };
 
-const gotoModules = (
-  navigate: ReturnType<typeof useNavigate>,
-  role: string,
-  proj: Project
-) => {
-  navigate(`/home/projects/${proj.projectId}/modules`, {
-    state: {
-      role: normalizeRole(role),
-      project: {
-        projectId: proj.projectId,
-        code: proj.code,
-        title: proj.title,
-      },
-    },
-    replace: false,
-  });
-};
-
 // ---- Status & health helpers ----
 type CanonicalStatus =
   | "Active"
@@ -245,8 +227,8 @@ export default function MyProjects() {
   const profileName: string = user?.firstName
     ? `${user.firstName}${user?.lastName ? ` ${user.lastName}` : ""}`
     : claims?.firstName
-      ? `${claims.firstName}${claims?.lastName ? ` ${claims.lastName}` : ""}`
-      : (user?.name as string | undefined) ||
+    ? `${claims.firstName}${claims?.lastName ? ` ${claims.lastName}` : ""}`
+    : (user?.name as string | undefined) ||
       (claims?.name as string | undefined) ||
       "User";
 
@@ -268,10 +250,10 @@ export default function MyProjects() {
 
   const role = normalizeRole(
     (user as any)?.role ??
-    (claims as any)?.role ??
-    (claims as any)?.userRole ??
-    (claims as any)?.roleName ??
-    ""
+      (claims as any)?.role ??
+      (claims as any)?.userRole ??
+      (claims as any)?.roleName ??
+      ""
   );
 
   const userId =
@@ -413,13 +395,13 @@ export default function MyProjects() {
                   (chosen === "Admin"
                     ? true
                     : normalizeRole(
-                      r?.role ??
-                      r?.userRole ??
-                      r?.roleName ??
-                      r?.assignmentRole ??
-                      r?.companyRole ??
-                      ""
-                    ) === chosen)
+                        r?.role ??
+                          r?.userRole ??
+                          r?.roleName ??
+                          r?.assignmentRole ??
+                          r?.companyRole ??
+                          ""
+                      ) === chosen)
               );
               if (userHasRole) {
                 const pmName =
@@ -733,11 +715,7 @@ export default function MyProjects() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/home/tiles")}
-<<<<<<< Updated upstream
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
-=======
-            className="inline-flex items-center gap-1.5 h-8 rounded-full border border-slate-200 bg-white px-4 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
->>>>>>> Stashed changes
                        hover:bg-slate-50 hover:border-slate-300
                        dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
             type="button"
@@ -943,7 +921,7 @@ export default function MyProjects() {
             <button
               key={p.projectId}
               type="button"
-              onClick={() => gotoModules(navigate, role, p)}
+              onClick={() => gotoWir(navigate, role, p)}
               className="w-full text-left rounded-3xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4 sm:px-5 sm:py-5 shadow-sm
                          hover:shadow-md hover:-translate-y-0.5 transition
                          focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
@@ -1045,8 +1023,8 @@ export default function MyProjects() {
                               opt.id === "all"
                                 ? "all"
                                 : prev === opt.id
-                                  ? "all"
-                                  : (opt.id as StatusFilter)
+                                ? "all"
+                                : (opt.id as StatusFilter)
                             )
                           }
                           className={
@@ -1197,8 +1175,8 @@ export default function MyProjects() {
                               opt.id === "all"
                                 ? "all"
                                 : prev === opt.id
-                                  ? "all"
-                                  : (opt.id as HealthFilter)
+                                ? "all"
+                                : (opt.id as HealthFilter)
                             )
                           }
                           className={
@@ -1565,18 +1543,21 @@ export default function MyProjects() {
                       className="inline-flex items-center rounded-full bg-slate-100 dark:bg-neutral-800 px-1 py-0.5"
                     >
                       <div
-                        className={`flex items-center justify-between w-14 text-[11px] ${darkModePref ? "text-white" : "text-slate-600"
-                          }`}
+                        className={`flex items-center justify-between w-14 text-[11px] ${
+                          darkModePref ? "text-white" : "text-slate-600"
+                        }`}
                       >
                         <span
-                          className={`flex-1 text-center transition-colors ${!darkModePref ? "font-medium" : "opacity-70"
-                            }`}
+                          className={`flex-1 text-center transition-colors ${
+                            !darkModePref ? "font-medium" : "opacity-70"
+                          }`}
                         >
                           Off
                         </span>
                         <span
-                          className={`flex-1 text-center transition-colors ${darkModePref ? "font-medium" : "opacity-70"
-                            }`}
+                          className={`flex-1 text-center transition-colors ${
+                            darkModePref ? "font-medium" : "opacity-70"
+                          }`}
                         >
                           On
                         </span>
@@ -1616,20 +1597,22 @@ export default function MyProjects() {
                       <button
                         type="button"
                         onClick={() => setUnitsPref("SI")}
-                        className={`px-3 py-1 text-xs rounded-full ${unitsPref === "SI"
+                        className={`px-3 py-1 text-xs rounded-full ${
+                          unitsPref === "SI"
                             ? "bg-white dark:bg-emerald-600 text-emerald-700 dark:text-white shadow-sm"
                             : "text-gray-600 dark:text-gray-400"
-                          }`}
+                        }`}
                       >
                         SI
                       </button>
                       <button
                         type="button"
                         onClick={() => setUnitsPref("Imperial")}
-                        className={`px-3 py-1 text-xs rounded-full ${unitsPref === "Imperial"
+                        className={`px-3 py-1 text-xs rounded-full ${
+                          unitsPref === "Imperial"
                             ? "bg-white dark:bg-emerald-600 text-emerald-700 dark:text-white shadow-sm"
                             : "text-gray-600 dark:text-gray-400"
-                          }`}
+                        }`}
                       >
                         Imperial
                       </button>
@@ -1724,10 +1707,10 @@ function KPI({
     tone === "info"
       ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
       : tone === "warn"
-        ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-        : tone === "alert"
-          ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
-          : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
+      ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+      : tone === "alert"
+      ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
+      : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
 
   return (
     <div
