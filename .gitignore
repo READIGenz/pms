@@ -115,3 +115,9 @@ storybook-static/
 # ---- Binary assets build time ----
 *.tgz
 *.gz
+
+
+**/node_modules/
+**/dist/
+.env
+uploads/
