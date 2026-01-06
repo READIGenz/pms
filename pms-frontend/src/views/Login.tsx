@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import avaLogo from "../assets/avaLogo.jpg";
 
 type Step = "enter" | "otp" | "choose-role";
 
@@ -305,7 +306,7 @@ export default function Login() {
 
   const validateUser = async () => {
     setErr(null);
-    const value = login.trim();
+    const value = login.trim().toLowerCase();
     if (!value) {
       setErr("Enter email or phone");
       return;
@@ -461,17 +462,23 @@ export default function Login() {
     }
   };
 
-  // Input / button styles (tuned to match other pages)
+  // ========================= UI tokens (THEME ONLY) =========================
   const inputBase =
-    "border border-slate-200 dark:border-neutral-700 rounded-xl w-full px-3 py-2.5 text-sm text-slate-900 dark:text-white bg-white dark:bg-neutral-900 " +
-    "focus:outline-none focus:ring-2 focus:ring-emerald-500/70 focus:border-emerald-500 transition";
+    "h-10 border border-slate-200 dark:border-white/10 rounded-2xl w-full px-3 text-sm " +
+    "text-slate-900 dark:text-white bg-white dark:bg-neutral-950 shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-[#00379C]/30 dark:focus:ring-[#FCC020]/25 focus:border-transparent transition";
 
   const btnPrimary =
-    "w-full py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold text-white shadow-sm " +
-    "disabled:opacity-60 disabled:cursor-not-allowed transition";
+    "w-full h-10 rounded-full bg-[#00379C] hover:brightness-110 text-sm font-semibold text-white shadow-sm " +
+    "disabled:opacity-60 disabled:cursor-not-allowed transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/35 dark:focus:ring-offset-neutral-950";
+
   const btnSecondary =
-    "w-full py-2.5 rounded-full border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-slate-800 dark:text-gray-100 " +
-    "hover:bg-slate-50 dark:hover:bg-neutral-800 transition";
+    "w-full h-10 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 text-sm " +
+    "text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/20 dark:focus:ring-offset-neutral-950";
+
+  const linkTone = "text-[#00379C] dark:text-[#FCC020] hover:underline";
 
   const onEnterOtp = (e: React.KeyboardEvent<HTMLInputElement>) =>
     e.key === "Enter" && code.trim().length >= 6 && verify();
@@ -544,34 +551,31 @@ export default function Login() {
 
   // ---- Render ----
   return (
-  <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-neutral-950">
+      {/* Top accent line (same system palette) */}
+      <div className="h-1 w-full bg-gradient-to-r from-[#00379C] via-[#23A192] to-[#FCC020]" />
+      {/* Soft slanted background accents */}
+      <div className="login-bg" aria-hidden="true" />
+
       {/* Header (brand only, consistent with Admin) */}
-      <header className="w-full px-4 sm:px-6 lg:px-10 py-6">
+      <header className="w-full px-5 sm:px-8 lg:px-14 py-6">
         <div className="mx-auto max-w-6xl flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              aria-label="Trinity PMS logo"
-              className="h-11 w-11 rounded-2xl bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 grid place-items-center shadow"
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                role="img"
-                aria-hidden="true"
-              >
-                <path
-                  d="M12 2C9 6 7 8.5 7 11a5 5 0 1 0 10 0c0-2.5-2-5-5-9z"
-                  className="fill-white/95"
-                />
-              </svg>
+            {/* logo (replaces gradient/drop) */}
+            <div className="h-12 w-12 rounded-2xl bg-white border border-slate-200 shadow-sm grid place-items-center overflow-hidden dark:bg-neutral-950 dark:border-white/10">
+              <img
+                src={avaLogo}
+                alt="Trinity PMS"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold tracking-tight dark:text-white">
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#00379C] dark:text-white">
                 Trinity PMS
               </div>
-              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                Empowering Projects
+              <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                Empowering{" "}
+                <span className="font-semibold text-[#23A192]">Projects</span>
               </div>
             </div>
           </div>
@@ -579,41 +583,45 @@ export default function Login() {
       </header>
 
       {/* Main content: left hero + right auth card */}
-      <main className="flex-1 px-4 sm:px-6 lg:px-10 pb-12 flex items-center">
+      <main className="flex-1 px-5 sm:px-8 lg:px-14 pb-12 flex items-center">
         <div className="mx-auto max-w-6xl grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)] items-start">
-          {/* Hero / marketing copy */}
+          {/* Hero / marketing copy (same text, themed colors) */}
           <section className="space-y-4">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold leading-snug dark:text-white">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold leading-snug text-slate-900 dark:text-white">
               Experience Next-Level Project Management
               <br />
               Powered by{" "}
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+              <span className="font-extrabold" style={{ color: "#00379C" }}>
                 Artificial Intelligence
               </span>
             </h1>
-            <p className="text-sm sm:text-base text-gray-700 dark:text-gray-300 max-w-xl">
+
+            <p className="text-sm sm:text-base text-slate-700 dark:text-slate-300 max-w-xl">
               Uniting <b>Vision</b>, <b>Design</b> and <b>Execution</b>. Log in
               to access your projects, inspections, and collaboration hub — all
               in one place.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs sm:text-sm">
-              <span className="inline-flex items-center rounded-full bg-white/80 dark:bg-neutral-900 px-3 py-1 border border-emerald-100/70 dark:border-neutral-700 text-gray-800 dark:text-gray-200">
+              <span className="inline-flex items-center rounded-full bg-white dark:bg-neutral-950 px-3 py-1 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200">
                 ✓ OTP-based secure access
               </span>
-              <span className="inline-flex items-center rounded-full bg-white/80 dark:bg-neutral-900 px-3 py-1 border border-emerald-100/70 dark:border-neutral-700 text-gray-800 dark:text-gray-200">
+              <span className="inline-flex items-center rounded-full bg-white dark:bg-neutral-950 px-3 py-1 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200">
                 ✓ Role-aware experience
               </span>
-              <span className="inline-flex items-center rounded-full bg-white/80 dark:bg-neutral-900 px-3 py-1 border border-emerald-100/70 dark:border-neutral-700 text-gray-800 dark:text-gray-200">
+              <span className="inline-flex items-center rounded-full bg-white dark:bg-neutral-950 px-3 py-1 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200">
                 ✓ Designed for Owners, IH-PMT & Contractors
               </span>
             </div>
+
+            {/* subtle gold accent line */}
+            <div className="mt-2 h-1 w-16 rounded-full bg-[#FCC020]" />
           </section>
 
           {/* Auth card */}
           <section className="w-full max-w-md lg:max-w-lg lg:justify-self-end">
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-6 sm:p-7 space-y-4">
-              <h2 className="text-lg sm:text-xl font-semibold dark:text-white">
+            <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm border border-slate-200 dark:border-white/10 p-6 sm:p-7 space-y-4">
+              <h2 className="text-lg sm:text-xl font-extrabold text-[#00379C] dark:text-white">
                 Sign in
               </h2>
 
@@ -647,7 +655,7 @@ export default function Login() {
                     />
 
                     {showSuggestions && filteredSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 z-10 mt-1 rounded-xl border border-slate-200 bg-white dark:bg-neutral-800 dark:text-white shadow-lg">
+                      <div className="absolute left-0 right-0 z-10 mt-1 rounded-2xl border border-slate-200 bg-white dark:bg-neutral-950 dark:text-white shadow-lg overflow-hidden">
                         <ul
                           id={listboxId}
                           role="listbox"
@@ -673,10 +681,10 @@ export default function Login() {
                                     setActiveIdx(-1);
                                   }}
                                   className={
-                                    "w-full text-left px-3 py-2 rounded-md " +
+                                    "w-full text-left px-3 py-2 " +
                                     (active
-                                      ? "bg-emerald-50 dark:bg-neutral-700"
-                                      : "hover:bg-emerald-50 dark:hover:bg-neutral-700")
+                                      ? "bg-[#00379C]/[0.06] dark:bg-white/[0.06]"
+                                      : "hover:bg-[#00379C]/[0.06] dark:hover:bg-white/[0.06]")
                                   }
                                 >
                                   {s}
@@ -700,10 +708,10 @@ export default function Login() {
 
                   {/* Remember + Manage */}
                   <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                    <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300"
+                        className="h-4 w-4 rounded border-slate-300 dark:border-white/20"
                         checked={remember}
                         onChange={(e) => setRemember(e.target.checked)}
                       />
@@ -711,19 +719,19 @@ export default function Login() {
                     </label>
                     <button
                       type="button"
-                      className="text-xs sm:text-sm text-emerald-700 dark:text-emerald-400 hover:underline"
+                      className={`text-xs sm:text-sm ${linkTone}`}
                       onClick={() => setShowManage(true)}
                     >
                       Manage saved logins
                     </button>
                   </div>
 
-                  {/* Legal text */}
-                  <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                  {/* Legal text (kept intact; just themed) */}
+                  <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
                     <div>
                       Pre-registered users only. Need access? Contact Admin at{" "}
                       <a
-                        className="text-emerald-700 dark:text-emerald-400 hover:underline"
+                        className={linkTone}
                         href="mailto:admin@trinity-pms.example"
                       >
                         admin@trinity-pms.example
@@ -732,24 +740,18 @@ export default function Login() {
                     </div>
                     <div>
                       By continuing, you agree to our{" "}
-                      <a
-                        className="text-emerald-700 dark:text-emerald-400 hover:underline"
-                        href="/terms"
-                      >
+                      <a className={linkTone} href="/terms">
                         Terms
                       </a>{" "}
                       and{" "}
-                      <a
-                        className="text-emerald-700 dark:text-emerald-400 hover:underline"
-                        href="/privacy"
-                      >
+                      <a className={linkTone} href="/privacy">
                         Privacy Policy
                       </a>
                       .
                     </div>
                   </div>
 
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Dev OTP: <b>000000</b> (users must exist).
                   </p>
                 </>
@@ -774,11 +776,10 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => setShowOtp((v) => !v)}
-                      className="absolute inset-y-0 right-2 my-1 px-2 rounded-full bg-white dark:bg-neutral-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-700 flex items-center justify-center"
+                      className="absolute inset-y-0 right-2 my-1 px-2 rounded-full bg-white dark:bg-neutral-950 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.04] flex items-center justify-center border border-slate-200 dark:border-white/10"
                       aria-label={showOtp ? "Hide OTP" : "Show OTP"}
                     >
                       {showOtp ? (
-                        // eye closed (slash) icon
                         <svg
                           className="w-4 h-4"
                           viewBox="0 0 24 24"
@@ -794,7 +795,6 @@ export default function Login() {
                           <line x1="3" y1="3" x2="21" y2="21" />
                         </svg>
                       ) : (
-                        // eye open icon
                         <svg
                           className="w-4 h-4"
                           viewBox="0 0 24 24"
@@ -832,10 +832,11 @@ export default function Login() {
 
               {step === "choose-role" && (
                 <div className="space-y-3">
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                  <div className="text-sm text-slate-700 dark:text-slate-300">
                     Welcome{pendingUser?.name ? `, ${pendingUser.name}` : ""}!
                     Please choose how you’d like to continue:
                   </div>
+
                   <div className="space-y-2">
                     {roleOptionsDeduped.map((r) => {
                       const roleIsClient = isClientRole(r.role as string);
@@ -846,28 +847,30 @@ export default function Login() {
                         ? r.label.replace(/^IH[_\s-]*PMT/i, "IH-PMT")
                         : r.label;
 
+                      const isSelected = selectedMembershipId === r.id;
+
                       return (
                         <label
                           key={r.id}
                           className={
-                            "flex items-center gap-3 p-3 border rounded-2xl cursor-pointer text-sm " +
-                            (selectedMembershipId === r.id
-                              ? "border-emerald-500 bg-emerald-50/60 dark:bg-neutral-800"
-                              : "border-slate-200 dark:border-neutral-800 hover:bg-emerald-50/40 dark:hover:bg-neutral-800")
+                            "flex items-center gap-3 p-3 border rounded-2xl cursor-pointer text-sm transition " +
+                            (isSelected
+                              ? "border-[#FCC020] bg-[#FCC020]/[0.12] dark:bg-[#FCC020]/[0.10]"
+                              : "border-slate-200 dark:border-white/10 hover:bg-[#00379C]/[0.04] dark:hover:bg-white/[0.04]")
                           }
                         >
                           <input
                             type="radio"
                             name="roleOption"
                             className="mt-0.5"
-                            checked={selectedMembershipId === r.id}
+                            checked={isSelected}
                             onChange={() => setSelectedMembershipId(r.id)}
                           />
                           <div className="flex-1">
-                            <div className="font-medium dark:text-white">
+                            <div className="font-medium text-slate-900 dark:text-white">
                               {displayLabel}
                             </div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <div className="text-xs text-slate-600 dark:text-slate-400">
                               {r.scopeType === "Global" ? "Global scope" : null}
                             </div>
                           </div>
@@ -875,6 +878,7 @@ export default function Login() {
                       );
                     })}
                   </div>
+
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button
                       className={btnPrimary}
@@ -893,13 +897,22 @@ export default function Login() {
                 </div>
               )}
 
-              {err && <div className="text-red-600 text-sm">{err}</div>}
+              {err && (
+                <div className="text-sm rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                  {err}
+                </div>
+              )}
+
+              {/* small gold accent */}
+              <div className="pt-2">
+                <div className="h-1 w-12 rounded-full bg-[#FCC020]" />
+              </div>
             </div>
           </section>
         </div>
       </main>
 
-      {/* Manage Saved Logins Modal */}
+      {/* Manage Saved Logins Modal (same content, themed) */}
       {showManage && (
         <div className="fixed inset-0 z-30">
           <div
@@ -908,35 +921,36 @@ export default function Login() {
             aria-hidden="true"
           />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/80 dark:border-neutral-800 shadow-xl">
-              <div className="flex items-center justify-between p-4 border-b border-slate-200/80 dark:border-neutral-800">
-                <h3 className="text-lg font-semibold dark:text-white">
+            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/10 bg-[#00379C]/[0.03] dark:bg-white/[0.03]">
+                <h3 className="text-lg font-extrabold text-[#00379C] dark:text-white">
                   Saved logins
                 </h3>
                 <button
-                  className="px-2 py-1 rounded-full border border-slate-200 dark:border-neutral-700 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10 text-sm hover:bg-slate-50 dark:hover:bg-white/[0.03]"
                   onClick={() => setShowManage(false)}
                 >
                   Close
                 </button>
               </div>
+
               <div className="p-4 space-y-3">
                 {savedLogins.length === 0 ? (
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                  <div className="text-sm text-slate-600 dark:text-slate-300">
                     No saved usernames yet.
                   </div>
                 ) : (
-                  <ul className="divide-y divide-slate-200 dark:divide-neutral-800">
+                  <ul className="divide-y divide-slate-200 dark:divide-white/10">
                     {savedLogins.map((u) => (
                       <li
                         key={u}
-                        className="py-2 flex items-center justify-between"
+                        className="py-2 flex items-center justify-between gap-3"
                       >
                         <span className="text-sm dark:text-white break-all">
                           {u}
                         </span>
                         <button
-                          className="px-2 py-1 rounded-full border border-slate-200 dark:border-neutral-700 text-xs sm:text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                          className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10 text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-white/[0.03]"
                           onClick={() => {
                             removeSavedLogin(u);
                             setSavedLogins(readSavedLogins());
@@ -950,13 +964,14 @@ export default function Login() {
                   </ul>
                 )}
               </div>
-              <div className="p-4 border-t border-slate-200/80 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="text-xs text-gray-600 dark:text-gray-400">
+
+              <div className="p-4 border-t border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">
                   Removing does not affect server accounts — only local
                   suggestions.
                 </div>
                 <button
-                  className="px-3 py-1.5 rounded-full bg-red-600 text-white text-sm disabled:opacity-60"
+                  className="px-3 py-2 rounded-full bg-rose-600 text-white text-sm disabled:opacity-60"
                   disabled={savedLogins.length === 0}
                   onClick={() => {
                     clearSavedLogins();
@@ -967,11 +982,78 @@ export default function Login() {
                   Clear all
                 </button>
               </div>
+
+              <div className="h-1 w-full bg-gradient-to-r from-[#00379C] via-[#23A192] to-[#FCC020]" />
             </div>
           </div>
         </div>
       )}
       {/* /modal */}
+      <style>{`
+  .login-bg{
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 1;
+  }
+
+  /* We keep content above the bg */
+  .login-bg + header,
+  .login-bg ~ header,
+  .login-bg ~ main{
+    position: relative;
+    z-index: 1;
+  }
+
+  /* LIGHT yellow diagonal ribbons + faint line texture */
+  .login-bg::before{
+    content:"";
+    position:absolute;
+    inset:-20%;
+    transform: rotate(-12deg);
+    background:
+      /* thin running lines */
+      repeating-linear-gradient(
+        90deg,
+        rgba(252,192,32,0.07) 0px,
+        rgba(252,192,32,0.07) 2px,
+        transparent 2px,
+        transparent 18px
+      );
+    filter: blur(0px);
+    opacity: 0.55;
+  }
+
+  /* One soft ribbon band */
+  .login-bg::after{
+    content:"";
+    position:absolute;
+    left:-20%;
+    top:40%;
+    width:140%;
+    height:220px;
+    transform: rotate(-12deg);
+    background: linear-gradient(
+      90deg,
+      rgba(252,192,32,0.00),
+      rgba(252,192,32,0.10),
+      rgba(35,161,146,0.06),
+      rgba(252,192,32,0.00)
+    );
+    border-radius: 999px;
+    filter: blur(0px);
+    opacity: 0.9;
+  }
+
+  /* Dark mode: reduce brightness so it stays classy */
+  :is(.dark) .login-bg::before{
+    opacity: 0.18;
+  }
+  :is(.dark) .login-bg::after{
+    opacity: 0.35;
+  }
+`}</style>
     </div>
   );
 }

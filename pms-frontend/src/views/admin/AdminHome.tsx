@@ -1,6 +1,13 @@
 // pms-frontend/src/views/admin/AdminHome.tsx
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, Navigate, NavLink } from "react-router-dom";
+import avaLogo from "../../assets/avaLogo.jpg";
+
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
 
 function decodeJwtPayload(token: string): any | null {
   try {
@@ -15,7 +22,6 @@ function decodeJwtPayload(token: string): any | null {
 }
 
 export default function AdminHome() {
-  // client-side guard
   const token = localStorage.getItem("token");
   const loc = useLocation();
   const payload = token ? decodeJwtPayload(token) : null;
@@ -26,10 +32,6 @@ export default function AdminHome() {
     localStorage.removeItem("user");
     location.assign("/login");
   };
-
-  useEffect(() => {
-    document.title = "Trinity PMS — Admin";
-  }, []);
 
   if (!token) return <Navigate to="/login" state={{ from: loc }} replace />;
 
@@ -46,47 +48,86 @@ export default function AdminHome() {
       to={to}
       end={end}
       className={({ isActive }) =>
-        `w-full text-left px-3 py-2 rounded text-sm transition flex items-center gap-2
-        ${
+        [
+          "w-full text-left px-3 py-2 rounded-xl text-sm transition flex items-center gap-2",
+          "border border-transparent",
           isActive
-            ? "bg-emerald-600 text-white"
-            : "hover:bg-emerald-50 dark:hover:bg-neutral-800"
-        }`
+            ? [
+                // ✅ active: gold left bar + soft gold background
+                "bg-[#FCC020]/20 text-slate-900",
+                "border-[#FCC020]/40",
+                "shadow-sm",
+                "dark:bg-[#FCC020]/15 dark:text-white dark:border-[#FCC020]/35",
+              ].join(" ")
+            : [
+                "text-slate-700 hover:bg-[#00379C]/5 hover:border-[#00379C]/15",
+                "dark:text-slate-200 dark:hover:bg-white/5 dark:hover:border-white/10",
+              ].join(" "),
+        ].join(" ")
       }
     >
-      {/* tiny pill icon to keep visual rhythm */}
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-70" />
-      <span>{label}</span>
+      {/* ✅ gold selection bar (shows only when active) */}
+      <span
+        className={[
+          "inline-block w-2 h-2 rounded-full transition",
+          "bg-[#00379C] dark:bg-white/70",
+        ].join(" ")}
+        style={{ opacity: 0.85 }}
+      />
+
+      {/* Gold vertical bar */}
+      <span
+        className="ml-1 h-5 w-1 rounded-full bg-[#FCC020]"
+        style={{ display: "none" }}
+      />
+
+      <span className="truncate">{label}</span>
     </NavLink>
   );
 
+  const [pageTitle, setPageTitle] = useState("Admin");
+  const [pageSubtitle, setPageSubtitle] = useState("");
+
+  useEffect(() => {
+    const read = () => {
+      const t = (document.title || "").trim();
+      const pretty = t.includes("—") ? t.split("—").pop()!.trim() : t;
+      setPageTitle(pretty || "Admin");
+      setPageSubtitle((window.__ADMIN_SUBTITLE__ || "").trim());
+    };
+
+    read();
+    const id = window.setInterval(read, 250);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950">
+    <div className="relative min-h-screen bg-white dark:bg-neutral-950">
+      {/* Yellow thin lines background (no ribbon) */}
+      <div className="admin-lines-bg" aria-hidden="true" />
+      {/* Top accent line #00379C, #FCC020, #23A192*/}
+      <div className="h-1 w-full bg-gradient-to-r from-[#FCC020] via-[#23A192] to-[#FCC020]" />
+
       {/* Header */}
-      <header className="w-full px-4 sm:px-6 lg:px-10 py-4 border-b dark:border-neutral-800">
-        <div className="mx-auto max-w-7xl flex items-center justify-between">
+      <header className="w-full px-5 sm:px-8 lg:px-14 py-4 border-b border-slate-200 bg-white sticky top-0 z-30 dark:bg-neutral-950 dark:border-white/10">
+        <div className="mx-auto max-w-6xl flex items-center justify-between">
           {/* Brand */}
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 grid place-items-center shadow">
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                role="img"
-                aria-hidden="true"
-              >
-                <path
-                  d="M12 2C9 6 7 8.5 7 11a5 5 0 1 0 10 0c0-2.5-2-5-5-9z"
-                  className="fill-white/95"
-                />
-              </svg>
+            <div className="h-12 w-12 rounded-sm bg-white border border-slate-200 shadow-sm grid place-items-center overflow-hidden dark:bg-neutral-950 dark:border-white/10">
+              <img
+                src={avaLogo}
+                alt="Trinity PMS"
+                className="h-full w-full object-contain"
+              />
             </div>
+
             <div>
-              <div className="text-xl font-bold tracking-tight dark:text-white">
+              <div className="text-xl font-extrabold tracking-tight text-[#00379C] dark:text-white">
                 Trinity PMS — Admin
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-300">
-                Empowering Projects
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                <span className="font-semibold text-[#23A192]">Empowering</span>{" "}
+                Projects
               </div>
             </div>
           </div>
@@ -97,12 +138,11 @@ export default function AdminHome() {
               type="button"
               onClick={handleSignOut}
               title="Sign out"
-              className="inline-flex items-center gap-2 rounded-full 
-               bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300
-               px-4 py-1.5 text-xs font-semibold text-black shadow-sm
-               hover:brightness-105 active:scale-[0.98]
-               focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-400/70
-               dark:focus:ring-offset-neutral-900"
+              className="inline-flex items-center gap-2 rounded-full
+                bg-[#00379C] px-4 py-2 text-xs font-semibold text-white shadow-sm
+                hover:brightness-110 active:scale-[0.98]
+                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/40
+                dark:focus:ring-offset-neutral-950"
             >
               <span>Sign out</span>
             </button>
@@ -110,16 +150,20 @@ export default function AdminHome() {
         </div>
       </header>
 
-      {/* Body with left sidebar nav + main content */}
-      <main className="px-4 sm:px-6 lg:px-10 py-6">
-        <div className="mx-auto max-w-7xl grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-6">
+      {/* Body */}
+      <main className="px-5 sm:px-8 lg:px-14 py-6">
+        <div className="mx-auto max-w-6xl grid grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)] gap-6">
           {/* Sidebar */}
-          <aside className="lg:sticky lg:top-4 h-max">
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-4">
-              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                Modules
+          <aside className="md:sticky lg:top-[92px] h-max">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden dark:bg-neutral-950 dark:border-white/10">
+              <div className="px-4 py-3 border-b border-slate-200 bg-[#00379C]/[0.03] dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-[#00379C] dark:text-white">
+                  Modules
+                </div>
+                <div className="mt-1 h-1 w-12 rounded-full bg-[#FCC020]" />
               </div>
-              <div className="flex flex-col gap-1">
+
+              <div className="p-3 flex flex-col gap-1">
                 <SideLink to="." label="Dashboard" end />
                 <SideLink to="companies" label="Companies" />
                 <SideLink to="users" label="Users" />
@@ -143,8 +187,28 @@ export default function AdminHome() {
           </aside>
 
           {/* Main content */}
-          <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 p-6">
-            <Outlet />
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden dark:bg-neutral-950 dark:border-white/10">
+            {/* Content header bar */}
+            <div className="px-6 py-5 border-b border-slate-200 bg-[#00379C]/[0.03] dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  {/* slightly larger title */}
+                  <div className="text-xl font-extrabold text-[#00379C] leading-tight truncate dark:text-white">
+                    {pageTitle}
+                  </div>
+                  {pageSubtitle ? (
+                    <div className="mt-0.5 text-sm text-slate-600 truncate dark:text-slate-300">
+                      {pageSubtitle}
+                    </div>
+                  ) : null}
+                  <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <Outlet />
+            </div>
           </section>
         </div>
       </main>

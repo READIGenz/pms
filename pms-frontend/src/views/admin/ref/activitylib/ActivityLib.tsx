@@ -140,6 +140,16 @@ export default function ActivityLib() {
   const location = useLocation();
   const nav = useNavigate();
 
+  // Page title + shell subtitle
+  useEffect(() => {
+    document.title = "Trinity PMS — Activity Library";
+    (window as any).__ADMIN_SUBTITLE__ =
+      "Reusable activities that power inspections and workflows.";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
   /* ---- Admin gate ---- */
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -587,39 +597,55 @@ export default function ActivityLib() {
     URL.revokeObjectURL(url);
   };
 
-  /* ========================= UI ========================= */
+  /* ========================= UI (new theme, no logic changes) ========================= */
+
+  // Controls + buttons (match latest admin pages)
+  const pillSelect =
+    "h-8 rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm " +
+    "outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/20 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-neutral-100";
+
+  const pillInput =
+    "h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
+    "outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/20 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-slate-500";
+
+  const btnOutline =
+    "inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold " +
+    "text-slate-700 shadow-sm transition hover:bg-slate-50 active:translate-y-[0.5px] " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-white/5";
+
+  const btnTeal =
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#23A192] px-3 text-[12.5px] font-semibold text-white " +
+    "shadow-sm transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60";
+
+  const btnPrimary =
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white " +
+    "shadow-sm transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
-              Activity Library
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Reusable activities that power inspections and workflows.
-            </p>
+    <div className="w-full">
+      <div className="mx-auto max-w-6xl">
+        {/* Actions row (right) */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
           </div>
-          <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
+
+          <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+            <button className={btnOutline} onClick={exportCsv} type="button">
+              Export CSV
+            </button>
             <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className={btnTeal}
               onClick={refresh}
               type="button"
               title="Refresh"
             >
-              {loading ? "Loading…" : "Refresh"}
+              Refresh
             </button>
             <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={exportCsv}
-              type="button"
-              title="Export CSV"
-            >
-              Export CSV
-            </button>
-            <button
-              className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
+              className={btnPrimary}
               onClick={openNew}
               type="button"
               title="Create Activity"
@@ -630,206 +656,253 @@ export default function ActivityLib() {
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-200">
             {err}
           </div>
         )}
 
         {/* KPIs */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Active
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Active}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Draft
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Draft}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Inactive
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Inactive}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Archived
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
-              {statsLoading ? "…" : stats.byStatus.Archived}
-            </div>
-          </div>
+          <KpiCard
+            label="Active"
+            value={statsLoading ? "…" : stats.byStatus.Active}
+          />
+          <KpiCard
+            label="Draft"
+            value={statsLoading ? "…" : stats.byStatus.Draft}
+          />
+          <KpiCard
+            label="Inactive"
+            value={statsLoading ? "…" : stats.byStatus.Inactive}
+          />
+          <KpiCard
+            label="Archived"
+            value={statsLoading ? "…" : stats.byStatus.Archived}
+          />
         </div>
 
-        {/* Filters */}
-        <Section title="Find">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
-            <Input
-              label="Search"
-              value={q}
-              onChange={(v) => {
-                setQ(v);
-                setPage(1);
-              }}
-              placeholder="id, code, title, stage…"
-            />
-            <SelectStrict
-              label="Discipline"
-              value={discipline}
-              onChange={(v) => {
-                setDiscipline(v as Discipline | "");
-                setStage("");
-                setPage(1);
-              }}
-              options={["", ...DISCIPLINES].map((d) => ({
-                value: d as any,
-                label: d || "All",
-              }))}
-            />
-            <SelectStrict
-              label="Stage"
-              value={stage}
-              onChange={(v) => {
-                setStage(v);
-                setPage(1);
-              }}
-              options={[
-                "",
-                ...(discipline
-                  ? STAGE_LIBRARY[discipline] || []
-                  : Object.values(STAGE_LIBRARY).flat()),
-              ].map((s) => ({ value: s, label: s || "All" }))}
-            />
-            <SelectStrict
-              label="Status"
-              value={status}
-              onChange={(v) => {
-                setStatus(v as ActivityStatus | "");
-                setPage(1);
-              }}
-              options={["", ...STATUS_OPTIONS].map((s) => ({
-                value: s as any,
-                label: s || "All",
-              }))}
-            />
-            <div className="flex items-end">
+        {/* Filters (NO heading, NO boundary) */}
+        <div className="mb-4">
+          {/* Row 1: filters + clear */}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Discipline
+              </span>
+              <select
+                className={pillSelect}
+                value={discipline}
+                onChange={(e) => {
+                  setDiscipline(e.target.value as Discipline | "");
+                  setStage("");
+                  setPage(1);
+                }}
+              >
+                <option value="">All</option>
+                {DISCIPLINES.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Stage
+              </span>
+              <select
+                className={pillSelect}
+                value={stage}
+                onChange={(e) => {
+                  setStage(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All</option>
+                {[
+                  ...(discipline
+                    ? STAGE_LIBRARY[discipline] || []
+                    : Object.values(STAGE_LIBRARY).flat()),
+                ].map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Status
+              </span>
+              <select
+                className={pillSelect}
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value as ActivityStatus | "");
+                  setPage(1);
+                }}
+              >
+                <option value="">All</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-[18px]">
               <button
-                className="h-9 w-full rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className={btnOutline}
                 onClick={clearFilters}
                 type="button"
-                title="Clear filters"
               >
                 Clear
               </button>
             </div>
           </div>
-        </Section>
 
-        {/* Table info */}
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-          {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
+          {/* Row 2: search left, page size right */}
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <label className="block w-full sm:max-w-[520px]">
+              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Search
+              </span>
+              <input
+                className={pillInput}
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="id, code, title, stage…"
+                type="text"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Page size
+              </span>
+              <select
+                className={pillSelect}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value, 10));
+                  setPage(1);
+                }}
+              >
+                {[10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n}/page
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 overflow-hidden">
-          <div className="overflow-auto max-h-[70vh] thin-scrollbar">
-            <table className="w-full min-w-[1400px] text-sm table-fixed [word-break:break-word] [overflow-wrap:anywhere]">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-neutral-950 overflow-hidden">
+          <div className="overflow-auto max-h-[62vh] thin-scrollbar">
+            <table className="w-full min-w-[1100px] text-[12.5px] table-auto">
               <colgroup>
-                <col className="w-[140px]" /> {/* Actions */}
-                <col className="w-[300px]" /> {/* Activity */}
+                <col className="w-[140px]" />
+                <col className="w-[300px]" />
                 <col span={9} />
               </colgroup>
 
-              <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
+              <thead className="bg-slate-50 dark:bg-neutral-900">
                 <tr>
-                  <th className="sticky left-0 z-10 bg-gray-50/90 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 border-b border-slate-200 dark:bg-neutral-800/95 dark:text-slate-200 dark:border-neutral-700">
+                  <th className="px-3 py-2 text-left text-[10px] font-extrabold uppercase tracking-widest text-slate-600 border-b border-slate-200 dark:border-white/10 dark:text-slate-200">
                     Actions
                   </th>
 
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700 w-[320px]"
+                    className="border-b border-slate-200 dark:border-white/10 w-[320px]"
                     onClick={() => requestSort("activity")}
                     active={sortBy === "activity"}
                     dir={sortDir}
                   >
                     Activity
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("discStage")}
                     active={sortBy === "discStage"}
                     dir={sortDir}
                   >
                     Discipline • Stage
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("phase")}
                     active={sortBy === "phase"}
                     dir={sortDir}
                   >
                     Phase
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("element")}
                     active={sortBy === "element"}
                     dir={sortDir}
                   >
                     Element
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("system")}
                     active={sortBy === "system"}
                     dir={sortDir}
                   >
                     System
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("nature")}
                     active={sortBy === "nature"}
                     dir={sortDir}
                   >
                     Nature
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("method")}
                     active={sortBy === "method"}
                     dir={sortDir}
                   >
                     Method
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("version")}
                     active={sortBy === "version"}
                     dir={sortDir}
                   >
                     Version
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("updated")}
                     active={sortBy === "updated"}
                     dir={sortDir}
                   >
                     Updated
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("status")}
                     active={sortBy === "status"}
                     dir={sortDir}
@@ -843,27 +916,29 @@ export default function ActivityLib() {
                 {sortedRows.map((r) => (
                   <tr
                     key={r.id}
-                    className="border-t border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
+                    className="border-t border-slate-100/80 dark:border-white/10 hover:bg-slate-50/60 dark:hover:bg-white/5"
                   >
                     {/* Actions */}
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 dark:bg-neutral-900">
+                    <td className="px-3 py-1.5">
                       <div className="flex items-center gap-2">
-                        {/* View (eye) – green line icon */}
+                        {/* View */}
                         <button
                           type="button"
                           aria-label="View activity"
                           title="View"
                           onClick={() => openView(r)}
-                          className="inline-flex items-center justify-center w-7 h-7 bg-transparent
-               text-emerald-600 hover:text-emerald-700
-               dark:text-emerald-400 dark:hover:text-emerald-300"
+                          className="
+                            inline-flex h-8 w-8 items-center justify-center rounded-full
+                            text-[#23A192] hover:bg-[#23A192]/10
+                            dark:hover:bg-[#23A192]/15
+                          "
                         >
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-5 h-5"
+                            className="h-5 w-5"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth={1.6}
+                            strokeWidth={1.7}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
@@ -872,23 +947,25 @@ export default function ActivityLib() {
                           </svg>
                         </button>
 
-                        {/* Edit (pencil) – red line icon */}
+                        {/* Edit */}
                         <button
                           type="button"
                           aria-label="Edit activity"
                           title="Edit"
                           onClick={() => openEdit(r.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full
-               text-rose-500 hover:text-rose-600 hover:bg-rose-50/70
-               dark:hover:bg-rose-900/40"
+                          className="
+                            inline-flex h-8 w-8 items-center justify-center rounded-full
+                            text-[#00379C] hover:bg-[#00379C]/10
+                            dark:text-[#FCC020] dark:hover:bg-[#FCC020]/10
+                          "
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             viewBox="0 0 24 24"
-                            className="w-5 h-5"
+                            className="h-5 w-5"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="1.7"
+                            strokeWidth="1.8"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
@@ -906,12 +983,10 @@ export default function ActivityLib() {
                       </div>
                     </td>
 
-                    {/* Discipline • Stage */}
                     <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
                       {r.discipline} • {r.stageLabel || "—"}
                     </td>
 
-                    {/* Phase / Element */}
                     <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
                       {asList(r.phase)}
                     </td>
@@ -919,7 +994,6 @@ export default function ActivityLib() {
                       {asList(r.element)}
                     </td>
 
-                    {/* System / Nature / Method */}
                     <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
                       {asList(r.system)}
                     </td>
@@ -930,7 +1004,6 @@ export default function ActivityLib() {
                       {asList(r.method)}
                     </td>
 
-                    {/* Version / Updated / Status */}
                     <td className="px-3 py-2 text-slate-700 dark:text-slate-100">
                       {`v${(r as any).versionLabel ?? r.version}`}
                     </td>
@@ -942,10 +1015,11 @@ export default function ActivityLib() {
                     </td>
                   </tr>
                 ))}
+
                 {!sortedRows.length && !loading && (
                   <tr>
                     <td
-                      className="px-3 py-6 text-center text-gray-500 dark:text-gray-400"
+                      className="px-3 py-8 text-center text-slate-500 dark:text-slate-400"
                       colSpan={11}
                     >
                       No activities found.
@@ -955,168 +1029,139 @@ export default function ActivityLib() {
               </tbody>
             </table>
           </div>
-        </div>
 
-        {/* Pagination */}
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <div className="text-gray-600 dark:text-gray-400">
-            Page <b>{page}</b> of <b>{totalPages}</b>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-            <select
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setPage(1);
-              }}
-            >
-              {[10, 20, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n}/page
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+          {/* Pagination (match list pages) */}
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-slate-600 dark:text-slate-300">
+              Page <b>{page}</b> of <b>{totalPages}</b>
+            </div>
 
-      {/* View Modal */}
-      {viewOpen && viewItem && (
-        <div className="fixed inset-0 z-50">
-          {/* overlay */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={closeView}
-            aria-hidden="true"
-          />
-          {/* card */}
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/80 dark:border-neutral-800 shadow-xl overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-neutral-800">
-                <div className="flex flex-col">
-                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Activity
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-semibold dark:text-white">
-                      {viewItem.code
-                        ? `${viewItem.code} • ${viewItem.title}`
-                        : viewItem.title}
-                    </h3>
-                    {viewItem.discipline ? (
-                      <span
-                        className="rounded-full border border-slate-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-gray-200"
-                        title="Discipline"
-                      >
-                        {viewItem.discipline}
-                      </span>
-                    ) : null}
-                    {viewItem.status ? (
-                      <span className="text-xs">
-                        <StatusPill value={viewItem.status} />
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <button
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                  onClick={closeView}
-                >
-                  Close
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">
-                <KV k="Code" v={viewItem.code || "—"} />
-                <KV k="Title" v={viewItem.title || "—"} />
-                <KV
-                  k="Discipline • Stage"
-                  v={`${viewItem.discipline} • ${viewItem.stageLabel || "—"}`}
-                />
-                <KV k="Phase" v={viewItem.phase?.join(", ") || "—"} />
-                <KV k="Element" v={viewItem.element?.join(", ") || "—"} />
-                <KV k="System" v={viewItem.system?.join(", ") || "—"} />
-                <KV k="Nature" v={viewItem.nature?.join(", ") || "—"} />
-                <KV k="Method" v={viewItem.method?.join(", ") || "—"} />
-                <KV
-                  k="Version"
-                  v={`v${
-                    (viewItem as any).versionLabel ?? viewItem.version ?? 1
-                  }`}
-                />
-                <KV k="Updated" v={fmt(viewItem.updatedAt)} />
-                <KV k="Status" v={<StatusPill value={viewItem.status} />} />
-                <div className="sm:col-span-2">
-                  <KV k="Notes" v={viewItem.notes || "—"} />
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-neutral-800">
-                <button
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  onClick={closeView}
-                >
-                  Done
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={btnOutline}
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                type="button"
+              >
+                Prev
+              </button>
+              <button
+                className={btnOutline}
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                type="button"
+              >
+                Next
+              </button>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Editor Modal (kept commented)
-      <ActivityLibEdit
-        open={editorOpen}
-        initial={editing || undefined}
-        saving={saving}
-        onClose={() => setEditorOpen(false)}
-        onSave={handleSave}
-      />
-      */}
+        {/* View Modal */}
+        {viewOpen && viewItem && (
+          <div className="fixed inset-0 z-50">
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={closeView}
+              aria-hidden="true"
+            />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+                  <div className="flex flex-col">
+                    <div className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      Activity
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                        {viewItem.code
+                          ? `${viewItem.code} • ${viewItem.title}`
+                          : viewItem.title}
+                      </h3>
+                      {viewItem.discipline ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                          {viewItem.discipline}
+                        </span>
+                      ) : null}
+                      {viewItem.status ? (
+                        <span className="text-xs">
+                          <StatusPill value={viewItem.status} />
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
 
-      {/* Thin scrollbar styling */}
-      <style>
-        {`
-          .thin-scrollbar::-webkit-scrollbar {
-            height: 6px;
-            width: 6px;
-          }
-          .thin-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-          }
+                  <button
+                    className={btnOutline}
+                    onClick={closeView}
+                    type="button"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">
+                  <KV k="Code" v={viewItem.code || "—"} />
+                  <KV k="Title" v={viewItem.title || "—"} />
+                  <KV
+                    k="Discipline • Stage"
+                    v={`${viewItem.discipline} • ${viewItem.stageLabel || "—"}`}
+                  />
+                  <KV k="Phase" v={viewItem.phase?.join(", ") || "—"} />
+                  <KV k="Element" v={viewItem.element?.join(", ") || "—"} />
+                  <KV k="System" v={viewItem.system?.join(", ") || "—"} />
+                  <KV k="Nature" v={viewItem.nature?.join(", ") || "—"} />
+                  <KV k="Method" v={viewItem.method?.join(", ") || "—"} />
+                  <KV
+                    k="Version"
+                    v={`v${
+                      (viewItem as any).versionLabel ?? viewItem.version ?? 1
+                    }`}
+                  />
+                  <KV k="Updated" v={fmt(viewItem.updatedAt)} />
+                  <KV k="Status" v={<StatusPill value={viewItem.status} />} />
+                  <div className="sm:col-span-2">
+                    <KV k="Notes" v={viewItem.notes || "—"} />
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-white/10">
+                  <button
+                    className={btnPrimary}
+                    onClick={closeView}
+                    type="button"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Thin scrollbar styling (consistent) */}
+        <style>{`
+          .thin-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+          .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
           .thin-scrollbar::-webkit-scrollbar-thumb {
-            background-color: rgba(148, 163, 184, 0.7);
+            background: rgba(148, 163, 184, 0.55);
             border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
           }
-          .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-            background-color: rgba(100, 116, 139, 0.9);
-          }
-        `}
-      </style>
+          .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+          .thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.55) transparent; }
+        `}</style>
+      </div>
     </div>
   );
 }
 
-/* ========================= Small UI bits (kept consistent) ========================= */
+/* ========================= UI helper blocks (theme-consistent) ========================= */
+
 function Section({
   title,
   children,
@@ -1125,163 +1170,49 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/70 dark:border-neutral-800 p-4">
-      <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-        {title}
+    <section className="mb-6">
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-xs font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+            {title}
+          </div>
+        </div>
+        {children}
       </div>
-      {children}
+    </section>
+  );
+}
+
+function KpiCard({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+      <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-0.5 text-xl font-extrabold text-slate-900 dark:text-white">
+        {value}
+      </div>
     </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        type={type}
-      />
-    </label>
-  );
-}
-
-function TextArea({
-  label,
-  value,
-  onChange,
-  placeholder,
-  rows = 3,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  rows?: number;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <textarea
-        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={rows}
-      />
-    </label>
-  );
-}
-
-function SelectStrict({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder = "Select…",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
 function StatusPill({ value }: { value: ActivityStatus }) {
   const cls =
     value === "Active"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900"
+      ? "bg-[#23A192]/10 text-[#23A192] border-[#23A192]/25"
       : value === "Draft"
-      ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/20 dark:text-sky-300 dark:border-sky-900"
+      ? "bg-[#00379C]/10 text-[#00379C] border-[#00379C]/25 dark:text-[#FCC020] dark:border-[#FCC020]/25 dark:bg-[#FCC020]/10"
       : value === "Inactive"
-      ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900"
-      : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900";
+      ? "bg-[#FCC020]/15 text-slate-800 border-[#FCC020]/35 dark:text-slate-100"
+      : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-900/50";
+
   return (
     <span
-      className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
+      className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${cls}`}
     >
       {value}
     </span>
-  );
-}
-
-function TagPicker({
-  label,
-  all,
-  selected,
-  onChange,
-}: {
-  label: string;
-  all: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const toggle = (v: string) => {
-    const has = selected.includes(v);
-    const next = has ? selected.filter((x) => x !== v) : [...selected, v];
-    onChange(next);
-  };
-  return (
-    <div>
-      <div className="mb-1 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {all.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => toggle(v)}
-            className={`rounded-full border px-2 py-1 text-xs ${
-              selected.includes(v)
-                ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-            }`}
-          >
-            {v}
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -1298,8 +1229,8 @@ function fmt(iso?: string) {
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
-      <div className="text-gray-500 dark:text-gray-400">{k}</div>
-      <div className="dark:text-white">{v}</div>
+      <div className="text-slate-500 dark:text-slate-400">{k}</div>
+      <div className="text-slate-900 dark:text-white">{v}</div>
     </div>
   );
 }
@@ -1311,7 +1242,7 @@ const SortIcon = ({
   active: boolean;
   dir: "asc" | "desc";
 }) => (
-  <span className="inline-block ml-1 text-[10px] opacity-70">
+  <span className="ml-1 inline-block text-[10px] opacity-70">
     {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
   </span>
 );
@@ -1330,11 +1261,11 @@ function Th({
   className?: string;
 }) {
   return (
-    <th className={`px-3 py-2 align-middle ${className}`}>
+    <th className={`px-3 py-3 align-middle ${className}`}>
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-200 select-none hover:underline"
+        className="inline-flex select-none items-center gap-1 text-[11px] font-extrabold uppercase tracking-widest text-slate-600 hover:underline dark:text-slate-200"
         title="Sort"
       >
         <span>{children}</span>

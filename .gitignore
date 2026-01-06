@@ -1,7 +1,7 @@
-/pms-frontend/index.html
+#/pms-frontend/index.html
 /pms-backend/.env
 /pms-frontend/.env
-/pms-frontend/vite.config.ts
+#/pms-frontend/vite.config.ts
 /pms-backend/uploads/
 seed1.ts
 seed2.ts
@@ -35,7 +35,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
+# package-lock.json
 # If you want to commit a lockfile, remove the one you use from above.
 
 # ---- Env / Secrets ----
@@ -120,4 +120,7 @@ storybook-static/
 **/node_modules/
 **/dist/
 .env
-uploads/
+#uploads/
+**/node_modules/
+**/.vite/
+**/.prisma/

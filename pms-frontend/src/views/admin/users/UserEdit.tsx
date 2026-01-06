@@ -11,33 +11,15 @@ type ProjectOpt = { projectId: string; title: string; code?: string | null };
 type CompanyOpt = {
   companyId: string;
   name: string;
-  companyRole?:
-  | "IH_PMT"
-  | "Contractor"
-  | "Consultant"
-  | "PMC"
-  | "Supplier"
-  | null;
+  companyRole?: "IH_PMT" | "Contractor" | "Consultant" | "PMC" | "Supplier" | null;
 };
 
 /** Enums from prisma schema */
-const preferredLanguages = [
-  "en",
-  "hi",
-  "bn",
-  "ta",
-  "te",
-  "mr",
-  "pa",
-  "or",
-  "gu",
-  "kn",
-  "ml",
-] as const;
+const preferredLanguages = ["en", "hi", "bn", "ta", "te", "mr", "pa", "or", "gu", "kn", "ml"] as const;
 const zones = ["NCR", "North", "South", "East", "West", "Central"] as const;
 const statuses = ["Active", "Inactive"] as const;
 
-/** Small helpers (photo preview) */
+/** Photo helper */
 function resolvePhotoUrl(path?: string | null): string | null {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
@@ -54,12 +36,13 @@ export default function UserEdit() {
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState(""); // India mobile (digits only)
+  const [countryCode, setCountryCode] = useState("91"); // digits only
+  const [phone, setPhone] = useState(""); // digits only
   const [email, setEmail] = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState<string>("");
   const [userStatus, setUserStatus] = useState<string>("Active");
   const [profileFile, setProfileFile] = useState<File | null>(null);
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(null); // current server path
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null); // server path
 
   // ---------- Location ----------
   const [stateId, setStateId] = useState<string>("");
@@ -71,7 +54,7 @@ export default function UserEdit() {
 
   // ---------- Affiliations ----------
   const [isClient, setIsClient] = useState<boolean>(false);
-  const [selectedProjectIds] = useState<string[]>([]); // intentionally not used in UI
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]); // UI hidden, but guards need it
   const [isServiceProvider, setIsServiceProvider] = useState<boolean>(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
 
@@ -83,15 +66,12 @@ export default function UserEdit() {
   const [refsErr, setRefsErr] = useState<string | null>(null);
   const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
 
-  // Map of service-provider companyId -> list of projectIds the user is assigned on via that company
-  const [svcProjByCompany, setSvcProjByCompany] = useState<
-    Record<string, string[]>
-  >({});
+  // Map of service-provider companyId -> list of projectIds where user is assigned via that company
+  const [svcProjByCompany, setSvcProjByCompany] = useState<Record<string, string[]>>({});
 
   const filteredCompanies = useMemo(() => {
     const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
-    const filter =
-      companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
+    const filter = companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter;
     const f = normalize(filter || "");
     return companies.filter((c) => {
       if (!f) return true;
@@ -121,13 +101,22 @@ export default function UserEdit() {
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
 
-  // --- Auth gate simple check ---
+  /* ========================= page title (UI only) ========================= */
+  useEffect(() => {
+    document.title = "Trinity PMS — Edit User";
+    (window as any).__ADMIN_SUBTITLE__ = "Update user details, then save.";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
+  /* ---- Auth gate simple check ---- */
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) nav("/login", { replace: true });
   }, [nav]);
 
-  // --- Load reference data (states/projects/companies) using refs controller ---
+  /* ---- Load reference data ---- */
   const loadRefs = async () => {
     setRefsErr(null);
     const results = await Promise.allSettled([
@@ -146,8 +135,7 @@ export default function UserEdit() {
       setRefsErr(
         status === 404
           ? "States API not found (list may be incomplete)."
-          : (results[0] as any)?.reason?.response?.data?.error ||
-          "Failed to load states."
+          : (results[0] as any)?.reason?.response?.data?.error || "Failed to load states."
       );
     }
 
@@ -158,8 +146,7 @@ export default function UserEdit() {
     } else {
       if (!refsErr) {
         setRefsErr(
-          (results[1] as any)?.reason?.response?.data?.error ||
-          "Failed to load projects."
+          (results[1] as any)?.reason?.response?.data?.error || "Failed to load projects."
         );
       }
     }
@@ -171,8 +158,7 @@ export default function UserEdit() {
     } else {
       if (!refsErr) {
         setRefsErr(
-          (results[2] as any)?.reason?.response?.data?.error ||
-          "Failed to load companies."
+          (results[2] as any)?.reason?.response?.data?.error || "Failed to load companies."
         );
       }
     }
@@ -183,7 +169,7 @@ export default function UserEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Load user by id (GET /admin/users/:id?includeMemberships=1) ---
+  /* ---- Load user ---- */
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -199,11 +185,8 @@ export default function UserEdit() {
         setFirstName(u.firstName || "");
         setMiddleName(u.middleName || "");
         setLastName(u.lastName || "");
-        setPhone(
-          String(u.phone || "")
-            .replace(/\D/g, "")
-            .slice(0, 10)
-        );
+        setCountryCode(String(u.countryCode || "91").replace(/\D/g, "") || "91");
+        setPhone(String(u.phone || "").replace(/\D/g, "").slice(0, 10));
         setEmail(u.email || "");
         setPreferredLanguage(u.preferredLanguage || "");
         setUserStatus(u.userStatus || "Active");
@@ -213,33 +196,20 @@ export default function UserEdit() {
         setStateId(u.stateId || "");
         setDistrictId(u.districtId || "");
         setCityTown(u.cityTown || "");
-        setPin(
-          String(u.pin || "")
-            .replace(/\D/g, "")
-            .slice(0, 6)
-        );
+        setPin(String(u.pin || "").replace(/\D/g, "").slice(0, 6));
         setOperatingZone(u.operatingZone || "");
         setAddress(u.address || "");
 
-        // Affiliations & flags
+        // Affiliations
         setIsClient(!!u.isClient);
         setIsServiceProvider(!!u.isServiceProvider);
 
-        const memberships: any[] = Array.isArray(u.userRoleMemberships)
-          ? u.userRoleMemberships
-          : [];
+        const memberships: any[] = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
 
-        // Client projects still parsed for the guard alerts
-        // (even though selection UI is hidden)
         const clientPids = memberships
-          .filter(
-            (m) =>
-              m.scopeType === "Project" && m.role === "Client" && m.projectId
-          )
+          .filter((m) => m.scopeType === "Project" && m.role === "Client" && m.projectId)
           .map((m) => m.projectId);
-        // we don't show project picker, but we need these for guard checks
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        clientPids;
+        setSelectedProjectIds(clientPids);
 
         setSelectedCompanyIds(
           memberships
@@ -247,9 +217,7 @@ export default function UserEdit() {
             .map((m) => m.companyId)
         );
       } catch (e: any) {
-        setErr(
-          e?.response?.data?.error || e?.message || "Failed to load user."
-        );
+        setErr(e?.response?.data?.error || e?.message || "Failed to load user.");
       } finally {
         setLoading(false);
       }
@@ -263,7 +231,7 @@ export default function UserEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, projects]);
 
-  // Districts by state
+  /* ---- Districts by state ---- */
   useEffect(() => {
     if (!stateId) {
       setDistricts([]);
@@ -272,15 +240,11 @@ export default function UserEdit() {
     }
     (async () => {
       try {
-        const { data } = await api.get("/admin/districts", {
-          params: { stateId },
-        });
+        const { data } = await api.get("/admin/districts", { params: { stateId } });
         const list = Array.isArray(data) ? data : data?.districts || [];
         setDistricts(list);
         if (list.length && districtId) {
-          const found = list.some(
-            (d: { districtId: string }) => d.districtId === districtId
-          );
+          const found = list.some((d: { districtId: string }) => d.districtId === districtId);
           if (!found) setDistrictId("");
         }
       } catch (e: any) {
@@ -291,45 +255,25 @@ export default function UserEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateId]);
 
-  const namePreview = useMemo(
-    () => [firstName, middleName, lastName].filter(Boolean).join(" "),
-    [firstName, middleName, lastName]
-  );
+  const phoneClean = phone.replace(/\D/g, "").slice(0, 10);
+  const pinClean = pin.replace(/\D/g, "").slice(0, 6);
+  const canSave = firstName.trim().length > 0 && phoneClean.length === 10;
 
-  const phoneClean = phone.replace(/\D/g, "");
-  const pinClean = pin.replace(/\D/g, "");
-
-  const canSave = firstName.trim().length > 0 && phoneClean.length >= 10;
-
-  // Fetch assignments per project and build: companyId -> projectIds where this user is assigned
-  async function buildSvcAssignmentsMap(
-    userId: string,
-    projList: ProjectOpt[]
-  ) {
+  async function buildSvcAssignmentsMap(userId: string, projList: ProjectOpt[]) {
     const map: Record<string, string[]> = {};
-
     for (const p of projList) {
       try {
-        const { data } = await api.get(
-          `/admin/projects/${p.projectId}/assignments`
-        );
-        const rows: any[] = Array.isArray(data)
-          ? data
-          : data?.assignments || [];
-
+        const { data } = await api.get(`/admin/projects/${p.projectId}/assignments`);
+        const rows: any[] = Array.isArray(data) ? data : data?.assignments || [];
         rows
           .filter((r) => String(r.userId) === String(userId))
           .forEach((r) => {
             const cid =
               r.companyId ||
               r.company?.companyId ||
-              (Array.isArray(r.companies)
-                ? r.companies[0]?.companyId
-                : undefined);
-
+              (Array.isArray(r.companies) ? r.companies[0]?.companyId : undefined);
             const pid = r.projectId || p.projectId;
             if (!cid || !pid) return;
-
             if (!map[cid]) map[cid] = [];
             if (!map[cid].includes(pid)) map[cid].push(pid);
           });
@@ -337,21 +281,20 @@ export default function UserEdit() {
         // ignore per-project errors
       }
     }
-
     setSvcProjByCompany(map);
   }
 
   const submit = async () => {
     setErr(null);
     if (!canSave || !id) {
-      setErr("First Name and a valid Mobile (India) are required.");
+      setErr("First Name and a valid 10-digit Mobile (India) are required.");
       return;
     }
 
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-        "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+          "If they are no longer a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
       return;
     }
@@ -364,7 +307,7 @@ export default function UserEdit() {
         middleName: middleName || undefined,
         lastName: lastName || undefined,
         email: email || undefined,
-        countryCode: "+91",
+        countryCode: String(countryCode || "91").replace(/\D/g, "") || "91",
         phone: phoneClean,
         preferredLanguage: preferredLanguage || undefined,
         userStatus: userStatus || "Active",
@@ -386,9 +329,7 @@ export default function UserEdit() {
         const { data: up } = await api.post(`/admin/users/${id}/photo`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
-        if (up?.user?.profilePhoto) {
-          setProfilePhoto(up.user.profilePhoto);
-        }
+        if (up?.user?.profilePhoto) setProfilePhoto(up.user.profilePhoto);
       }
 
       try {
@@ -416,8 +357,8 @@ export default function UserEdit() {
         : "";
       window.alert(
         "This user is assigned as Client to one or more projects." +
-        list +
-        "\n\nPlease remove those assignments first, then change this setting."
+          list +
+          "\n\nPlease remove those assignments first, then change this setting."
       );
       return;
     }
@@ -427,14 +368,12 @@ export default function UserEdit() {
   const onToggleServiceProvider = (next: boolean) => {
     if (!next && selectedCompanyIds.length > 0) {
       const list = serviceCompanyLabels.length
-        ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join(
-          "\n• "
-        )}`
+        ? `\n\nLinked to Service Partner companies:\n• ${serviceCompanyLabels.join("\n• ")}`
         : "";
       window.alert(
         "This user is linked to one or more Service Partner companies." +
-        list +
-        "\n\nPlease remove those assignments first, then change this setting."
+          list +
+          "\n\nPlease remove those assignments first, then change this setting."
       );
       return;
     }
@@ -443,11 +382,7 @@ export default function UserEdit() {
 
   const onBeforeUncheckCompany = (companyId: string) => {
     const c = companies.find((co) => co.companyId === companyId);
-    const companyLabel = c
-      ? c.companyRole
-        ? `${c.name} — ${c.companyRole}`
-        : c.name
-      : companyId;
+    const companyLabel = c ? (c.companyRole ? `${c.name} — ${c.companyRole}` : c.name) : companyId;
 
     const pids = svcProjByCompany[companyId] || [];
     if (pids.length === 0) return;
@@ -459,136 +394,132 @@ export default function UserEdit() {
 
     window.alert(
       "This user is linked to a Service Partner company." +
-      `\n\n• ${companyLabel}` +
-      `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join(
-        "\n• "
-      )}` +
-      "\n\nPlease remove those assignments first, then change this setting."
+        `\n\n• ${companyLabel}` +
+        `\n\nAssigned on project(s) with this company:\n• ${projectLabels.join("\n• ")}` +
+        "\n\nPlease remove those assignments first, then change this setting."
     );
     return false;
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Header (Create-like) */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Edit User
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Update the details below and save changes.
-              </span>
+  /* ========================= CompanyEdit button tokens ========================= */
+  const btnSmBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnOutline =
+    `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const btnPrimary =
+    `${btnSmBase} bg-[#00379C] text-white shadow-sm hover:brightness-110 focus:ring-[#00379C]/35`;
+  const infoBtn =
+    "ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white " +
+    "text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
-              {/* Info icon (replaces Note button functionality) */}
-              <button
-                type="button"
-                onClick={() => setShowNote(true)}
-                aria-label="Info"
-                title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              >
-                i
-              </button>
-            </p>
-            {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr}
-              </p>
-            )}
+  return (
+    <div className="w-full">
+      <div className="mx-auto max-w-5xl">
+        {/* Top helper row (EXACT pattern as CompanyEdit) */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-slate-700 dark:text-slate-200">
+            Edit and save user information.
+            <button className={infoBtn} onClick={() => setShowNote(true)} type="button">
+              i
+            </button>
           </div>
+
           <div className="flex gap-2">
-            <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/users")}
-              type="button"
-            >
+            <button className={btnOutline} onClick={() => nav("/admin/users")} type="button">
               Cancel
             </button>
-            <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-              onClick={submit}
-              disabled={!canSave || saving}
-            >
+            <button className={btnPrimary} onClick={submit} disabled={!canSave || saving}>
               {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
+        {refsErr && <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">{refsErr}</div>}
+
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200">
             {err}
           </div>
         )}
 
         {loading ? (
-          <div className="text-sm text-gray-700 dark:text-gray-300">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200">
             Loading…
           </div>
         ) : (
-          <>
-            {/* ========== Identity Block ========== */}
+          <div className="mt-4">
+            {/* ============ Identity ============ */}
             <Section title="Identity">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Text
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
                   label="First Name"
                   value={firstName}
-                  setValue={setFirstName}
+                  onChange={(v) => setFirstName(v)}
+                  placeholder="First name"
                   required
                 />
-                <Text
+                <Input
                   label="Middle Name"
                   value={middleName}
-                  setValue={setMiddleName}
+                  onChange={(v) => setMiddleName(v)}
+                  placeholder="Middle name"
                 />
-                <Text
+                <Input
                   label="Last Name"
                   value={lastName}
-                  setValue={setLastName}
+                  onChange={(v) => setLastName(v)}
+                  placeholder="Last name"
                 />
-                <Text
+                <Input
                   label="Email (optional)"
-                  type="email"
                   value={email}
-                  setValue={setEmail}
+                  onChange={(v) => setEmail(v)}
+                  placeholder="name@company.com"
+                  type="email"
                 />
 
-                <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
-                  <Text label="Code" value="+91" setValue={() => { }} disabled />
-                  <Text
-                    label="Mobile (India)"
-                    value={phone}
-                    setValue={(v) =>
-                      setPhone(v.replace(/[^\d]/g, "").slice(0, 10))
-                    }
-                    required
-                    placeholder="10-digit mobile"
-                  />
+                {/* Code + Mobile (same sizes/shapes as CompanyEdit inputs) */}
+                <div className="sm:col-span-1 flex gap-4">
+                  <div className="w-28">
+                    <Input label="Code" value={`+${countryCode}`} onChange={() => {}} disabled />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      label="Mobile (India)"
+                      value={phone}
+                      onChange={(v) => setPhone(v.replace(/\D+/g, "").slice(0, 10))}
+                      placeholder="10-digit mobile"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <Select
+                <SelectStrict
                   label="Preferred Language"
                   value={preferredLanguage}
-                  setValue={setPreferredLanguage}
-                  options={["", ...preferredLanguages]}
+                  onChange={(v) => setPreferredLanguage(v)}
+                  options={preferredLanguages.map((x) => ({ value: x, label: x }))}
+                  placeholder="—"
                 />
-                <Select
+
+                <SelectStrict
                   label="Status"
                   value={userStatus}
-                  setValue={setUserStatus}
-                  options={statuses as unknown as string[]}
+                  onChange={(v) => setUserStatus(v)}
+                  options={statuses.map((x) => ({ value: x, label: x }))}
+                  placeholder="Select status"
                 />
 
-                {/* Profile Photo: preview + change (Create-like styling) */}
-                <div className="md:col-span-2">
-                  <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {/* Profile photo (styled to match CompanyEdit theme) */}
+                <div className="sm:col-span-2">
+                  <div className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     Profile Photo
-                  </span>
+                  </div>
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <div className="h-16 w-16 rounded-full overflow-hidden border border-slate-200 bg-slate-100 dark:border-neutral-700 dark:bg-neutral-800">
+                    <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-neutral-900">
                       {profileFile ? (
                         <img
                           src={URL.createObjectURL(profileFile)}
@@ -602,7 +533,7 @@ export default function UserEdit() {
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="grid h-full w-full place-items-center text-[10px] text-slate-500">
+                        <div className="grid h-full w-full place-items-center text-[10px] text-slate-500 dark:text-slate-400">
                           No photo
                         </div>
                       )}
@@ -612,244 +543,203 @@ export default function UserEdit() {
                       ref={fileRef}
                       type="file"
                       accept="image/*"
-                      onChange={(e) =>
-                        setProfileFile(e.target.files?.[0] || null)
-                      }
-                      className="block w-fit shrink-0 text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
+                      onChange={(e) => setProfileFile(e.target.files?.[0] || null)}
+                      className="block w-fit shrink-0 text-xs text-slate-700
+                        file:h-8 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3
+                        file:text-[11px] file:font-semibold file:text-slate-700 file:shadow-sm hover:file:bg-slate-50
+                        dark:text-slate-200 dark:file:border-white/10 dark:file:bg-neutral-950 dark:file:text-slate-200 dark:hover:file:bg-white/5"
                     />
 
                     {profileFile && (
-                      <span className="text-xs text-gray-600 dark:text-gray-400">
-                        {profileFile.name} (
-                        {Math.round(profileFile.size / 1024)} KB)
-                      </span>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
+                        {profileFile.name} ({Math.round(profileFile.size / 1024)} KB)
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
-
-              <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-                Name preview:{" "}
-                <b className="text-slate-900 dark:text-white">
-                  {namePreview || "(empty)"}
-                </b>
-              </div>
             </Section>
 
-            {/* ========== Location Block ========== */}
+            {/* ============ Location ============ */}
             <Section title="Location">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Select
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <SelectStrict
                   label="State / UT"
                   value={stateId}
-                  setValue={(v) => {
+                  onChange={(v) => {
                     setStateId(v);
                     setDistrictId("");
                   }}
-                  options={[
-                    "",
-                    ...states.map((s) => ({
-                      value: s.stateId,
-                      label: `${s.name} (${s.code})`,
-                    })),
-                  ]}
+                  options={states.map((s) => ({
+                    value: s.stateId,
+                    label: `${s.name} (${s.code})`,
+                  }))}
+                  placeholder="Select state"
                 />
-                <Select
+
+                <SelectStrict
                   label="District"
                   value={districtId}
-                  setValue={setDistrictId}
-                  options={[
-                    "",
-                    ...districts.map((d) => ({
-                      value: d.districtId,
-                      label: d.name,
-                    })),
-                  ]}
+                  onChange={(v) => setDistrictId(v)}
+                  options={districts.map((d) => ({ value: d.districtId, label: d.name }))}
+                  placeholder={stateId ? "Select district" : "Select state first"}
                   disabled={!stateId}
                 />
-                <Text
+
+                <Input
                   label="City/Town"
                   value={cityTown}
-                  setValue={setCityTown}
+                  onChange={(v) => setCityTown(v)}
+                  placeholder="City/Town"
                 />
-                <Text
+
+                <Input
                   label="PIN Code"
                   value={pin}
-                  setValue={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
+                  onChange={(v) => setPin(v.replace(/\D+/g, "").slice(0, 6))}
                   placeholder="6-digit PIN"
                 />
-                <Select
+
+                <SelectStrict
                   label="Operating Zone"
                   value={operatingZone}
-                  setValue={setOperatingZone}
-                  options={["", ...zones]}
+                  onChange={(v) => setOperatingZone(v)}
+                  options={zones.map((z) => ({ value: z, label: z }))}
+                  placeholder="—"
                 />
-                <TextArea
-                  label="Address"
-                  value={address}
-                  setValue={setAddress}
-                />
+
+                <div className="sm:col-span-2">
+                  <TextArea
+                    label="Address"
+                    value={address}
+                    onChange={(v) => setAddress(v)}
+                    placeholder="Full address…"
+                    rows={4}
+                  />
+                </div>
               </div>
             </Section>
 
-            {/* ========== Affiliations Block ========== */}
+            {/* ============ Affiliations ============ */}
             <Section title="Affiliations">
-              <div className="space-y-6">
-                {/* Client */}
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
-                      Are you Client for any Project?
-                    </span>
-                    <ToggleYN value={isClient} setValue={onToggleClient} />
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-slate-700 dark:text-slate-200">
+                    Are you Client for any Project?
                   </div>
-                  {/* Project selection intentionally hidden (same as your edit intent) */}
+                  <ToggleYN value={isClient} setValue={onToggleClient} />
                 </div>
 
-                {/* Service Partner Companies */}
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
-                      Are you working for any of our Service Partner?
-                    </span>
-                    <ToggleYN
-                      value={isServiceProvider}
-                      setValue={onToggleServiceProvider}
-                    />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-slate-700 dark:text-slate-200">
+                    Are you working for any of our Service Partner?
                   </div>
+                  <ToggleYN value={isServiceProvider} setValue={onToggleServiceProvider} />
+                </div>
 
-                  {isServiceProvider ? (
-                    <div className="mt-3 space-y-3">
-                      <div className="max-w-xs">
-                        <Select
-                          label="Filter by Role"
-                          value={companyRoleFilter}
-                          setValue={setCompanyRoleFilter}
-                          options={[
-                            "",
-                            { value: "IH_PMT", label: "IH-PMT" },
-                            { value: "Contractor", label: "Contractor" },
-                            { value: "Consultant", label: "Consultant" },
-                            { value: "PMC", label: "PMC" },
-                            { value: "Supplier", label: "Supplier" },
-                          ]}
-                        />
-                      </div>
-
-                      <CheckboxGroup
-                        label={
-                          companyRoleFilter
-                            ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT"
-                              ? "IH-PMT"
-                              : companyRoleFilter
-                            }`
-                            : "Select Company(ies)"
-                        }
-                        items={filteredCompanies.map((c) => ({
-                          value: c.companyId,
-                          label: c.companyRole ? `${c.name}` : c.name,
-                        }))}
-                        selected={selectedCompanyIds}
-                        setSelected={setSelectedCompanyIds}
-                        onBeforeUncheck={onBeforeUncheckCompany}
+                {isServiceProvider ? (
+                  <div className="space-y-3 pt-1">
+                    <div className="max-w-xs">
+                      <SelectStrict
+                        label="Filter by Role"
+                        value={companyRoleFilter}
+                        onChange={(v) => setCompanyRoleFilter(v)}
+                        options={[
+                          { value: "", label: "All roles" },
+                          { value: "IH_PMT", label: "IH-PMT" },
+                          { value: "Contractor", label: "Contractor" },
+                          { value: "Consultant", label: "Consultant" },
+                          { value: "PMC", label: "PMC" },
+                          { value: "Supplier", label: "Supplier" },
+                        ]}
+                        placeholder="All roles"
                       />
+                    </div>
 
-                      {filteredCompanies.length === 0 && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          No companies match the selected role.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      Not a service provider.
-                    </div>
-                  )}
-                </div>
+                    <CheckboxGroup
+                      label={
+                        companyRoleFilter
+                          ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT" ? "IH-PMT" : companyRoleFilter}`
+                          : "Select Company(ies)"
+                      }
+                      items={filteredCompanies.map((c) => ({
+                        value: c.companyId,
+                        label: c.companyRole ? `${c.name}` : c.name,
+                      }))}
+                      selected={selectedCompanyIds}
+                      setSelected={setSelectedCompanyIds}
+                      onBeforeUncheck={onBeforeUncheckCompany}
+                    />
+
+                    {filteredCompanies.length === 0 && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        No companies match the selected role.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Not a service provider.</div>
+                )}
               </div>
             </Section>
 
-            {/* Footer actions (Create-like) */}
+            {/* Bottom actions (EXACT pattern as CompanyEdit) */}
             <div className="mt-6 flex justify-end gap-2">
-              <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => nav("/admin/users")}
-                type="button"
-              >
+              <button className={btnOutline} onClick={() => nav("/admin/users")} type="button">
                 Cancel
               </button>
-              <button
-                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-                onClick={submit}
-                disabled={!canSave || saving}
-              >
+              <button className={btnPrimary} onClick={submit} disabled={!canSave || saving}>
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* NOTE MODAL (Edit version) */}
+      {/* Note modal (EXACT structure as CompanyEdit) */}
       {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="note-modal-title"
-        >
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
-              <h2
-                id="note-modal-title"
-                className="text-base font-semibold text-slate-900 dark:text-white"
-              >
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowNote(false)} />
+
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-white/10">
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
                 Note for Admins — Editing a User
-              </h2>
-              <button
-                onClick={() => setShowNote(false)}
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
-                aria-label="Close"
-              >
-                ✕
+              </div>
+              <button className={btnOutline} onClick={() => setShowNote(false)} type="button">
+                Close
               </button>
             </div>
 
-            <div className="space-y-3 px-5 py-4 text-sm leading-6 text-gray-800 dark:text-gray-100">
-              <p>
-                <b>Required to save:</b> First Name and a 10-digit Indian mobile
-                number.
-              </p>
+            <div className="space-y-3 p-5 text-sm leading-6 text-slate-800 dark:text-slate-200">
+              <div>
+                <b>Required to save:</b> First Name and a 10-digit Indian mobile number.
+              </div>
 
-              <p>
-                <b>Service Partner rule:</b> If <b>Service Partner = Yes</b>, at
-                least one company must remain selected.
-              </p>
+              <div>
+                <b>Service Partner rule:</b> If <b>Service Partner = Yes</b>, at least one company must remain selected.
+              </div>
 
-              <p>
-                <b>Guardrails you added:</b> If the user is already mapped to
-                projects via a Service Partner company, removing that company is
-                blocked until those assignments are removed.
-              </p>
+              <div>
+                <b>Guardrails:</b> If the user is already mapped to projects via a Service Partner company, removing that company is blocked until those assignments are removed.
+              </div>
 
-              <p>
-                <b>Location & photo</b> are optional. Photo updates won’t block
-                saving if the main profile patch succeeds.
-              </p>
+              <div>
+                <b>Location & photo</b> are optional. Photo upload won’t block saving if the main update succeeds.
+              </div>
 
-              <p>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Users page.
-              </p>
+              <div>
+                <b>After a successful save:</b> you’ll be taken back to the Users page.
+              </div>
+
+              <div>
+                <b>Cancel:</b> takes you back to the Users list without saving.
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-neutral-800">
-              <button
-                onClick={() => setShowNote(false)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                type="button"
-              >
-                Close
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
+              <button className={btnPrimary} onClick={() => setShowNote(false)} type="button">
+                Done
               </button>
             </div>
           </div>
@@ -859,50 +749,53 @@ export default function UserEdit() {
   );
 }
 
-/* ------------------------ Create-like UI helpers ------------------------ */
-
+/* ========================= same UI bits as CompanyEdit ========================= */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
           {title}
         </div>
-        {children}
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
-    </section>
+      {children}
+    </div>
   );
 }
 
-function Text({
+function Input({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
   type = "text",
   required = false,
-  placeholder,
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
   type?: string;
   required?: boolean;
-  placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required ? <span className="text-rose-600"> *</span> : null}
       </span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        type={type}
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        type={type}
         disabled={disabled}
       />
     </label>
@@ -912,61 +805,90 @@ function Text({
 function TextArea({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
+  rows = 4,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
 }) {
   return (
-    <label className="block md:col-span-2">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
       />
     </label>
   );
 }
 
-function Select({
+function SelectStrict({
   label,
   value,
-  setValue,
+  onChange,
   options,
+  placeholder,
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
-  options: (string | { value: string; label: string })[];
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
+        onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        onChange={(e) => setValue(e.target.value)}
       >
-        {options.map((o, i) => {
-          const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? o || "—" : o.label;
-          return (
-            <option key={v || `empty-${i}`} value={v}>
-              {l || "—"}
-            </option>
-          );
-        })}
+        <option value="">{placeholder}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </label>
+  );
+}
+
+function ToggleYN({ value, setValue }: { value: boolean; setValue: (v: boolean) => void }) {
+  const base =
+    "h-8 px-3 text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950";
+  const active = "bg-[#00379C] text-white focus:ring-[#00379C]/35";
+  const idle =
+    "bg-transparent text-slate-700 hover:bg-slate-50 focus:ring-[#00379C]/20 dark:text-slate-200 dark:hover:bg-white/5";
+
+  return (
+    <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-neutral-950">
+      <button type="button" className={`${base} ${value ? active : idle}`} onClick={() => setValue(true)}>
+        YES
+      </button>
+      <button type="button" className={`${base} ${!value ? active : idle}`} onClick={() => setValue(false)}>
+        NO
+      </button>
+    </div>
   );
 }
 
@@ -994,68 +916,27 @@ function CheckboxGroup({
   };
 
   return (
-    <fieldset className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+    <fieldset className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-950">
+      <legend className="px-1 text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
         {label}
       </legend>
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-        {items.map((it) => (
-          <label
-            key={it.value}
-            className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              checked={selected.includes(it.value)}
-              onChange={() => toggle(it.value)}
-            />
-            <span>{it.label}</span>
-          </label>
-        ))}
-      </div>
-      {items.length === 0 && (
-        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          No options available.
-        </div>
-      )}
-    </fieldset>
-  );
-}
 
-function ToggleYN({
-  value,
-  setValue,
-}: {
-  value: boolean;
-  setValue: (v: boolean) => void;
-}) {
-  return (
-    <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-xs shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-      <button
-        type="button"
-        onClick={() => setValue(true)}
-        className={
-          "px-4 py-1.5 text-xs font-medium transition-colors " +
-          (value
-            ? "bg-emerald-600 text-white"
-            : "bg-transparent text-slate-700 dark:text-neutral-100")
-        }
-      >
-        Yes
-      </button>
-      <button
-        type="button"
-        onClick={() => setValue(false)}
-        className={
-          "px-4 py-1.5 text-xs font-medium transition-colors " +
-          (!value
-            ? "bg-emerald-600 text-white"
-            : "bg-transparent text-slate-700 dark:text-neutral-100")
-        }
-      >
-        No
-      </button>
-    </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {items.map((it) => {
+          const checked = selected.includes(it.value);
+          return (
+            <label key={it.value} className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(it.value)}
+                className="h-4 w-4 rounded border-slate-300 text-[#00379C] focus:ring-[#00379C]/30 dark:border-white/10"
+              />
+              <span>{it.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }

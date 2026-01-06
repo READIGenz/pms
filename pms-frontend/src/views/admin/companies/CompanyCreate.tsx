@@ -1,7 +1,13 @@
 // pms-frontend/src/views/admin/companies/CompanyCreate.tsx
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
+
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
 
 /* ========================= JWT helper ========================= */
 function decodeJwtPayload(token: string): any | null {
@@ -16,16 +22,9 @@ function decodeJwtPayload(token: string): any | null {
   }
 }
 
-/* ========================= Prisma-like enums =========================
-   Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
+/* ========================= Prisma-like enums ========================= */
 const STATUS_OPTIONS = ["Active", "Inactive"] as const;
-const ROLE_OPTIONS = [
-  "IH_PMT",
-  "Contractor",
-  "Consultant",
-  "PMC",
-  "Supplier",
-] as const;
+const ROLE_OPTIONS = ["IH_PMT", "Contractor", "Consultant", "PMC", "Supplier"] as const;
 
 const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : r ?? "");
 const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : r ?? "");
@@ -47,7 +46,7 @@ type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
 type CompanyForm = {
-  companyCode: string; // kept internal; NOT shown in UI
+  companyCode: string; // internal only (NOT shown in UI)
   name: string;
   status: CompanyStatus | "";
   website: string;
@@ -82,12 +81,19 @@ export default function CompanyCreate() {
     const payload = decodeJwtPayload(token);
     const isAdmin = !!(
       payload &&
-      (payload.isSuperAdmin ||
-        payload.role === "Admin" ||
-        payload.userRole === "Admin")
+      (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin")
     );
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
+
+  /* ========================= page title/subtitle (UI only) ========================= */
+  useEffect(() => {
+    document.title = "Trinity PMS — Create Company";
+    window.__ADMIN_SUBTITLE__ = "Enter company details, then save.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
 
   /* ---- refs ---- */
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
@@ -100,7 +106,6 @@ export default function CompanyCreate() {
     name: "",
     status: "",
     website: "",
-
     companyRole: "",
 
     gstin: "",
@@ -133,11 +138,7 @@ export default function CompanyCreate() {
         setStatesRef(s);
       } catch (e: any) {
         setStatesRef([]);
-        setRefsErr(
-          e?.response?.data?.error ||
-            e?.message ||
-            "Failed to load reference data."
-        );
+        setRefsErr(e?.response?.data?.error || e?.message || "Failed to load states.");
       }
     })();
   }, []);
@@ -163,7 +164,7 @@ export default function CompanyCreate() {
         setForm((f) => ({ ...f, districtId: "" }));
       }
     })();
-  }, [form.stateId]);
+  }, [form.stateId, form.districtId]);
 
   /* ========================= helpers ========================= */
   const set = <K extends keyof CompanyForm>(key: K, val: CompanyForm[K]) =>
@@ -171,33 +172,27 @@ export default function CompanyCreate() {
 
   const normalize = (payload: Record<string, any>) => {
     if (payload.pan) payload.pan = String(payload.pan).toUpperCase().trim();
-    if (payload.gstin)
-      payload.gstin = String(payload.gstin).toUpperCase().trim();
-    if (payload.contactMobile)
-      payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
+    if (payload.gstin) payload.gstin = String(payload.gstin).toUpperCase().trim();
+    if (payload.contactMobile) payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
     if (payload.pin) payload.pin = String(payload.pin).replace(/\D+/g, "");
     if (payload.website) {
       const w = String(payload.website).trim();
       payload.website = /^https?:\/\//i.test(w) ? w : w ? `https://${w}` : "";
     }
-    if (payload.companyCode)
-      payload.companyCode = String(payload.companyCode).toUpperCase().trim();
+    if (payload.companyCode) payload.companyCode = String(payload.companyCode).toUpperCase().trim();
     return payload;
   };
 
   const validate = (p: Record<string, any>) => {
     if (!p.name) throw new Error("Company Name is required.");
     if (!p.status) throw new Error("Status is required.");
-    if (!p.companyRole)
-      throw new Error("Primary Specialisation (Role) is required.");
-    // companyCode is internal; we won't block the user if it's missing—onSubmit ensures it exists.
+    if (!p.companyRole) throw new Error("Primary Specialisation (Role) is required.");
 
     if (p.contactEmail && !/^\S+@\S+\.\S+$/.test(p.contactEmail))
       throw new Error("Contact Email seems invalid.");
     if (p.contactMobile && !/^\d{10}$/.test(p.contactMobile))
       throw new Error("Mobile must be a 10-digit number.");
-    if (p.pin && !/^\d{6}$/.test(p.pin))
-      throw new Error("PIN must be a 6-digit number.");
+    if (p.pin && !/^\d{6}$/.test(p.pin)) throw new Error("PIN must be a 6-digit number.");
     if (p.gstin && !/^[0-9A-Z]{15}$/.test(p.gstin))
       throw new Error("GSTIN must be 15 characters (A–Z, 0–9).");
     if (p.pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(p.pan))
@@ -224,7 +219,6 @@ export default function CompanyCreate() {
   const fetchAndGenerateCode = async (role: CompanyRole): Promise<string> => {
     const prefix = ROLE_PREFIX[role];
     try {
-      // If backend supports filter by role, pass it; otherwise fetch all and filter here.
       const { data } = await api
         .get("/admin/companies", { params: { companyRole: role } })
         .catch(async () => {
@@ -237,12 +231,9 @@ export default function CompanyCreate() {
         : Array.isArray(data?.companies)
         ? data.companies
         : [];
-      const roleList = list.filter(
-        (c) => String(c?.companyRole ?? "").trim() === role
-      );
+      const roleList = list.filter((c) => String(c?.companyRole ?? "").trim() === role);
       return nextCodeFromList(role, roleList);
     } catch {
-      // If anything fails, start sequence at 0001 for the role
       return `${prefix}-0001`;
     }
   };
@@ -251,9 +242,7 @@ export default function CompanyCreate() {
   useEffect(() => {
     (async () => {
       if (!form.companyRole) return;
-      const proposed = await fetchAndGenerateCode(
-        form.companyRole as CompanyRole
-      );
+      const proposed = await fetchAndGenerateCode(form.companyRole as CompanyRole);
       setForm((f) => ({ ...f, companyCode: proposed.toUpperCase() }));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,12 +253,9 @@ export default function CompanyCreate() {
     setErr(null);
     setSubmitting(true);
     try {
-      // Ensure companyCode exists even if role just got selected and generation hasn't finished yet
       let code = form.companyCode;
       if (!code && form.companyRole) {
-        code = (
-          await fetchAndGenerateCode(form.companyRole as CompanyRole)
-        ).toUpperCase();
+        code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
         setForm((f) => ({ ...f, companyCode: code }));
       }
 
@@ -279,6 +265,7 @@ export default function CompanyCreate() {
         Object.entries({ ...form, companyCode: code }).forEach(([k, v]) => {
           payload[k] = typeof v === "string" ? v.trim() : v;
         });
+
         payload.companyRole = toDbRole(payload.companyRole);
 
         normalize(payload);
@@ -289,37 +276,30 @@ export default function CompanyCreate() {
           nav("/admin/companies", { replace: true });
           return;
         } catch (e: any) {
-          // Unique collision handling on companyCode -> regenerate once and retry
           const status = e?.response?.status;
           const msg = e?.response?.data?.error || e?.message || "";
           const isUniqueFail =
             status === 409 ||
-            (status === 400 &&
-              /unique|duplicate|Company_companyCode_key/i.test(msg)) ||
+            (status === 400 && /unique|duplicate|Company_companyCode_key/i.test(msg)) ||
             /unique|duplicate|Company_companyCode_key/i.test(msg);
 
           if (isUniqueFail && form.companyRole && attempts === 0) {
             attempts += 1;
-            code = (
-              await fetchAndGenerateCode(form.companyRole as CompanyRole)
-            ).toUpperCase();
+            code = (await fetchAndGenerateCode(form.companyRole as CompanyRole)).toUpperCase();
             setForm((f) => ({ ...f, companyCode: code }));
             continue;
           }
           throw e;
         }
       }
-      throw new Error(
-        "Could not assign a unique Company Code. Please try again."
-      );
+
+      throw new Error("Could not assign a unique Company Code. Please try again.");
     } catch (e: any) {
       const s = e?.response?.status;
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error ||
-            e?.message ||
-            "Failed to create company.";
+          : e?.response?.data?.error || e?.message || "Failed to create company.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -331,314 +311,246 @@ export default function CompanyCreate() {
   };
 
   const canSubmit = useMemo(() => {
-    // No UI dependency on companyCode
     return !!(form.name && form.status && form.companyRole) && !submitting;
   }, [form.name, form.status, form.companyRole, submitting]);
 
-  /* ========================= ui ========================= */
+  /* ========================= CompanyEdit exact button tokens ========================= */
+  const btnSmBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+    "disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnOutline =
+    `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const btnPrimary =
+    `${btnSmBase} bg-[#00379C] text-white shadow-sm hover:brightness-110 focus:ring-[#00379C]/35`;
+  const infoBtn =
+    "ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white " +
+    "text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="w-full">
       <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Create Company
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Enter company details in the sections below, then save.
-              </span>
-
-              {/* Info icon (replaces Note button functionality) */}
-              <button
-                type="button"
-                onClick={() => setShowNote(true)}
-                aria-label="Info"
-                title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              >
-                i
-              </button>
-            </p>
-
-            {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr}
-              </p>
-            )}
+        {/* Top helper row (EXACT pattern as CompanyEdit/UserEdit) */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-slate-700 dark:text-slate-200">
+            Create and save company information.
+            <button className={infoBtn} onClick={() => setShowNote(true)} type="button">
+              i
+            </button>
+            {refsErr ? (
+              <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{refsErr}</span>
+            ) : null}
           </div>
+
           <div className="flex gap-2">
-            <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/companies")}
-              type="button"
-            >
+            <button className={btnOutline} onClick={() => nav("/admin/companies")} type="button">
               Cancel
             </button>
-            <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-              onClick={onSubmit}
-              disabled={!canSubmit}
-            >
+            <button className={btnPrimary} onClick={onSubmit} disabled={!canSubmit} type="button">
               {submitting ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200">
             {err}
           </div>
         )}
 
-        {/* ============ Summary ============ */}
-        <Section title="Summary">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Company Name"
-              value={form.name}
-              onChange={(v) => set("name", v)}
-              placeholder="e.g., Acme Infra Pvt Ltd"
-              required
-            />
-            <SelectStrict
-              label="Status"
-              value={form.status}
-              onChange={(v) => set("status", v as CompanyStatus)}
-              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
-              placeholder="Select status"
-            />
-            <SelectStrict
-              label="Primary Specialisation (Role)"
-              value={form.companyRole}
-              onChange={(v) => set("companyRole", v as CompanyRole)}
-              options={ROLE_OPTIONS.map((r) => ({
-                value: r,
-                label: prettyRole(r),
-              }))}
-              placeholder="Select role"
-            />
-            <Input
-              label="Website"
-              value={form.website}
-              onChange={(v) => set("website", v)}
-              placeholder="https://example.com"
-              type="url"
-            />
-          </div>
-        </Section>
+        {/* Sections (EXACT CompanyEdit style: separate section cards) */}
+        <div className="mt-4">
+          <Section title="Summary">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Company Name"
+                value={form.name}
+                onChange={(v) => set("name", v)}
+                placeholder="e.g., Acme Infra Pvt Ltd"
+                required
+              />
+              <SelectStrict
+                label="Status"
+                value={form.status}
+                onChange={(v) => set("status", v as CompanyStatus)}
+                options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+                placeholder="Select status"
+              />
 
-        {/* ============ Registration & Contact ============ */}
-        <Section title="Registration and Contact">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Input
-              label="GSTIN"
-              value={form.gstin}
-              onChange={(v) => set("gstin", v.toUpperCase())}
-              placeholder="15-digit GSTIN"
-            />
-            <Input
-              label="PAN"
-              value={form.pan}
-              onChange={(v) => set("pan", v.toUpperCase())}
-              placeholder="ABCDE1234F"
-            />
-            <Input
-              label="CIN"
-              value={form.cin}
-              onChange={(v) => set("cin", v.toUpperCase())}
-              placeholder="L12345DL2010PLC123456"
-            />
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Input
-              label="Primary Contact"
-              value={form.primaryContact}
-              onChange={(v) => set("primaryContact", v)}
-              placeholder="Full name"
-            />
-            <Input
-              label="Contact Mobile"
-              value={form.contactMobile}
-              onChange={(v) => set("contactMobile", v.replace(/\D+/g, ""))}
-              placeholder="10-digit mobile"
-            />
-            <Input
-              label="Contact Email"
-              value={form.contactEmail}
-              onChange={(v) => set("contactEmail", v)}
-              placeholder="name@company.com"
-              type="email"
-            />
-          </div>
-        </Section>
+              <SelectStrict
+                label="Primary Specialisation"
+                value={form.companyRole}
+                onChange={(v) => set("companyRole", v as CompanyRole)}
+                options={ROLE_OPTIONS.map((r) => ({ value: r, label: prettyRole(r) }))}
+                placeholder="Select role"
+              />
 
-        {/* ============ Location ============ */}
-        <Section title="Location">
-          <div className="grid grid-cols-1 gap-4">
+              <Input
+                label="Website"
+                value={form.website}
+                onChange={(v) => set("website", v)}
+                placeholder="https://example.com"
+                type="url"
+              />
+            </div>
+
+            <div className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
+              Company code is auto-generated based on role (internal).
+            </div>
+          </Section>
+
+          <Section title="Registration and Contact">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Input
+                label="GSTIN"
+                value={form.gstin}
+                onChange={(v) => set("gstin", v.toUpperCase())}
+                placeholder="15-character GSTIN"
+              />
+              <Input
+                label="PAN"
+                value={form.pan}
+                onChange={(v) => set("pan", v.toUpperCase())}
+                placeholder="ABCDE1234F"
+              />
+              <Input
+                label="CIN"
+                value={form.cin}
+                onChange={(v) => set("cin", v.toUpperCase())}
+                placeholder="L12345DL2010PLC123456"
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Input
+                label="Primary Contact"
+                value={form.primaryContact}
+                onChange={(v) => set("primaryContact", v)}
+                placeholder="Full name"
+              />
+              <Input
+                label="Contact Mobile"
+                value={form.contactMobile}
+                onChange={(v) => set("contactMobile", v.replace(/\D+/g, ""))}
+                placeholder="10-digit mobile"
+              />
+              <Input
+                label="Contact Email"
+                value={form.contactEmail}
+                onChange={(v) => set("contactEmail", v)}
+                placeholder="name@company.com"
+                type="email"
+              />
+            </div>
+          </Section>
+
+          <Section title="Location">
             <Input
               label="Address"
               value={form.address}
               onChange={(v) => set("address", v)}
               placeholder="Flat / Building, Street, Area"
             />
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <SelectStrict
-              label="State / UT"
-              value={form.stateId}
-              onChange={(v) => set("stateId", v)}
-              options={statesRef.map((s) => ({
-                value: s.stateId,
-                label: s.name || s.code || s.stateId,
-              }))}
-              placeholder="Select state"
-            />
-            <SelectStrict
-              label="District"
-              value={form.districtId}
-              onChange={(v) => set("districtId", v)}
-              options={districtsRef.map((d) => ({
-                value: d.districtId,
-                label: d.name || d.districtId,
-              }))}
-              placeholder={
-                form.stateId ? "Select district" : "Select state first"
-              }
-              disabled={!form.stateId}
-            />
-            <Input
-              label="PIN"
-              value={form.pin}
-              onChange={(v) => set("pin", v.replace(/\D+/g, ""))}
-              placeholder="6-digit PIN"
-            />
-          </div>
-        </Section>
 
-        {/* ============ Notes & Description ============ */}
-        <Section title="Notes and Description">
-          <TextArea
-            label="Notes"
-            value={form.notes}
-            onChange={(v) => set("notes", v)}
-            placeholder="Any internal notes or a brief description…"
-            rows={4}
-          />
-        </Section>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <SelectStrict
+                label="State / UT"
+                value={form.stateId}
+                onChange={(v) => set("stateId", v)}
+                options={statesRef.map((s) => ({
+                  value: s.stateId,
+                  label: s.name || s.code || s.stateId,
+                }))}
+                placeholder="Select state"
+              />
+              <SelectStrict
+                label="District"
+                value={form.districtId}
+                onChange={(v) => set("districtId", v)}
+                options={districtsRef.map((d) => ({
+                  value: d.districtId,
+                  label: d.name || d.districtId,
+                }))}
+                placeholder={form.stateId ? "Select district" : "Select state first"}
+                disabled={!form.stateId}
+              />
+              <Input
+                label="PIN"
+                value={form.pin}
+                onChange={(v) => set("pin", v.replace(/\D+/g, ""))}
+                placeholder="6-digit PIN"
+              />
+            </div>
+          </Section>
 
-        {/* ---- Bottom action buttons (no sticky, no box) ---- */}
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => nav("/admin/companies")}
-            type="button"
-          >
-            Cancel
-          </button>
-          <button
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-            onClick={onSubmit}
-            disabled={!canSubmit}
-          >
-            {submitting ? "Saving…" : "Save"}
-          </button>
+          <Section title="Notes and Description">
+            <TextArea
+              label="Notes"
+              value={form.notes}
+              onChange={(v) => set("notes", v)}
+              placeholder="Any internal notes or a brief description…"
+              rows={4}
+            />
+          </Section>
+
+          {/* Bottom actions (EXACT pattern as CompanyEdit/UserEdit) */}
+          <div className="mt-6 flex justify-end gap-2">
+            <button className={btnOutline} onClick={() => nav("/admin/companies")} type="button">
+              Cancel
+            </button>
+            <button className={btnPrimary} onClick={onSubmit} disabled={!canSubmit} type="button">
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Note modal */}
+      {/* Note modal (same style as CompanyEdit/UserEdit) */}
       {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          role="dialog"
-          aria-modal="true"
-        >
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowNote(false)}
-          />
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowNote(false)} />
 
-          {/* Dialog */}
-          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-neutral-800">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-white/10">
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
                 Note for Admins — Creating a New Company
-              </h2>
-              <button
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                aria-label="Close"
-              >
-                ✕
+              </div>
+              <button className={btnOutline} onClick={() => setShowNote(false)} type="button">
+                Close
               </button>
             </div>
 
-            <div className="space-y-3 p-5 text-sm leading-6 text-gray-800 dark:text-gray-100">
+            <div className="space-y-3 p-5 text-sm leading-6 text-slate-800 dark:text-slate-200">
               <div>
-                <b>Required to save:</b> Company Name, Status, and Primary
-                Specialisation (Role).
+                <b>Required to save:</b> Company Name, Status, and Primary Specialisation (Role).
               </div>
-
               <div>
-                <b>Company Code:</b> generated automatically based on the
-                selected Role (e.g., PMT-0001, CON-0001). You don’t have to type
-                it; the system picks the next number for that role.
+                <b>Company Code:</b> generated automatically based on Role (e.g., PMT-0001, CON-0001). You don’t have to type it.
               </div>
-
               <div>
-                <b>Optional but useful:</b> Website, Address, State, District,
-                PIN, Registration IDs (GSTIN, PAN, CIN), and a short
-                Note/description.
+                <b>Optional but useful:</b> Website, Address, State, District, PIN, Registration IDs (GSTIN, PAN, CIN), and a short note.
               </div>
-
               <div>
                 <b>Basic checks we do for you:</b>
                 <ul className="mt-1 list-disc space-y-1 pl-5">
-                  <li>
-                    Mobile must be a 10-digit number; Email must look like a
-                    valid email.
-                  </li>
+                  <li>Mobile must be 10 digits; Email must look valid.</li>
                   <li>PIN must be 6 digits.</li>
-                  <li>
-                    GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10
-                    characters (ABCDE1234F).
-                  </li>
-                  <li>
-                    Website is auto-cleaned to start with <code>https://</code>{" "}
-                    if you miss it.
-                  </li>
-                  <li>
-                    GSTIN/PAN are auto-capitalised; numbers strip
-                    spaces/symbols.
-                  </li>
+                  <li>GSTIN 15 chars (A–Z, 0–9); PAN format ABCDE1234F.</li>
+                  <li>Website auto-fixes to start with https://</li>
+                  <li>GSTIN/PAN auto-capitalised; numbers strip symbols.</li>
+                  <li>Duplicate company code regenerates once and retries.</li>
                 </ul>
               </div>
-
               <div>
-                <b>Duplicate company code:</b> If a generated code clashes, the
-                system will make a fresh one and try again automatically.
-              </div>
-
-              <div>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Companies page.
-              </div>
-
-              <div>
-                <b>Cancel:</b> takes you back to the Companies list without
-                saving.
+                <b>After save:</b> you’ll be taken back to Companies.
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-neutral-800">
-              <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                type="button"
-              >
-                Close
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
+              <button className={btnPrimary} onClick={() => setShowNote(false)} type="button">
+                Done
               </button>
             </div>
           </div>
@@ -648,18 +560,15 @@ export default function CompanyCreate() {
   );
 }
 
-/* ========================= small UI bits ========================= */
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+/* ========================= CompanyEdit-style components ========================= */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-        {title}
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
+          {title}
+        </div>
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
       {children}
     </div>
@@ -673,6 +582,7 @@ function Input({
   placeholder,
   type = "text",
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -680,20 +590,24 @@ function Input({
   placeholder?: string;
   type?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
-        {required ? " *" : ""}
+        {required ? <span className="text-rose-600"> *</span> : null}
       </span>
       <input
-        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         type={type}
-        required={required}
+        disabled={disabled}
       />
     </label>
   );
@@ -704,7 +618,7 @@ function TextArea({
   value,
   onChange,
   placeholder,
-  rows = 3,
+  rows = 4,
 }: {
   label: string;
   value: string;
@@ -714,11 +628,13 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -733,31 +649,34 @@ function SelectStrict({
   value,
   onChange,
   options,
-  placeholder = "Select…",
+  placeholder,
   disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder?: string;
+  options: { value: string; label: string }[];
+  placeholder: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
-        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="h-10 w-full rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm outline-none
+          focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:cursor-not-allowed disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:ring-[#FCC020]/30"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
       >
         <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>

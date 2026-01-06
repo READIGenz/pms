@@ -19,13 +19,7 @@ function decodeJwtPayload(token: string): any | null {
 /* ========================= Prisma-like enums =========================
    Keep these aligned with your Prisma schema (CompanyStatus/CompanyRole). */
 const STATUS_OPTIONS = ["Active", "Inactive"] as const;
-const ROLE_OPTIONS = [
-  "IH_PMT",
-  "Contractor",
-  "Consultant",
-  "PMC",
-  "Supplier",
-] as const;
+const ROLE_OPTIONS = ["IH_PMT", "Contractor", "Consultant", "PMC", "Supplier"] as const;
 
 const prettyRole = (r?: string | null) => (r === "IH_PMT" ? "IH-PMT" : r ?? "");
 const toDbRole = (r?: string | null) => (r === "IH-PMT" ? "IH_PMT" : r ?? "");
@@ -83,9 +77,7 @@ export default function EditCompany() {
     const payload = decodeJwtPayload(token);
     const isAdmin = !!(
       payload &&
-      (payload.isSuperAdmin ||
-        payload.role === "Admin" ||
-        payload.userRole === "Admin")
+      (payload.isSuperAdmin || payload.role === "Admin" || payload.userRole === "Admin")
     );
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
@@ -125,6 +117,15 @@ export default function EditCompany() {
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
 
+  /* ========================= page title (UI only) ========================= */
+  useEffect(() => {
+    document.title = "Trinity PMS — Edit Company";
+    (window as any).__ADMIN_SUBTITLE__ = "Update company details, then save.";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
   /* ========================= load reference data ========================= */
   useEffect(() => {
     (async () => {
@@ -136,9 +137,7 @@ export default function EditCompany() {
       } catch (e: any) {
         setStatesRef([]);
         setRefsErr(
-          e?.response?.data?.error ||
-            e?.message ||
-            "Failed to load reference data."
+          e?.response?.data?.error || e?.message || "Failed to load reference data."
         );
       }
     })();
@@ -178,8 +177,7 @@ export default function EditCompany() {
         const c = Array.isArray(data) ? data[0] : data?.company || data;
 
         const stateId = c?.stateId || c?.state?.stateId || c?.state?.id || "";
-        const districtId =
-          c?.districtId || c?.district?.districtId || c?.district?.id || "";
+        const districtId = c?.districtId || c?.district?.districtId || c?.district?.id || "";
 
         setForm({
           companyCode: c?.companyCode ?? "",
@@ -209,9 +207,7 @@ export default function EditCompany() {
         const msg =
           s === 404
             ? "Company not found."
-            : e?.response?.data?.error ||
-              e?.message ||
-              "Failed to load company.";
+            : e?.response?.data?.error || e?.message || "Failed to load company.";
         setErr(msg);
       } finally {
         setLoading(false);
@@ -225,8 +221,7 @@ export default function EditCompany() {
 
   const normalize = (payload: Record<string, any>) => {
     if (payload.pan) payload.pan = String(payload.pan).toUpperCase().trim();
-    if (payload.gstin)
-      payload.gstin = String(payload.gstin).toUpperCase().trim();
+    if (payload.gstin) payload.gstin = String(payload.gstin).toUpperCase().trim();
     if (payload.contactMobile)
       payload.contactMobile = String(payload.contactMobile).replace(/\D+/g, "");
     if (payload.pin) payload.pin = String(payload.pin).replace(/\D+/g, "");
@@ -242,15 +237,13 @@ export default function EditCompany() {
   const validate = (p: Record<string, any>) => {
     if (!p.name) throw new Error("Company Name is required.");
     if (!p.status) throw new Error("Status is required.");
-    if (!p.companyRole)
-      throw new Error("Primary Specialisation (Role) is required.");
+    if (!p.companyRole) throw new Error("Primary Specialisation (Role) is required.");
 
     if (p.contactEmail && !/^\S+@\S+\.\S+$/.test(p.contactEmail))
       throw new Error("Contact Email seems invalid.");
     if (p.contactMobile && !/^\d{10}$/.test(p.contactMobile))
       throw new Error("Mobile must be a 10-digit number.");
-    if (p.pin && !/^\d{6}$/.test(p.pin))
-      throw new Error("PIN must be a 6-digit number.");
+    if (p.pin && !/^\d{6}$/.test(p.pin)) throw new Error("PIN must be a 6-digit number.");
     if (p.gstin && !/^[0-9A-Z]{15}$/.test(p.gstin))
       throw new Error("GSTIN must be 15 characters (A–Z, 0–9).");
     if (p.pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(p.pan))
@@ -279,9 +272,7 @@ export default function EditCompany() {
     existingCode: string
   ): Promise<string> => {
     const prefix = ROLE_PREFIX[role];
-    const hasPrefix = new RegExp(`^${prefix}-\\d{4}$`, "i").test(
-      existingCode || ""
-    );
+    const hasPrefix = new RegExp(`^${prefix}-\\d{4}$`, "i").test(existingCode || "");
     if (existingCode && hasPrefix) return existingCode.toUpperCase();
 
     try {
@@ -293,9 +284,7 @@ export default function EditCompany() {
         });
 
       const list: any[] = Array.isArray(data) ? data : data?.companies || [];
-      const roleList = list.filter(
-        (c) => String(c?.companyRole ?? "").trim() === role
-      );
+      const roleList = list.filter((c) => String(c?.companyRole ?? "").trim() === role);
       return nextCodeFromList(role, roleList).toUpperCase();
     } catch {
       return `${prefix}-0001`;
@@ -326,9 +315,7 @@ export default function EditCompany() {
       const msg =
         s === 401
           ? "Unauthorized (401). Please sign in again."
-          : e?.response?.data?.error ||
-            e?.message ||
-            "Failed to update company.";
+          : e?.response?.data?.error || e?.message || "Failed to update company.";
       setErr(msg);
       if (s === 401) {
         localStorage.removeItem("token");
@@ -343,64 +330,71 @@ export default function EditCompany() {
     return !!(form.name && form.status && form.companyRole) && !submitting;
   }, [form.name, form.status, form.companyRole, submitting]);
 
-  /* ========================= ui ========================= */
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Edit Company
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Update company details in the sections below, then save.
-              </span>
+  /* ========================= UI styles (UI only) ========================= */
+  const btnSmBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+    "active:scale-[0.98] transition";
 
-              {/* Info icon (replaces Note button functionality) */}
-              <button
-                type="button"
-                onClick={() => setShowNote(true)}
-                aria-label="Info"
-                title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              >
-                i
-              </button>
-            </p>
+  const btnOutline =
+    btnSmBase +
+    " bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 " +
+    "dark:bg-neutral-950 dark:text-slate-200 dark:border-white/10 dark:hover:bg-white/5";
+
+  const btnPrimary =
+    btnSmBase +
+    " bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35";
+
+  const infoBtn =
+    "inline-flex h-6 w-6 items-center justify-center rounded-full " +
+    "border border-slate-200 bg-white text-[11px] font-bold text-slate-700 shadow-sm " +
+    "hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+
+  return (
+    <div className="w-full">
+      <div className="mx-auto max-w-5xl">
+        {/* Top row actions (title is handled by AdminHome header) */}
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-slate-600 dark:text-slate-300">
+              Edit and save company information.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowNote(true)}
+              aria-label="Info"
+              title="Info"
+              className={infoBtn}
+            >
+              i
+            </button>
+
             {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              <span className="ml-2 text-xs text-amber-700 dark:text-amber-300">
                 {refsErr}
-              </p>
+              </span>
             )}
           </div>
-          <div className="flex gap-2">
-            <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/companies")}
-              type="button"
-            >
+
+          <div className="flex gap-2 justify-end">
+            <button className={btnOutline} onClick={() => nav("/admin/companies")} type="button">
               Cancel
             </button>
-            <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-              onClick={onSubmit}
-              disabled={!canSubmit}
-            >
+            <button className={btnPrimary} onClick={onSubmit} disabled={!canSubmit}>
               {submitting ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="mb-4 rounded-xl border border-slate-200/80 bg-white/95 p-3 text-sm text-slate-700 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200">
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200">
             Loading company…
           </div>
         ) : null}
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
             {err}
           </div>
         )}
@@ -450,7 +444,7 @@ export default function EditCompany() {
               label="GSTIN"
               value={form.gstin}
               onChange={(v) => set("gstin", v.toUpperCase())}
-              placeholder="15-digit GSTIN"
+              placeholder="15-character GSTIN"
             />
             <Input
               label="PAN"
@@ -465,6 +459,7 @@ export default function EditCompany() {
               placeholder="L12345DL2010PLC123456"
             />
           </div>
+
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Input
               label="Primary Contact"
@@ -498,6 +493,7 @@ export default function EditCompany() {
               placeholder="Flat / Building, Street, Area"
             />
           </div>
+
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <SelectStrict
               label="State / UT"
@@ -517,9 +513,7 @@ export default function EditCompany() {
                 value: d.districtId,
                 label: d.name || d.districtId,
               }))}
-              placeholder={
-                form.stateId ? "Select district" : "Select state first"
-              }
+              placeholder={form.stateId ? "Select district" : "Select state first"}
               disabled={!form.stateId}
             />
             <Input
@@ -542,20 +536,12 @@ export default function EditCompany() {
           />
         </Section>
 
-        {/* ---- Bottom action buttons (no sticky, no box) ---- */}
+        {/* Bottom actions */}
         <div className="mt-6 flex justify-end gap-2">
-          <button
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => nav("/admin/companies")}
-            type="button"
-          >
+          <button className={btnOutline} onClick={() => nav("/admin/companies")} type="button">
             Cancel
           </button>
-          <button
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-            onClick={onSubmit}
-            disabled={!canSubmit}
-          >
+          <button className={btnPrimary} onClick={onSubmit} disabled={!canSubmit}>
             {submitting ? "Saving…" : "Save"}
           </button>
         </div>
@@ -563,88 +549,72 @@ export default function EditCompany() {
 
       {/* Note modal */}
       {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          role="dialog"
-          aria-modal="true"
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
           {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowNote(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowNote(false)} />
 
           {/* Dialog */}
-          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-neutral-800">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Note for Admins — Editing a Company
-              </h2>
+          <div className="relative z-10 mx-4 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-white/10">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Note for Admins — Editing a Company
+                </h2>
+                <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
+              </div>
               <button
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
+                className="rounded-full h-8 px-3 text-[11px] font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5"
                 onClick={() => setShowNote(false)}
                 aria-label="Close"
               >
-                ✕
+                Close
               </button>
             </div>
 
-            <div className="space-y-3 p-5 text-sm leading-6 text-gray-800 dark:text-gray-100">
+            <div className="space-y-3 p-5 text-sm leading-6 text-slate-800 dark:text-slate-200">
               <div>
-                <b>Required to save:</b> Company Name, Status, and Primary
-                Specialisation (Role).
+                <b>Required to save:</b> Company Name, Status, and Primary Specialisation (Role).
               </div>
 
               <div>
-                <b>Primary Specialisation (Role):</b> is locked on edit to keep
-                company identity consistent across the system.
+                <b>Primary Specialisation (Role):</b> is locked on edit to keep company identity consistent
+                across the system.
               </div>
 
               <div>
-                <b>Optional but useful:</b> Website, Address, State, District,
-                PIN, Registration IDs (GSTIN, PAN, CIN), and a short
-                Note/description.
+                <b>Optional but useful:</b> Website, Address, State, District, PIN, Registration IDs (GSTIN, PAN,
+                CIN), and a short Note/description.
               </div>
 
               <div>
                 <b>Basic checks we do for you:</b>
                 <ul className="mt-1 list-disc space-y-1 pl-5">
-                  <li>
-                    Mobile must be a 10-digit number; Email must look valid.
-                  </li>
+                  <li>Mobile must be a 10-digit number; Email must look valid.</li>
                   <li>PIN must be 6 digits.</li>
+                  <li>GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10 characters (ABCDE1234F).</li>
                   <li>
-                    GSTIN must be 15 characters (A–Z, 0–9); PAN must be 10
-                    characters (ABCDE1234F).
+                    Website is auto-cleaned to start with <code>https://</code> if you miss it.
                   </li>
-                  <li>
-                    Website is auto-cleaned to start with <code>https://</code>{" "}
-                    if you miss it.
-                  </li>
-                  <li>
-                    GSTIN/PAN are auto-capitalised; numbers strip symbols.
-                  </li>
+                  <li>GSTIN/PAN are auto-capitalised; numbers strip symbols.</li>
                 </ul>
               </div>
 
               <div>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Companies page.
+                <b>After a successful save:</b> you’ll be taken back to the Companies page.
               </div>
 
               <div>
-                <b>Cancel:</b> takes you back to the Companies list without
-                saving.
+                <b>Cancel:</b> takes you back to the Companies list without saving.
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-neutral-800">
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
               <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className="h-8 px-3 rounded-full text-[11px] font-semibold bg-[#00379C] text-white shadow-sm hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/35 dark:focus:ring-offset-neutral-950"
                 onClick={() => setShowNote(false)}
                 type="button"
               >
-                Close
+                Done
               </button>
             </div>
           </div>
@@ -655,17 +625,14 @@ export default function EditCompany() {
 }
 
 /* ========================= small UI bits ========================= */
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-        {title}
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
+          {title}
+        </div>
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
       {children}
     </div>
@@ -689,12 +656,14 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
         {required ? " *" : ""}
       </span>
       <input
-        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -720,11 +689,13 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -751,11 +722,13 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
-        className="w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30 disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
