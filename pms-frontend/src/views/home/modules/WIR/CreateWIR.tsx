@@ -244,7 +244,7 @@ type ActivityLite = {
 };
 
 // UI type for the Compliance modal rows
-export type UiComplianceItem = {
+type UiComplianceItem = {
   id: string;
   text: string;
   refId: string;
@@ -291,14 +291,14 @@ function getRefCode(m: any): string {
 function getRefTitle(m: any): string {
   return String(
     m?.title ??
-    m?.name ??
-    m?.label ??
-    m?.refTitle ??
-    m?.refName ??
-    m?.refChecklistTitle ??
-    m?.displayName ??
-    m?.code ??
-    "Untitled"
+      m?.name ??
+      m?.label ??
+      m?.refTitle ??
+      m?.refName ??
+      m?.refChecklistTitle ??
+      m?.displayName ??
+      m?.code ??
+      "Untitled"
   );
 }
 
@@ -360,92 +360,6 @@ function fileSummary(files?: File[] | undefined) {
   return `${files.length} files selected`;
 }
 
-function tolPillOf(it: UiComplianceItem): string | null {
-  const op = (it.tolOp || "").toString().trim();
-  const base = it.base != null ? String(it.base) : "";
-  const u = (it.units || "").toString().trim();
-  const parts = [op, base, u].filter(Boolean);
-  return parts.length ? parts.join(" ") : null;
-}
-
-export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
-  if (!items.length) {
-    return <div className="text-sm">No checklist items.</div>;
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {items.map((it) => {
-        const tol = tolPillOf(it);
-        const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
-        const req = (it.requirement || "").toString().trim();
-        const isMandatory = it.required === true || /^mandatory$/i.test(req);
-        const isOptional = it.required === false || /^optional$/i.test(req);
-
-        return (
-          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold dark:text-white">
-                  {it.text || "Untitled"}
-                  {tol ? ` — ${tol}` : ""}
-                </div>
-                {codeLine && (
-                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
-                    {codeLine}
-                  </div>
-                )}
-              </div>
-
-              {it.critical ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                  Critical
-                </span>
-              ) : null}
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              {isMandatory && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                  Mandatory
-                </span>
-              )}
-              {isOptional && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                  Optional
-                </span>
-              )}
-              {it.units && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                  Unit: {it.units}
-                </span>
-              )}
-              {tol && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                  Tolerance: {tol}
-                </span>
-              )}
-            </div>
-
-            {(it.tags?.length || 0) > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {it.tags!.map((t, i) => (
-                  <span
-                    key={i}
-                    className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ---------------- main ---------------- */
 
 export default function CreateWIR() {
@@ -467,11 +381,11 @@ export default function CreateWIR() {
 
   const role = normalizeRole(
     (user as any)?.role ??
-    (claims as any)?.role ??
-    (claims as any)?.userRole ??
-    (claims as any)?.roleName ??
-    (loc.state as NavState | undefined)?.role ??
-    ""
+      (claims as any)?.role ??
+      (claims as any)?.userRole ??
+      (claims as any)?.roleName ??
+      (loc.state as NavState | undefined)?.role ??
+      ""
   );
 
   const activitySelectRef = useRef<HTMLSelectElement | null>(null);
@@ -698,8 +612,8 @@ export default function CreateWIR() {
           rawForDate == null
             ? null
             : /^\d{4}-\d{2}-\d{2}/.test(String(rawForDate))
-              ? String(rawForDate).slice(0, 10)
-              : (() => {
+            ? String(rawForDate).slice(0, 10)
+            : (() => {
                 const d = new Date(rawForDate);
                 const y = d.getFullYear();
                 const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -813,12 +727,12 @@ export default function CreateWIR() {
       role === "Contractor"
         ? `/home/projects/${projectId}/wir`
         : role === "PMC"
-          ? `/home/pmc/projects/${projectId}/wir`
-          : role === "IH-PMT"
-            ? `/home/ihpmt/projects/${projectId}/wir`
-            : role === "Client"
-              ? `/home/client/projects/${projectId}/wir`
-              : `/home/projects/${projectId}/wir`;
+        ? `/home/pmc/projects/${projectId}/wir`
+        : role === "IH-PMT"
+        ? `/home/ihpmt/projects/${projectId}/wir`
+        : role === "Client"
+        ? `/home/client/projects/${projectId}/wir`
+        : `/home/projects/${projectId}/wir`;
 
     navigate(base, { state: { role, project: projectFromState || { projectId } }, replace: true });
   };
@@ -1161,13 +1075,13 @@ export default function CreateWIR() {
     ];
   }
 
-  // function tolPillOf(it: UiComplianceItem): string | null {
-  //   const op = (it.tolOp || "").toString().trim();
-  //   const base = it.base != null ? String(it.base) : "";
-  //   const u = (it.units || "").toString().trim();
-  //   const parts = [op, base, u].filter(Boolean);
-  //   return parts.length ? parts.join(" ") : null;
-  // }
+  function tolPillOf(it: UiComplianceItem): string | null {
+    const op = (it.tolOp || "").toString().trim();
+    const base = it.base != null ? String(it.base) : "";
+    const u = (it.units || "").toString().trim();
+    const parts = [op, base, u].filter(Boolean);
+    return parts.length ? parts.join(" ") : null;
+  }
 
   /* ---------------- submit handlers ---------------- */
 
@@ -1400,10 +1314,10 @@ export default function CreateWIR() {
                       {!discipline
                         ? "Select Discipline first"
                         : activityLoading && !activityOpts.length
-                          ? "Loading…"
-                          : activityOpts.length
-                            ? "Select…"
-                            : "Tap again after loading…"}
+                        ? "Loading…"
+                        : activityOpts.length
+                        ? "Select…"
+                        : "Tap again after loading…"}
                     </option>
                     {activityOpts.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -1656,10 +1570,11 @@ export default function CreateWIR() {
                 <button
                   onClick={openViewCompliance}
                   disabled={!selectedRefIds.length || isFollowupMode}
-                  className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${!isFollowupMode && selectedRefIds.length
+                  className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${
+                    !isFollowupMode && selectedRefIds.length
                       ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
                       : "opacity-60 cursor-not-allowed"
-                    }`}
+                  }`}
                   title={isFollowupMode ? "Disabled in follow-up mode" : ""}
                 >
                   View Combined Items
@@ -1707,9 +1622,10 @@ export default function CreateWIR() {
             onClick={saveDraftBeforeDispatch}
             disabled={!roleCanCreate || submitting || !hasRequiredForSubmit}
             className={`w-full sm:w-auto text-sm px-6 py-2 rounded-full border
-              ${!roleCanCreate || submitting || !hasRequiredForSubmit
-                ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+              ${
+                !roleCanCreate || submitting || !hasRequiredForSubmit
+                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
               }`}
             title="Discipline, Activity, Date/Time, and at least one Checklist are required"
           >
@@ -1778,10 +1694,11 @@ export default function CreateWIR() {
                     setSaveDlgBusy(false);
                   }
                 }}
-                className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${saveDlgBusy
+                className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${
+                  saveDlgBusy
                     ? "opacity-60 cursor-not-allowed"
                     : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                  }`}
+                }`}
                 disabled={saveDlgBusy}
               >
                 {saveDlgBusy ? "Saving…" : "Confirm & Save"}
@@ -1934,11 +1851,56 @@ export default function CreateWIR() {
               <div className="text-sm">Loading…</div>
             ) : viewErr ? (
               <div className="text-sm text-rose-600">{viewErr}</div>
+            ) : combinedItems.length === 0 ? (
+              <div className="text-sm">No checklist items.</div>
             ) : (
-              <ComplianceItemsGrid items={combinedItems} />
-            )}
-            {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {combinedItems.map((it) => {
+                  const tol = tolPillOf(it);
+                  const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
+                  const req = (it.requirement || "").toString().trim();
+                  const isMandatory = it.required === true || /^mandatory$/i.test(req);
+                  const isOptional = it.required === false || /^optional$/i.test(req);
 
+                  return (
+                    <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold dark:text-white">
+                            {it.text || "Untitled"}
+                            {tol ? ` — ${tol}` : ""}
+                          </div>
+                          {codeLine && <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">{codeLine}</div>}
+                        </div>
+
+                        {it.critical ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                            Critical
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {isMandatory && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Mandatory</span>}
+                        {isOptional && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Optional</span>}
+                        {it.units && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Unit: {it.units}</span>}
+                        {tol && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Tolerance: {tol}</span>}
+                      </div>
+
+                      {(it.tags?.length || 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {it.tags!.map((t, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
           </div>
         </div>

@@ -1,7 +1,13 @@
 // src/views/admin/moduleSettings/ModuleSettingsLayout.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import { api } from "../../../api/client";
+
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
 
 type ProjectLite = {
   projectId: string;
@@ -62,6 +68,109 @@ const EMPTY: BaseModuleSettings = {
   extra: { ...WIR_EXTRA_DEFAULTS },
 };
 
+type ToastType = "success" | "error" | "info";
+function Toast({
+  type,
+  message,
+  onClose,
+}: {
+  type: ToastType;
+  message: string;
+  onClose: () => void;
+}) {
+  const tone =
+    type === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/25 dark:text-emerald-200"
+      : type === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/25 dark:text-rose-200"
+      : "border-slate-200 bg-white text-slate-800 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200";
+
+  return (
+    <div
+      className={`mb-4 rounded-2xl border px-4 py-3 shadow-sm flex items-start justify-between gap-3 ${tone}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="text-sm font-semibold">{message}</div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="h-8 px-3 rounded-full border border-transparent text-[11px] font-semibold hover:bg-black/5 dark:hover:bg-white/5"
+        title="Dismiss"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
+function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-white/10">
+            <div className="text-sm font-extrabold text-[#00379C] dark:text-white">
+              {title}
+            </div>
+            <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
+          </div>
+
+          <div className="p-4 text-sm text-slate-700 dark:text-slate-200">
+            {message}
+          </div>
+
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50
+                         dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5"
+              disabled={!!busy}
+            >
+              {cancelText}
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="h-8 rounded-full bg-[#00379C] px-3 text-[11px] font-semibold text-white shadow-sm hover:brightness-110
+                         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/35
+                         dark:focus:ring-offset-neutral-950 disabled:opacity-60"
+              disabled={!!busy}
+            >
+              {busy ? "Working…" : confirmText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ModuleSettingsLayout() {
   const token = localStorage.getItem("token");
   const loc = useLocation();
@@ -82,8 +191,19 @@ export default function ModuleSettingsLayout() {
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // UI-only: toast + confirm modal
+  const [toast, setToast] = useState<{ type: ToastType; msg: string } | null>(
+    null
+  );
+  const [resetOpen, setResetOpen] = useState(false);
+
   useEffect(() => {
     document.title = "Trinity PMS — Module Settings";
+    window.__ADMIN_SUBTITLE__ =
+      "Configure project-specific WIR behaviour — transmission, redirect and export options.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
   }, []);
 
   // Load projects once
@@ -107,9 +227,17 @@ export default function ModuleSettingsLayout() {
           }))
           .filter((p: ProjectLite) => p.projectId && p.title);
         setProjects(rows);
-        if (!rows.length) alert("No projects found. Create one first.");
+        if (!rows.length) {
+          setToast({
+            type: "info",
+            msg: "No projects found. Create one first.",
+          });
+        }
       } catch (e: any) {
-        alert(`Projects load failed: ${e?.message ?? e}`);
+        setToast({
+          type: "error",
+          msg: `Projects load failed: ${e?.message ?? e}`,
+        });
       } finally {
         setLoadingProjects(false);
       }
@@ -130,11 +258,12 @@ export default function ModuleSettingsLayout() {
         n.extra = { ...WIR_EXTRA_DEFAULTS, ...(n.extra || {}) };
         setWir(n);
       } catch (e: any) {
-        alert(
-          `Load failed for project "${currentProjectLabel()}": ${
+        setToast({
+          type: "error",
+          msg: `Load failed for project "${currentProjectLabel()}": ${
             e?.message ?? e
-          }`
-        );
+          }`,
+        });
         const n = normalize(null);
         n.extra = { ...WIR_EXTRA_DEFAULTS };
         setWir(n);
@@ -142,6 +271,7 @@ export default function ModuleSettingsLayout() {
         setLoadingSettings(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // --- API helpers ---
@@ -200,80 +330,110 @@ export default function ModuleSettingsLayout() {
     };
   }
 
-  // Helper: pretty project label for alerts
+  // Helper: pretty project label for messages
   function currentProjectLabel() {
     const p = projects.find((x) => x.projectId === projectId);
     if (!p) return "Unknown Project";
     return p.code ? `${p.title} (${p.code})` : p.title;
   }
 
-  // --- Handlers: WIR ---
+  // --- Handlers: WIR (logic unchanged, only message style changed) ---
   async function onSaveWIR() {
     if (!projectId) return;
     setSaving(true);
     try {
       const extra = { ...(wir.extra || {}), ...getWirExtra(wir) };
       await putModuleSettings(projectId, "WIR", { ...wir, extra });
-      alert(`WIR settings saved for project: ${currentProjectLabel()}.`);
+      setToast({
+        type: "success",
+        msg: `WIR settings saved for project: ${currentProjectLabel()}.`,
+      });
     } catch (e: any) {
-      alert(
-        `Save failed for project "${currentProjectLabel()}": ${
+      setToast({
+        type: "error",
+        msg: `Save failed for project "${currentProjectLabel()}": ${
           e?.message ?? e
-        }`
-      );
+        }`,
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  async function onResetWIR() {
+  async function onResetWIRConfirmed() {
     if (!projectId) return;
-    const ok = confirm(
-      `Reset WIR settings to defaults for project "${currentProjectLabel()}"?`
-    );
-    if (!ok) return;
     setSaving(true);
     try {
       const fresh = await resetModule(projectId, "WIR");
       const n = normalize(fresh);
       n.extra = { ...WIR_EXTRA_DEFAULTS, ...(n.extra || {}) };
       setWir(n);
-      alert(
-        `WIR settings reset to defaults for project: ${currentProjectLabel()}.`
-      );
+      setToast({
+        type: "success",
+        msg: `WIR settings reset to defaults for project: ${currentProjectLabel()}.`,
+      });
     } catch (e: any) {
-      alert(
-        `Reset failed for project "${currentProjectLabel()}": ${
+      setToast({
+        type: "error",
+        msg: `Reset failed for project "${currentProjectLabel()}": ${
           e?.message ?? e
-        }`
-      );
+        }`,
+      });
     } finally {
       setSaving(false);
+      setResetOpen(false);
     }
   }
 
   if (!token) return <Navigate to="/login" state={{ from: loc }} replace />;
 
+  /* ========================= UI tokens (same family as other pages) ========================= */
+  const pill =
+    "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+  const pillLight =
+    "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const pillPrimary =
+    "bg-[#00379C] text-white hover:brightness-110 border-transparent focus:ring-[#00379C]/35";
+  const pillTeal =
+    "bg-[#23A192] text-white hover:brightness-110 border-transparent focus:ring-[#23A192]/35";
+  const pillGold =
+    "bg-[#FCC020] text-slate-900 hover:brightness-105 border-transparent focus:ring-[#FCC020]/40";
+
+  const projectOptions = useMemo(() => projects, [projects]);
+
   if (!isSuperAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-5 space-y-2">
-            <h1 className="text-2xl font-semibold dark:text-white">
-              Module Settings
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Manage project-specific configuration for Trinity PMS modules.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm p-5">
-            <div className="text-sm text-red-700 dark:text-red-400 font-medium mb-1">
-              403 — Access Denied
+      <div className="w-full">
+        <div className="mx-auto max-w-6xl">
+          {toast && (
+            <Toast
+              type={toast.type}
+              message={toast.msg}
+              onClose={() => setToast(null)}
+            />
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+            <div className="px-5 py-4 border-b border-slate-200 bg-[#00379C]/[0.03] dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="text-lg font-extrabold text-[#00379C] dark:text-white">
+                Module Settings
+              </div>
+              <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                You don&apos;t have permission to access this page.
+              </div>
+              <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
             </div>
-            <p className="text-sm text-gray-700 dark:text-gray-200">
-              You don&apos;t have permission to access this page. Please
-              contact a Super Admin if you believe this is a mistake.
-            </p>
+
+            <div className="p-5">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/25 dark:text-rose-200">
+                <div className="text-sm font-extrabold">403 — Access Denied</div>
+                <div className="mt-1 text-sm">
+                  Please contact a Super Admin if you believe this is a mistake.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -281,80 +441,89 @@ export default function ModuleSettingsLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 space-y-3">
-          <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
-              Module Settings
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Configure WIR behaviour for each project — transmission, redirect
-              and export options.
-            </p>
-          </div>
+    <div className="w-full">
+      <div className="mx-auto max-w-6xl">
+        {toast && (
+          <Toast
+            type={toast.type}
+            message={toast.msg}
+            onClose={() => setToast(null)}
+          />
+        )}
 
-          {/* Line 2: Project selector + loading state */}
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-2 md:basis-3/4">
-              <span className="text-xs font-medium text-gray-600 uppercase tracking-wide dark:text-gray-300">
-                Project
-              </span>
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm min-w-56 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                disabled={loadingProjects}
-                aria-label="Select Project"
-              >
-                {projects.length === 0 ? (
-                  <option value="">No projects</option>
-                ) : (
-                  <option value="">— Select a project —</option>
-                )}
-                {projects.map((p) => {
-                  const tip = [
-                    p.code ? `Code: ${p.code}` : null,
-                    `Title: ${p.title}`,
-                    `Distt: ${p.distt ?? "-"}`,
-                    `Type: ${p.type ?? "-"}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" | ");
-                  return (
-                    <option
-                      key={p.projectId}
-                      value={p.projectId}
-                      title={tip}
-                    >
-                      {p.title}
-                    </option>
-                  );
-                })}
-              </select>
+        {/* Top controls (no extra outer “big background”) */}
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="px-5 py-4 border-b border-slate-200 bg-[#00379C]/[0.03] dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Project
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    className={`${pill} ${pillLight} min-w-[260px]`}
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    disabled={loadingProjects}
+                    aria-label="Select Project"
+                    title="Select project"
+                  >
+                    {projectOptions.length === 0 ? (
+                      <option value="">No projects</option>
+                    ) : (
+                      <option value="">— Select a project —</option>
+                    )}
 
-              {(loadingProjects || loadingSettings) && (
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Loading…
+                    {projectOptions.map((p) => {
+                      const tip = [
+                        p.code ? `Code: ${p.code}` : null,
+                        `Title: ${p.title}`,
+                        `Distt: ${p.distt ?? "-"}`,
+                        `Type: ${p.type ?? "-"}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" | ");
+                      return (
+                        <option key={p.projectId} value={p.projectId} title={tip}>
+                          {p.title}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {(loadingProjects || loadingSettings) && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      Loading…
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-start lg:justify-end">
+                <span
+                  className={[
+                    "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold",
+                    projectId
+                      ? canEdit
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/25 dark:text-emerald-200"
+                        : "border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
+                      : "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-300",
+                  ].join(" ")}
+                >
+                  {projectId
+                    ? canEdit
+                      ? "Editing enabled for this project"
+                      : "Read-only — check loading or permissions"
+                    : "Select a project to start editing"}
                 </span>
-              )}
+              </div>
             </div>
 
-            {/* Status hint on the right */}
-            <div className="flex items-center justify-start md:justify-end md:basis-1/4">
-              <span className="inline-flex items-center rounded-full border border-emerald-200/70 bg-emerald-50/80 px-3 py-1 text-[11px] font-medium text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-900/30 dark:text-emerald-300">
-                {projectId
-                  ? canEdit
-                    ? "Editing enabled for this project"
-                    : "Read-only — check loading or permissions"
-                  : "Select a project to start editing"}
-              </span>
-            </div>
+            <div className="mt-3 h-1 w-12 rounded-full bg-[#FCC020]" />
           </div>
 
-          {/* Tabs: only WIR (kept for future modules) */}
-          <div className="flex flex-wrap gap-2">
+          {/* Tabs (kept for future modules) */}
+          <div className="px-5 py-3 flex flex-wrap gap-2">
             {MODULES.map((m) => {
               const active = moduleKey === m;
               return (
@@ -362,11 +531,12 @@ export default function ModuleSettingsLayout() {
                   key={m}
                   type="button"
                   onClick={() => setModuleKey(m)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  className={[
+                    pill,
                     active
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                      : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 dark:bg-neutral-900 dark:text-slate-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                  }`}
+                      ? "bg-[#00379C] text-white border-transparent focus:ring-[#00379C]/35"
+                      : pillLight,
+                  ].join(" ")}
                   aria-pressed={active}
                   aria-label={`Select ${LABELS[m]}`}
                 >
@@ -378,163 +548,203 @@ export default function ModuleSettingsLayout() {
         </div>
 
         {/* Panel */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm p-5">
-          <h2 className="text-lg font-semibold dark:text-white">
-            {LABELS[moduleKey]}
-          </h2>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10">
+            <div className="text-base font-extrabold text-[#00379C] dark:text-white">
+              {LABELS[moduleKey]}
+            </div>
+            <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Configure WIR behaviour for each project — transmission, redirect
+              and export options.
+            </div>
+            <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
+          </div>
 
-          {/* --- WIR: ONLY the 3 requested options --- */}
-          <div className="mt-4 space-y-5">
+          {/* --- WIR options --- */}
+          <div className="p-5">
             <fieldset
-              className="grid grid-cols-1 gap-4 md:grid-cols-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
+              className="grid grid-cols-1 gap-3 lg:grid-cols-3"
               disabled={!projectId}
             >
               {/* Transmission Type */}
-              <div className="rounded-xl border border-slate-200/80 bg-white/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/80">
-                <div className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  Transmission Type
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-white">
+                    Transmission Type
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-[#23A192]" />
                 </div>
-                {(
-                  ["Public", "Private"] as WirTransmissionType[]
-                ).map((val) => {
-                  const checked = getWirExtra(wir).transmissionType === val;
-                  return (
-                    <label
-                      key={val}
-                      className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-neutral-800"
-                    >
-                      <input
-                        type="radio"
-                        className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                        name="wir-transmission"
-                        value={val}
-                        checked={checked}
-                        onChange={() =>
-                          setWir((s) => ({
-                            ...s,
-                            extra: { ...(s.extra || {}), transmissionType: val },
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
-                      <span className="text-sm text-slate-800 dark:text-slate-100">
-                        {val}
-                      </span>
-                    </label>
-                  );
-                })}
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Default: <span className="font-medium">Public</span>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Default: <span className="font-semibold">Public</span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {(["Public", "Private"] as WirTransmissionType[]).map(
+                    (val) => {
+                      const checked = getWirExtra(wir).transmissionType === val;
+                      return (
+                        <label
+                          key={val}
+                          className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-[#00379C]/[0.04] dark:hover:bg-white/[0.04]"
+                        >
+                          <input
+                            type="radio"
+                            name="wir-transmission"
+                            value={val}
+                            checked={checked}
+                            onChange={() =>
+                              setWir((s) => ({
+                                ...s,
+                                extra: { ...(s.extra || {}), transmissionType: val },
+                              }))
+                            }
+                            disabled={!canEdit}
+                            className="h-4 w-4 accent-[#23A192]"
+                          />
+                          <span className="text-sm text-slate-800 dark:text-slate-100">
+                            {val}
+                          </span>
+                        </label>
+                      );
+                    }
+                  )}
                 </div>
               </div>
 
               {/* Redirect Allowed */}
-              <div className="rounded-xl border border-slate-200/80 bg-white/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/80">
-                <div className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  Redirect
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-white">
+                    Redirect
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-[#FCC020]" />
                 </div>
-                {[
-                  { label: "Allowed", val: true },
-                  { label: "Not Allowed", val: false },
-                ].map((opt) => {
-                  const checked = getWirExtra(wir).redirectAllowed === opt.val;
-                  return (
-                    <label
-                      key={opt.label}
-                      className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-neutral-800"
-                    >
-                      <input
-                        type="radio"
-                        className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                        name="wir-redirect"
-                        value={String(opt.val)}
-                        checked={checked}
-                        onChange={() =>
-                          setWir((s) => ({
-                            ...s,
-                            extra: {
-                              ...(s.extra || {}),
-                              redirectAllowed: opt.val,
-                            },
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
-                      <span className="text-sm text-slate-800 dark:text-slate-100">
-                        {opt.label}
-                      </span>
-                    </label>
-                  );
-                })}
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Default: <span className="font-medium">Allowed</span>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Default: <span className="font-semibold">Allowed</span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {[
+                    { label: "Allowed", val: true },
+                    { label: "Not Allowed", val: false },
+                  ].map((opt) => {
+                    const checked = getWirExtra(wir).redirectAllowed === opt.val;
+                    return (
+                      <label
+                        key={opt.label}
+                        className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-[#00379C]/[0.04] dark:hover:bg-white/[0.04]"
+                      >
+                        <input
+                          type="radio"
+                          name="wir-redirect"
+                          value={String(opt.val)}
+                          checked={checked}
+                          onChange={() =>
+                            setWir((s) => ({
+                              ...s,
+                              extra: { ...(s.extra || {}), redirectAllowed: opt.val },
+                            }))
+                          }
+                          disabled={!canEdit}
+                          className="h-4 w-4 accent-[#23A192]"
+                        />
+                        <span className="text-sm text-slate-800 dark:text-slate-100">
+                          {opt.label}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* Export PDF */}
-              <div className="rounded-xl border border-slate-200/80 bg-white/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/80">
-                <div className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  Export PDF
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-white">
+                    Export PDF
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-[#00379C]" />
                 </div>
-                {[
-                  { label: "Allowed", val: true },
-                  { label: "Not Allowed", val: false },
-                ].map((opt) => {
-                  const checked =
-                    getWirExtra(wir).exportPdfAllowed === opt.val;
-                  return (
-                    <label
-                      key={opt.label}
-                      className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-neutral-800"
-                    >
-                      <input
-                        type="radio"
-                        className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                        name="wir-exportpdf"
-                        value={String(opt.val)}
-                        checked={checked}
-                        onChange={() =>
-                          setWir((s) => ({
-                            ...s,
-                            extra: {
-                              ...(s.extra || {}),
-                              exportPdfAllowed: opt.val,
-                            },
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
-                      <span className="text-sm text-slate-800 dark:text-slate-100">
-                        {opt.label}
-                      </span>
-                    </label>
-                  );
-                })}
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Default: <span className="font-medium">Not Allowed</span>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Default: <span className="font-semibold">Not Allowed</span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {[
+                    { label: "Allowed", val: true },
+                    { label: "Not Allowed", val: false },
+                  ].map((opt) => {
+                    const checked = getWirExtra(wir).exportPdfAllowed === opt.val;
+                    return (
+                      <label
+                        key={opt.label}
+                        className="flex items-center gap-2 rounded-full px-2 py-1 text-sm cursor-pointer hover:bg-[#00379C]/[0.04] dark:hover:bg-white/[0.04]"
+                      >
+                        <input
+                          type="radio"
+                          name="wir-exportpdf"
+                          value={String(opt.val)}
+                          checked={checked}
+                          onChange={() =>
+                            setWir((s) => ({
+                              ...s,
+                              extra: { ...(s.extra || {}), exportPdfAllowed: opt.val },
+                            }))
+                          }
+                          disabled={!canEdit}
+                          className="h-4 w-4 accent-[#23A192]"
+                        />
+                        <span className="text-sm text-slate-800 dark:text-slate-100">
+                          {opt.label}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </fieldset>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                className={`${pill} ${pillTeal}`}
                 onClick={onSaveWIR}
                 disabled={!canEdit || saving}
+                type="button"
+                title="Save settings"
               >
                 {saving ? "Saving…" : "Save"}
               </button>
+
               <button
-                className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={onResetWIR}
+                className={`${pill} ${pillLight}`}
+                onClick={() => setResetOpen(true)}
                 disabled={!canEdit || saving}
+                type="button"
+                title="Reset to defaults"
               >
                 Reset
               </button>
+
+              {/* optional subtle hint */}
+              <span className="text-xs text-slate-500 dark:text-slate-400 ml-1">
+                Changes apply to the selected project only.
+              </span>
             </div>
           </div>
         </div>
+
+        {/* Confirm modal (replaces browser confirm) */}
+        <ConfirmModal
+          open={resetOpen}
+          title="Reset WIR settings?"
+          message={`Reset WIR settings to defaults for project "${currentProjectLabel()}"?`}
+          confirmText="Reset"
+          cancelText="Cancel"
+          onCancel={() => setResetOpen(false)}
+          onConfirm={onResetWIRConfirmed}
+          busy={saving}
+        />
       </div>
     </div>
   );

@@ -3,6 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../../../api/client";
 
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
+
 // --- JWT helper ---
 function decodeJwtPayload(token: string): any | null {
   try {
@@ -44,14 +50,14 @@ function initialsFrom(first?: string, middle?: string, last?: string) {
 function statusBadgeClass(status?: string | null) {
   const s = String(status || "").toLowerCase();
   if (s === "active")
-    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
   if (s === "inactive" || s === "disabled")
-    return "bg-gray-100 text-gray-800 dark:bg-neutral-800/80 dark:text-gray-300 border-gray-200/60 dark:border-neutral-700/60";
+    return "bg-slate-100 text-slate-800 dark:bg-neutral-800/70 dark:text-slate-200 border-slate-200/60 dark:border-white/10";
   if (s === "blocked" || s === "suspended")
-    return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/25 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
   if (s === "deleted")
-    return "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
-  return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/25 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/25 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
 }
 
 // ----- Types for the rendered table row -----
@@ -189,6 +195,16 @@ export default function Users() {
     if (!isAdmin) nav("/landing", { replace: true });
   }, [nav]);
 
+  // --- Page title/subtitle (AdminHome header bar uses this) ---
+  useEffect(() => {
+    document.title = "Trinity PMS — Users";
+    window.__ADMIN_SUBTITLE__ =
+      "Browse user records, filter, search, export, and manage user details.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
   // --- Load refs (states, districts, companies) with graceful degradation ---
   const loadRefs = async (districtsForStateName?: string) => {
     setRefsErr(null);
@@ -197,7 +213,6 @@ export default function Users() {
       api.get("/admin/companies-brief"),
     ]);
 
-    // states
     if (results[0].status === "fulfilled") {
       const sdata: any = results[0].value.data;
       setStatesRef(Array.isArray(sdata) ? sdata : sdata?.states || []);
@@ -212,7 +227,6 @@ export default function Users() {
       );
     }
 
-    // companies
     if (results[1].status === "fulfilled") {
       const cdata: any = results[1].value.data;
       setCompaniesRef(Array.isArray(cdata) ? cdata : cdata?.companies || []);
@@ -225,7 +239,6 @@ export default function Users() {
       }
     }
 
-    // districts (optional)
     try {
       let stateId: string | undefined;
       if (districtsForStateName && statesRef.length > 0) {
@@ -330,7 +343,6 @@ export default function Users() {
     }
   };
 
-  // initial loads
   useEffect(() => {
     loadRefs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,14 +352,12 @@ export default function Users() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If state filter changes and we have refs, refresh districts for that state name
   useEffect(() => {
     if (statesRef.length === 0) return;
     loadRefs(stateFilter || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateFilter]);
 
-  // ----- Apply filters then search -----
   const filteredByControls = useMemo(() => {
     return rows.filter((r) => {
       if (isClientFilter !== "all") {
@@ -369,16 +379,17 @@ export default function Users() {
       if (statusFilter && r.status.trim() !== statusFilter.trim()) return false;
       return true;
     });
-  }, [rows, isClientFilter, isServiceProviderFilter, stateFilter, zoneFilter]);
+  }, [
+    rows,
+    isClientFilter,
+    isServiceProviderFilter,
+    stateFilter,
+    zoneFilter,
+    statusFilter,
+  ]);
 
-  // client-side text search on top of filters
-  const [sortKeyState, setSortKeyState] = useState<keyof DisplayRow | null>(
-    null
-  );
-  const [qState, setQState] = useState("");
-  useEffect(() => setQState(qDebounced), [qDebounced]);
   const filtered = useMemo(() => {
-    const needle = qState.trim().toLowerCase();
+    const needle = qDebounced.trim().toLowerCase();
     if (!needle) return filteredByControls;
     return filteredByControls.filter((r) =>
       Object.values(r).some((v) =>
@@ -387,9 +398,8 @@ export default function Users() {
           .includes(needle)
       )
     );
-  }, [filteredByControls, qState]);
+  }, [filteredByControls, qDebounced]);
 
-  // sorting
   const cmp = (a: any, b: any) => {
     if (a === b) return 0;
     if (a === null || a === undefined) return -1;
@@ -408,20 +418,19 @@ export default function Users() {
   };
 
   const sorted = useMemo(() => {
-    const key = sortKey ?? sortKeyState;
-    if (!key || key === "action") return filtered;
+    if (!sortKey || sortKey === "action") return filtered;
     const copy = [...filtered];
     copy.sort((ra, rb) => {
-      const delta = cmp((ra as any)[key], (rb as any)[key]);
+      const delta = cmp((ra as any)[sortKey], (rb as any)[sortKey]);
       return sortDir === "asc" ? delta : -delta;
     });
     return copy;
-  }, [filtered, sortKey, sortKeyState, sortDir]);
+  }, [filtered, sortKey, sortDir]);
 
-  // pagination
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageSafe = Math.min(Math.max(1, page), totalPages);
+
   const paged = useMemo(() => {
     const start = (pageSafe - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
@@ -432,11 +441,9 @@ export default function Users() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalPages]);
 
-  // actions
   const onView = (id: string) => nav(`/admin/users/${id}`);
   const onEdit = (id: string) => nav(`/admin/users/${id}/edit`);
 
-  // export CSV
   const exportCsv = () => {
     const cols = headings.map((h) => h.label);
     const lines = [
@@ -460,10 +467,10 @@ export default function Users() {
     URL.revokeObjectURL(url);
   };
 
-  // ------------- Modal -------------
   const selectedRaw: RawUser | null = modalUserId
     ? rawById[modalUserId] ?? null
     : null;
+
   const modalData = (() => {
     if (!selectedRaw) return null;
     const u = selectedRaw;
@@ -472,6 +479,7 @@ export default function Users() {
       .join(" ")
       .trim();
     const mobile = [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+
     const memberships: any[] = Array.isArray(u.userRoleMemberships)
       ? u.userRoleMemberships
       : [];
@@ -489,6 +497,7 @@ export default function Users() {
           .filter((s: any) => typeof s === "string" && s.trim())
       )
     );
+
     return {
       code: u.code ?? "",
       name,
@@ -522,196 +531,217 @@ export default function Users() {
     !zoneFilter &&
     !statusFilter;
 
+  /* ========================= UI-only tokens ========================= */
+  // smaller buttons like Companies page
+  const pill =
+    "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+  const pillLight =
+    "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const pillPrimary =
+    "bg-[#00379C] text-white hover:brightness-110 border-transparent focus:ring-[#00379C]/35";
+  const pillTeal =
+    "bg-[#23A192] text-white hover:brightness-110 border-transparent focus:ring-[#23A192]/35";
+  const pillGold =
+    "bg-[#FCC020] text-slate-900 hover:brightness-105 border-transparent focus:ring-[#FCC020]/40";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-5 space-y-4">
-          {/* Line 1: Title + subtitle */}
-          <div>
-            <h1 className="text-2xl font-semibold dark:text-white">Users</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              User&apos;s details can be viewed and updated.
-            </p>
-            {refsErr && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {refsErr}
-              </p>
-            )}
-          </div>
+    <div className="w-full">
+      <div className="mx-auto max-w-6xl">
+        {/* Top controls block */}
+        <div className="mb-4">
+          <div className="flex flex-col gap-3 mt-4">
+            {/* Row 1: LEFT (3/5) filters + RIGHT (2/5) actions */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+              {/* LEFT 3/5 */}
+              <div className="lg:basis-3/5 lg:pr-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    title="Filter: Client?"
+                    value={isClientFilter}
+                    onChange={(e) => {
+                      setIsClientFilter(e.target.value as any);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Client: All</option>
+                    <option value="yes">Client: Yes</option>
+                    <option value="no">Client: No</option>
+                  </select>
 
-          {/* Line 2: Left = filters, Right = page size + Refresh + New User */}
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            {/* Left: filters */}
-            <div className="flex flex-wrap items-center gap-2 md:basis-3/5">
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                title="Filter: Client?"
-                value={isClientFilter}
-                onChange={(e) => {
-                  setIsClientFilter(e.target.value as any);
-                  setPage(1);
-                }}
-              >
-                <option value="all">Client: All</option>
-                <option value="yes">Client: Yes</option>
-                <option value="no">Client: No</option>
-              </select>
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    title="Filter: Service Provider?"
+                    value={isServiceProviderFilter}
+                    onChange={(e) => {
+                      setIsServiceProviderFilter(e.target.value as any);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">ServiceProv: All</option>
+                    <option value="yes">ServiceProv: Yes</option>
+                    <option value="no">ServiceProv: No</option>
+                  </select>
 
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                title="Filter: Service Provider?"
-                value={isServiceProviderFilter}
-                onChange={(e) => {
-                  setIsServiceProviderFilter(e.target.value as any);
-                  setPage(1);
-                }}
-              >
-                <option value="all">ServiceProv: All</option>
-                <option value="yes">ServiceProv: Yes</option>
-                <option value="no">ServiceProv: No</option>
-              </select>
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    title="Filter by State"
+                    value={stateFilter}
+                    onChange={(e) => {
+                      setStateFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">State: All</option>
+                    {stateOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
 
-              <select
-                className="h-9 w-28 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                title="Filter by State"
-                value={stateFilter}
-                onChange={(e) => {
-                  setStateFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="">State: All</option>
-                {stateOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    title="Filter by Zone"
+                    value={zoneFilter}
+                    onChange={(e) => {
+                      setZoneFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Zone: All</option>
+                    {zoneOptions.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
 
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                title="Filter by Zone"
-                value={zoneFilter}
-                onChange={(e) => {
-                  setZoneFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="">Zone: All</option>
-                {zoneOptions.map((z) => (
-                  <option key={z} value={z}>
-                    {z}
-                  </option>
-                ))}
-              </select>
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    title="Filter by Status"
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Status: All</option>
+                    {statusOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
 
-              {/* NEW: Status filter in same line */}
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                title="Filter by Status"
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="">Status: All</option>
-                {statusOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                  <button
+                    type="button"
+                    className={`${pill} ${pillLight}`}
+                    title="Clear all filters"
+                    onClick={() => {
+                      setIsClientFilter("all");
+                      setIsServiceProviderFilter("all");
+                      setStateFilter("");
+                      setZoneFilter("");
+                      setStatusFilter("");
+                      setPage(1);
+                    }}
+                    disabled={filtersAreDefault}
+                  >
+                    Clear
+                  </button>
 
-              <button
-                type="button"
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                title="Clear all filters"
-                onClick={() => {
-                  setIsClientFilter("all");
-                  setIsServiceProviderFilter("all");
-                  setStateFilter("");
-                  setZoneFilter("");
-                  setStatusFilter("");
-                  setPage(1);
-                }}
-                disabled={filtersAreDefault}
-              >
-                Clear
-              </button>
+                  {refsErr ? (
+                    <span className="ml-1 text-xs text-amber-700 dark:text-amber-300">
+                      {refsErr}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* RIGHT 2/5 */}
+              <div className="lg:basis-2/5 lg:pl-3">
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 lg:justify-end">
+                  <select
+                    className={`${pill} ${pillLight}`}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    title="Rows per page"
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>
+                        {n} / page
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Refresh text button (no icon) */}
+                  <button
+                    onClick={() => {
+                      loadRefs(stateFilter || undefined);
+                      loadUsers();
+                    }}
+                    className={`${pill} ${pillTeal}`}
+                    disabled={loading}
+                    title="Refresh"
+                    type="button"
+                  >
+                    Refresh
+                  </button>
+
+                  <button
+                    onClick={() => nav("/admin/users/new")}
+                    className={`${pill} ${pillPrimary}`}
+                    title="Create a new user"
+                    type="button"
+                  >
+                    + New User
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Right: page size + Refresh + New User */}
-            <div className="flex flex-wrap items-center justify-end gap-2 md:basis-2/5">
-              <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-                title="Rows per page"
-              >
-                {[10, 20, 50, 100].map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </select>
+            {/* Row 2: Search + Export aligned */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="w-full sm:w-[360px]">
+                <input
+                  className={
+                    "h-8 w-full rounded-full border border-slate-200 bg-white px-4 text-[12px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
+                    "focus:outline-none focus:ring-2 focus:ring-[#00379C]/30 focus:border-transparent " +
+                    "dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:placeholder:text-slate-500 dark:focus:ring-[#FCC020]/25"
+                  }
+                  placeholder="Search..."
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
 
-              <button
-                onClick={() => {
-                  loadRefs(stateFilter || undefined);
-                  loadUsers();
-                }}
-                className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-                disabled={loading}
-                title="Reload"
-              >
-                {loading ? "Loading…" : "Refresh"}
-              </button>
-
-              <button
-                onClick={() => nav("/admin/users/new")}
-                className="h-9 rounded-full bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-700"
-                title="Create a new user"
-              >
-                + New User
-              </button>
-            </div>
-          </div>
-
-          {/* Line 3: Search (left) + Export CSV (right) */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="w-full sm:w-72">
-              <input
-                className="h-9 w-full rounded-full border border-slate-200 bg-white px-4 text-xs text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                placeholder="Search users…"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-
-            <div className="flex justify-start sm:justify-end">
-              <button
-                onClick={exportCsv}
-                className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                title="Export filtered result as CSV"
-              >
-                Export CSV
-              </button>
+              <div className="flex items-center justify-end">
+                <button
+                  onClick={exportCsv}
+                  className={`${pill} ${pillLight}`}
+                  title="Export filtered result as CSV"
+                  type="button"
+                >
+                  Export CSV
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 overflow-hidden">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
           {err && (
-            <div className="p-4 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
+            <div className="p-4 text-sm text-rose-700 dark:text-rose-300 border-b border-slate-200 dark:border-white/10">
               {err}
             </div>
           )}
@@ -721,26 +751,28 @@ export default function Users() {
             style={{ maxHeight: "65vh" }}
           >
             {loading ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 Fetching users…
               </div>
             ) : rows.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No users found.
               </div>
             ) : (
               <table className="min-w-full border-separate border-spacing-0 text-[13px]">
-                <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
                     {headings.map(({ key, label }) => {
-                      const active = (sortKey ?? null) === key;
+                      const active = sortKey === key;
                       const dir = active ? sortDir : undefined;
                       const sortable = key !== "action";
                       return (
                         <th
                           key={String(key)}
                           className={
-                            "text-left font-semibold text-xs uppercase tracking-wide text-slate-600 dark:text-slate-200 px-3 py-2.5 border-b border-slate-200 dark:border-neutral-700 whitespace-nowrap select-none " +
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
                             (sortable ? "cursor-pointer" : "")
                           }
                           title={sortable ? `Sort by ${label}` : undefined}
@@ -766,7 +798,10 @@ export default function Users() {
                           <span className="inline-flex items-center gap-1">
                             {label}
                             {sortable && (
-                              <span className="text-[10px] opacity-70">
+                              <span
+                                className="text-[10px] opacity-70"
+                                style={{ color: active ? "#00379C" : undefined }}
+                              >
                                 {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
@@ -776,18 +811,18 @@ export default function Users() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
                   {paged.map((row, idx) => (
                     <tr
                       key={row._id ?? idx}
-                      className="border-b border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      {/* Action icons */}
                       <td className="px-2 py-1.5 whitespace-nowrap align-middle">
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/70 dark:hover:bg-emerald-900/40"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
                             onClick={() => onView(row._id)}
                             title="View user"
                           >
@@ -805,9 +840,10 @@ export default function Users() {
                               <circle cx="12" cy="12" r="3.25" />
                             </svg>
                           </button>
+
                           <button
                             type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15"
                             onClick={() => onEdit(row._id)}
                             title="Edit user"
                           >
@@ -828,16 +864,10 @@ export default function Users() {
                         </div>
                       </td>
 
-                      <td
-                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
-                        title={row.code}
-                      >
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100">
                         {row.code}
                       </td>
-                      <td
-                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
-                        title={row.name}
-                      >
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100">
                         {row.name}
                       </td>
                       <td className="px-3 py-1.5 whitespace-nowrap align-middle">
@@ -886,7 +916,13 @@ export default function Users() {
                         className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={row.status}
                       >
-                        {row.status}
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                            row.status
+                          )}`}
+                        >
+                          {row.status}
+                        </span>
                       </td>
                       <td
                         className="px-3 py-1.5 whitespace-nowrap align-middle"
@@ -902,14 +938,15 @@ export default function Users() {
           </div>
 
           {/* Pagination footer */}
-          <div className="flex items-center justify-between px-3 py-2 text-sm border-t border-slate-200 dark:border-neutral-800">
-            <div className="text-gray-600 dark:text-gray-300">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{paged.length}</b> of <b>{total}</b> records
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${pill} ${pillLight}`}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -917,7 +954,7 @@ export default function Users() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${pill} ${pillLight}`}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -925,7 +962,7 @@ export default function Users() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${pill} ${pillLight}`}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -933,7 +970,7 @@ export default function Users() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${pill} ${pillLight}`}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -944,7 +981,7 @@ export default function Users() {
           </div>
         </div>
 
-        {/* -------- Modal -------- */}
+        {/* Modal kept as-is (no UI change requested here) */}
         {modalData && (
           <div className="fixed inset-0 z-40">
             <div
@@ -953,9 +990,8 @@ export default function Users() {
               aria-hidden="true"
             />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
-                {/* Header with PHOTO + Name + Code + Status */}
-                <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
+              <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10">
                   <div className="flex items-center gap-3">
                     {(() => {
                       const url = resolvePhotoUrl(
@@ -971,60 +1007,49 @@ export default function Users() {
                         <img
                           src={url}
                           alt={modalData.name || "User photo"}
-                          className="h-14 w-14 rounded-full object-cover border dark:border-neutral-800"
+                          className="h-14 w-14 rounded-full object-cover border border-slate-200 dark:border-white/10"
                         />
                       ) : (
                         <div
-                          className="h-14 w-14 rounded-full grid place-items-center text-white font-semibold"
+                          className="h-14 w-14 rounded-full grid place-items-center text-white font-extrabold"
                           style={{
-                            background:
-                              "linear-gradient(135deg,#22c55e,#facc15)",
+                            background: "linear-gradient(135deg,#00379C,#23A192)",
                           }}
                         >
                           {initials}
                         </div>
                       );
                     })()}
-
                     <div className="flex flex-col">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-semibold dark:text-white">
+                        <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
                           {modalData.name || "User details"}
                         </h3>
-
                         {modalData.code ? (
-                          <span
-                            className="text-xs px-2 py-0.5 rounded border dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-700 dark:text-gray-200"
-                            title="User Code"
-                          >
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">
                             {modalData.code}
                           </span>
                         ) : null}
-
                         {modalData.status ? (
                           <span
                             className={
-                              "text-xs px-2 py-0.5 rounded border " +
+                              "text-xs px-2 py-0.5 rounded-full border " +
                               statusBadgeClass(modalData.status)
                             }
-                            title="User Status"
                           >
                             {modalData.status}
                           </span>
                         ) : null}
                       </div>
+                      <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
                     </div>
                   </div>
 
-                  <button
-                    className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    onClick={closeModal}
-                  >
+                  <button className={`${pill} ${pillLight}`} onClick={closeModal}>
                     Close
                   </button>
                 </div>
 
-                {/* Body */}
                 <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <Field label="Code" value={modalData.code} />
                   <Field label="Name" value={modalData.name} />
@@ -1044,11 +1069,8 @@ export default function Users() {
                   <Field label="Updated" value={fmtDate(modalData.updated)} />
                 </div>
 
-                <div className="px-4 py-3 border-t dark:border-neutral-800 text-right">
-                  <button
-                    className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={closeModal}
-                  >
+                <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 text-right">
+                  <button className={`${pill} ${pillGold}`} onClick={closeModal}>
                     Done
                   </button>
                 </div>
@@ -1056,18 +1078,11 @@ export default function Users() {
             </div>
           </div>
         )}
-        {/* -------- /Modal -------- */}
 
-        {/* Thin scrollbar styling for this page */}
         <style>
           {`
-            .thin-scrollbar::-webkit-scrollbar {
-              height: 6px;
-              width: 6px;
-            }
-            .thin-scrollbar::-webkit-scrollbar-track {
-              background: transparent;
-            }
+            .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+            .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .thin-scrollbar::-webkit-scrollbar-thumb {
               background-color: rgba(148, 163, 184, 0.7);
               border-radius: 999px;
@@ -1082,11 +1097,10 @@ export default function Users() {
   );
 }
 
-// Small presentational helper for modal fields
 function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </div>
       <div className="mt-0.5 font-medium dark:text-white break-words">

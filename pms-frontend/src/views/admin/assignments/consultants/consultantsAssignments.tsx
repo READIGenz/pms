@@ -1,3 +1,4 @@
+// src/views/admin/assignments/consultants/consultantsAssignments.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
@@ -19,1059 +20,634 @@ type UserLite = {
   code?: string | null;
   firstName: string;
   middleName?: string | null;
-  lastName?: string | null;
+  lastName?: string;
   countryCode?: string | null;
   phone?: string | null;
   email?: string | null;
-  state?: { stateId: string; name: string; code: string } | null;
-  district?: { districtId: string; name: string } | null;
-  operatingZone?: string | null;
-  userStatus?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  userRoleMemberships?: MembershipLite[];
+  status?: string | null;
+  state?: string | null;
+  district?: string | null;
+  projectCount?: number | null;
 };
-type StateRef = { stateId: string; name: string; code: string };
-type DistrictRef = { districtId: string; name: string; stateId: string };
 
-// ---------- Local date helpers ----------
-function formatLocalYMD(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function todayLocalISO() {
-  return formatLocalYMD(new Date());
-}
-function addDaysISO(dateISO: string, days: number) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
-  const [y, m, d] = dateISO.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  if (Number.isNaN(dt.getTime())) return "";
-  dt.setDate(dt.getDate() + days);
-  return formatLocalYMD(dt);
-}
-function fmtLocalDateTime(v: any) {
-  if (!v) return "";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v ?? "") : d.toLocaleString();
-}
-function fmtLocalDateOnly(v: any) {
-  if (!v) return "";
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
-}
+type BrowseRow = UserLite & {
+  projects?: { projectId: string; title: string }[];
+};
 
-// ---------- Small utils ----------
-function displayName(u: UserLite) {
-  return [u.firstName, u.middleName, u.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-}
-function phoneDisplay(u: UserLite) {
-  return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
-}
-function projectsLabel(u: UserLite): string {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  const set = new Set(
-    mem
-      .filter((m) => String(m?.role || "").toLowerCase() === "consultant")
-      .map((m) => m?.project?.title)
-      .filter(Boolean) as string[]
-  );
-  return Array.from(set).join(", ");
-}
-function companiesLabel(u: UserLite): string {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  const set = new Set(
-    mem.map((m) => m?.company?.name).filter(Boolean) as string[]
-  );
-  return Array.from(set).join(", ");
-}
-function isRoleUser(u: UserLite, role: string): boolean {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  return mem.some(
-    (m) => String(m?.role || "").toLowerCase() === role.toLowerCase()
-  );
-}
-// detect dup for selected project (for this role)
-function alreadyAssignedToSelectedProject(
-  u: UserLite,
-  projectId: string
-): boolean {
-  if (!projectId) return false;
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
-  return mems.some(
-    (m) =>
-      String(m?.role || "").toLowerCase() === "consultant" &&
-      m?.project?.projectId === projectId
-  );
-}
-function computeValidityLabel(validFrom?: string, validTo?: string): string {
-  const from = fmtLocalDateOnly(validFrom);
-  const to = fmtLocalDateOnly(validTo);
-  if (!from && !to) return "—";
-  const today = todayLocalISO();
-  if (from && today < from) return "Yet to Start";
-  if (to && today > to) return "Expired";
-  return "Valid";
-}
-function consultantCompanyId(u: UserLite): string | null {
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
-  const m = mems.find(
-    (m) =>
-      String(m?.role || "").toLowerCase() === "consultant" &&
-      m?.company?.companyId
-  );
-  return (m?.company?.companyId as string) || null;
-}
+// ---------- Helpers ----------
+const fullName = (u: Partial<UserLite>) =>
+  [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ");
 
-// ---------- UI atoms (match Contractors) ----------
-const TileHeader = ({
+const phonePretty = (u: Partial<UserLite>) => {
+  const cc = (u.countryCode || "91").replace(/[^\d]/g, "");
+  const ph = (u.phone || "").replace(/[^\d]/g, "");
+  if (!ph) return "—";
+  return `+${cc}${ph}`;
+};
+
+const isoToYmd = (iso?: string | null) => {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return "";
+  }
+};
+
+// ---------- UI atoms (match ClientsAssignments) ----------
+function TileHeader({
   title,
   subtitle,
 }: {
   title: string;
   subtitle?: string;
-}) => (
-  <div className="mb-3">
-    <div className="text-sm font-semibold dark:text-white">{title}</div>
-    {subtitle ? (
-      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
-    ) : null}
-  </div>
-);
+}) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-start gap-3">
+        <div className="mt-1 h-6 w-1.5 rounded-full bg-[#FCC020]" />
+        <div>
+          <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-900 dark:text-neutral-100">
+            {title}
+          </div>
+          {subtitle ? (
+            <div className="mt-1 text-sm text-slate-600 dark:text-neutral-300">
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const TILE_SHELL =
   "bg-white dark:bg-neutral-900 rounded-2xl shadow-sm " +
-  "border border-[#c9ded3] dark:border-neutral-800 p-4 mb-4";
+  "border border-[#c9ded3] dark:border-[#2b3c35] p-4 mb-4";
 
 const SOFT_SELECT =
-  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 pr-8 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60 appearance-none";
+  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
+  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 pr-8 text-xs sm:text-sm " +
+  "text-slate-800 dark:text-neutral-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70 appearance-none";
 
 const SOFT_INPUT =
-  "h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 " +
-  "bg-white dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white placeholder:text-gray-400 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent";
+  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
+  "bg-white dark:bg-neutral-900/80 px-3 text-xs sm:text-sm " +
+  "text-slate-800 dark:text-neutral-100 placeholder:text-gray-400 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70";
 
 const SOFT_DATE =
-  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60";
+  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-[#2b3c35] " +
+  "bg-[#f7fbf9] dark:bg-neutral-900/80 px-3 text-xs sm:text-sm " +
+  "text-slate-800 dark:text-neutral-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/70";
 
+const PILL_BTN =
+  "h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 " +
+  "bg-white dark:bg-neutral-900 text-xs sm:text-sm text-slate-700 dark:text-neutral-100 shadow-sm " +
+  "hover:bg-slate-50 dark:hover:bg-neutral-800";
+
+const PILL_BTN_PRIMARY =
+  "h-9 px-4 rounded-full bg-emerald-600 text-white text-xs sm:text-sm font-medium shadow-sm " +
+  "hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60";
+
+// ---------- Component ----------
 export default function ConsultantsAssignments() {
   const nav = useNavigate();
 
-  // --- Auth gate ---
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) nav("/login", { replace: true });
-  }, [nav]);
-
-  const [err, setErr] = useState<string | null>(null);
+  // ----- State -----
+  const [loadingProjects, setLoadingProjects] = useState(false);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("");
 
-  // Tile 2 (role assignment)
-  const [picked, setPicked] = useState<UserLite[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
-  const [validTo, setValidTo] = useState<string>("");
+  const [loadingAssigned, setLoadingAssigned] = useState(false);
+  const [assigned, setAssigned] = useState<MembershipLite[]>([]);
+  const [assignedErr, setAssignedErr] = useState<string | null>(null);
 
-  const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
-  const [assignLoading, setAssignLoading] = useState(false);
+  // browse:
+  const [loadingBrowse, setLoadingBrowse] = useState(false);
+  const [browseErr, setBrowseErr] = useState<string | null>(null);
+  const [browseRows, setBrowseRows] = useState<BrowseRow[]>([]);
 
-  // Load projects
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setErr(null);
-        const { data } = await api.get("/admin/projects");
-        const list: any[] = Array.isArray(data) ? data : data?.projects ?? [];
-        const minimal: ProjectLite[] = list
-          .map((p: any) => ({
-            projectId: p.projectId || p.id || p.uuid,
-            title: p.title || p.name,
-          }))
-          .filter((p: ProjectLite) => p.projectId && p.title);
-        if (!alive) return;
-        setProjects(minimal);
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(
-          e?.response?.data?.error || e?.message || "Failed to load projects."
-        );
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [selectedProjectId]);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<string>("All");
+  const [state, setState] = useState<string>("All States");
+  const [district, setDistrict] = useState<string>("All Districts");
+  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
 
-  // Tile 3 (browse role users)
-  const [allUsers, setAllUsers] = useState<UserLite[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [usersErr, setUsersErr] = useState<string | null>(null);
-
-  const [statesRef, setStatesRef] = useState<StateRef[]>([]);
-  const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
-  const [companyFilter, setCompanyFilter] = useState<string>("");
-
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "Active" | "Inactive"
-  >("all");
-  const [stateFilter, setStateFilter] = useState<string>("");
-  const [districtFilter, setDistrictFilter] = useState<string>("");
-
-  // Match Contractors: Sort By default Name + separate arrow button
-  const [sortKey, setSortKey] = useState<
-    | "code"
-    | "name"
-    | "company"
-    | "projects"
-    | "mobile"
-    | "email"
-    | "state"
-    | "zone"
-    | "status"
-    | "updated"
+  const [sortField, setSortField] = useState<
+    "name" | "code" | "projects" | "mobile" | "email" | "state" | "district"
   >("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10); // shared with assignments table
+  // selection:
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
-  const companyOptions = useMemo<string[]>(() => {
-    const set = new Set<string>();
-    for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
-      for (const m of mems) {
-        if (String(m?.role || "").toLowerCase() !== "consultant") continue;
-        const name = (m?.company?.name || "").trim();
-        if (name) set.add(name);
+  // view/edit modal for assigned membership:
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedMembership, setSelectedMembership] =
+    useState<MembershipLite | null>(null);
+
+  const [editValidFrom, setEditValidFrom] = useState<string>("");
+  const [editValidTo, setEditValidTo] = useState<string>("");
+
+  // delete confirm in edit modal
+  const [pendingEditAlert, setPendingEditAlert] = useState(false);
+
+  // pagination
+  const [aPage, setAPage] = useState(1);
+  const [bPage, setBPage] = useState(1);
+
+  // ----- Derived -----
+  const projectTitle = useMemo(() => {
+    const p = projects.find((x) => x.projectId === projectId);
+    return p?.title || "";
+  }, [projects, projectId]);
+
+  const assignedList = useMemo(() => {
+    // assigned memberships (already filtered by project)
+    return assigned.slice();
+  }, [assigned]);
+
+  const browseFiltered = useMemo(() => {
+    let rows = browseRows.slice();
+
+    // search
+    const q = search.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) => {
+        const nm = fullName(r).toLowerCase();
+        const cd = (r.code || "").toLowerCase();
+        const em = (r.email || "").toLowerCase();
+        const ph = phonePretty(r).toLowerCase();
+        const st = (r.state || "").toLowerCase();
+        const ds = (r.district || "").toLowerCase();
+        const pr = (r.projects || []).map((p) => p.title.toLowerCase()).join(" ");
+        return (
+          nm.includes(q) ||
+          cd.includes(q) ||
+          em.includes(q) ||
+          ph.includes(q) ||
+          st.includes(q) ||
+          ds.includes(q) ||
+          pr.includes(q)
+        );
+      });
+    }
+
+    // status filter
+    if (status !== "All") {
+      rows = rows.filter((r) => (r.status || "Active") === status);
+    }
+
+    // state filter
+    if (state !== "All States") {
+      rows = rows.filter((r) => (r.state || "") === state);
+    }
+
+    // district filter
+    if (district !== "All Districts") {
+      rows = rows.filter((r) => (r.district || "") === district);
+    }
+
+    // sort
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      const aName = fullName(a);
+      const bName = fullName(b);
+      const aCode = a.code || "";
+      const bCode = b.code || "";
+      const aProj = a.projectCount || 0;
+      const bProj = b.projectCount || 0;
+      const aMob = phonePretty(a);
+      const bMob = phonePretty(b);
+      const aEm = a.email || "";
+      const bEm = b.email || "";
+      const aSt = a.state || "";
+      const bSt = b.state || "";
+      const aDs = a.district || "";
+      const bDs = b.district || "";
+
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = aName.localeCompare(bName);
+          break;
+        case "code":
+          cmp = aCode.localeCompare(bCode);
+          break;
+        case "projects":
+          cmp = aProj - bProj;
+          break;
+        case "mobile":
+          cmp = aMob.localeCompare(bMob);
+          break;
+        case "email":
+          cmp = aEm.localeCompare(bEm);
+          break;
+        case "state":
+          cmp = aSt.localeCompare(bSt);
+          break;
+        case "district":
+          cmp = aDs.localeCompare(bDs);
+          break;
       }
-    }
+      if (cmp === 0) cmp = aName.localeCompare(bName);
+      return cmp * dir;
+    });
+
+    return rows;
+  }, [browseRows, search, status, state, district, sortField, sortDir]);
+
+  const assignedPaged = useMemo(() => {
+    const per = 8;
+    const totalPages = Math.max(1, Math.ceil(assignedList.length / per));
+    const page = Math.min(aPage, totalPages);
+    const start = (page - 1) * per;
+    return {
+      page,
+      totalPages,
+      rows: assignedList.slice(start, start + per),
+    };
+  }, [assignedList, aPage]);
+
+  const browsePaged = useMemo(() => {
+    const per = Math.max(5, rowsPerPage);
+    const totalPages = Math.max(1, Math.ceil(browseFiltered.length / per));
+    const page = Math.min(bPage, totalPages);
+    const start = (page - 1) * per;
+    return {
+      page,
+      totalPages,
+      rows: browseFiltered.slice(start, start + per),
+      per,
+    };
+  }, [browseFiltered, bPage, rowsPerPage]);
+
+  const uniqueStates = useMemo(() => {
+    const set = new Set<string>();
+    browseRows.forEach((r) => {
+      if (r.state) set.add(r.state);
+    });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [allUsers]);
+  }, [browseRows]);
 
-  const hasActiveFilters =
-    q.trim() !== "" ||
-    statusFilter !== "all" ||
-    stateFilter !== "" ||
-    districtFilter !== "" ||
-    companyFilter !== "";
+  const uniqueDistricts = useMemo(() => {
+    const set = new Set<string>();
+    browseRows.forEach((r) => {
+      if (r.district) set.add(r.district);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [browseRows]);
 
-  const clearFilters = () => {
-    setQ("");
-    setStatusFilter("all");
-    setStateFilter("");
-    setDistrictFilter("");
-    setCompanyFilter("");
-    setPage(1);
-  };
+  const pickedCount = picked.size;
 
+  // ----- Effects -----
   useEffect(() => {
-    if (companyFilter && !companyOptions.includes(companyFilter)) {
-      setCompanyFilter("");
-    }
-  }, [companyOptions, companyFilter]);
-
-  useEffect(() => {
-    let alive = true;
+    // load projects list
     (async () => {
+      setLoadingProjects(true);
       try {
-        setUsersLoading(true);
-        setUsersErr(null);
-        const { data } = await api.get("/admin/users", {
-          params: { includeMemberships: "1" },
-        });
-        const list = (
-          Array.isArray(data) ? data : data?.users ?? []
-        ) as UserLite[];
-        if (!alive) return;
-        setAllUsers(list);
+        const { data } = await api.get<ProjectLite[]>("/admin/projects");
+        setProjects(Array.isArray(data) ? data : []);
+      } catch {
+        setProjects([]);
+      } finally {
+        setLoadingProjects(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    // when project changes: clear selection and load assigned + browse
+    setPicked(new Set());
+    setAPage(1);
+    setBPage(1);
+
+    if (!projectId) {
+      setAssigned([]);
+      setBrowseRows([]);
+      setAssignedErr(null);
+      setBrowseErr(null);
+      return;
+    }
+
+    (async () => {
+      // assigned consultants for project
+      setLoadingAssigned(true);
+      setAssignedErr(null);
+      try {
+        const { data } = await api.get<MembershipLite[]>(
+          `/admin/projects/${projectId}/roles`,
+          {
+            params: { role: "Consultant" },
+          }
+        );
+        setAssigned(Array.isArray(data) ? data : []);
       } catch (e: any) {
-        if (!alive) return;
-        setUsersErr(
-          e?.response?.data?.error || e?.message || "Failed to load users."
+        setAssigned([]);
+        setAssignedErr(
+          e?.response?.data?.message ||
+            "Failed to load assigned consultants for the project."
         );
       } finally {
-        if (alive) setUsersLoading(false);
+        setLoadingAssigned(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
-  useEffect(() => {
-    let alive = true;
     (async () => {
+      // browse consultants (all)
+      setLoadingBrowse(true);
+      setBrowseErr(null);
       try {
-        const { data } = await api.get("/admin/states");
-        const s = (
-          Array.isArray(data) ? data : data?.states ?? []
-        ) as StateRef[];
-        if (!alive) return;
-        setStatesRef(s);
-      } catch {
-        setStatesRef([]);
+        const { data } = await api.get<BrowseRow[]>(
+          `/admin/users`,
+          {
+            params: { role: "Consultant" },
+          }
+        );
+        setBrowseRows(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        setBrowseRows([]);
+        setBrowseErr(
+          e?.response?.data?.message || "Failed to load consultants list."
+        );
+      } finally {
+        setLoadingBrowse(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  }, [projectId]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        if (!stateFilter) {
-          setDistrictsRef([]);
-          return;
-        }
-        const st = statesRef.find((s) => s.name === stateFilter);
-        const params = st?.stateId ? { stateId: st.stateId } : undefined;
-        const { data } = await api.get("/admin/districts", { params });
-        const d = (
-          Array.isArray(data) ? data : data?.districts ?? []
-        ) as DistrictRef[];
-        if (!alive) return;
-        setDistrictsRef(d);
-      } catch {
-        setDistrictsRef([]);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [stateFilter, statesRef]);
-
-  type Row = {
-    action: string;
-    code: string;
-    name: string;
-    company: string;
-    projects: string;
-    mobile: string;
-    email: string;
-    state: string;
-    zone: string;
-    status: string;
-    updated: string;
-    _id: string;
-    _raw?: UserLite;
-  };
-
-  const rowsAll = useMemo<Row[]>(() => {
-    const moved = movedIds;
-
-    const onlyRole = allUsers
-      .filter((u) => isRoleUser(u, "Consultant"))
-      .filter((u) => !moved.has(u.userId));
-
-    const filtered = onlyRole.filter((u) => {
-      if (statusFilter !== "all") {
-        if (String(u.userStatus || "") !== statusFilter) return false;
-      }
-      if (stateFilter) {
-        const sName = u?.state?.name || "";
-        if (sName.trim() !== stateFilter.trim()) return false;
-      }
-      if (districtFilter) {
-        const dName = u?.district?.name || "";
-        if (dName.trim() !== districtFilter.trim()) return false;
-      }
-      if (companyFilter) {
-        const mems = Array.isArray(u.userRoleMemberships)
-          ? u.userRoleMemberships
-          : [];
-        const companyNames = new Set(
-          mems
-            .filter((m) => String(m?.role || "").toLowerCase() === "consultant")
-            .map((m) => (m?.company?.name || "").trim())
-            .filter(Boolean) as string[]
-        );
-        if (!companyNames.has(companyFilter.trim())) return false;
-      }
-      return true;
-    });
-
-    const needle = q.trim().toLowerCase();
-    const searched = needle
-      ? filtered.filter((u) => {
-          const hay = [
-            u.code || "",
-            displayName(u),
-            companiesLabel(u),
-            projectsLabel(u),
-            phoneDisplay(u),
-            u.email || "",
-            u?.state?.name || "",
-            u?.district?.name || "",
-            u.operatingZone || "",
-            u.userStatus || "",
-            fmtLocalDateTime(u.updatedAt),
-          ]
-            .join(" ")
-            .toLowerCase();
-          return hay.includes(needle);
-        })
-      : filtered;
-
-    const rows: Row[] = searched.map((u) => ({
-      action: "",
-      code: u.code || "",
-      name: displayName(u),
-      company: companiesLabel(u),
-      projects: projectsLabel(u),
-      mobile: phoneDisplay(u),
-      email: u.email || "",
-      state: u?.state?.name || "",
-      zone: u.operatingZone || "",
-      status: u.userStatus || "",
-      updated: u.updatedAt || "",
-      _id: u.userId,
-      _raw: u,
-    }));
-
-    const key = sortKey;
-    const dir = sortDir;
-    const cmp = (a: any, b: any) => {
-      if (a === b) return 0;
-      if (a == null) return -1;
-      if (b == null) return 1;
-      const aTime = Date.parse(String(a));
-      const bTime = Date.parse(String(b));
-      if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a),
-        bn = Number(b);
-      if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
-      return String(a).localeCompare(String(b));
-    };
-    rows.sort((ra, rb) => {
-      const delta = cmp((ra as any)[key], (rb as any)[key]);
-      return dir === "asc" ? delta : -delta;
-    });
-
-    return rows;
-  }, [
-    allUsers,
-    statusFilter,
-    stateFilter,
-    districtFilter,
-    q,
-    sortKey,
-    sortDir,
-    movedIds,
-    companyFilter,
-  ]);
-
-  const total = rowsAll.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pageSafe = Math.min(Math.max(1, page), totalPages);
-  const rowsPaged = useMemo<Row[]>(() => {
-    const start = (pageSafe - 1) * pageSize;
-    return rowsAll.slice(start, start + pageSize);
-  }, [rowsAll, pageSafe, pageSize]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [totalPages]);
-
-  // Submit (assign)
-  const canSubmit =
-    selectedProjectId &&
-    selectedIds.size > 0 &&
-    validFrom &&
-    validTo &&
-    !assignLoading;
-
-  const onAssign = async () => {
-    const project = projects.find((p) => p.projectId === selectedProjectId);
-    const projectTitle = project?.title || "(Unknown Project)";
-    const selected = picked.filter((u) => selectedIds.has(u.userId));
-    const names = selected.map(displayName).filter(Boolean);
-
-    const dupes = selected.filter((u) =>
-      alreadyAssignedToSelectedProject(u, selectedProjectId)
-    );
-    if (dupes.length > 0) {
-      const lines = dupes.map((u) => {
-        const name = displayName(u) || "(No name)";
-        return `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the consultant Assignments.`;
-      });
-      alert(lines.join("\n"));
-      return;
-    }
-
-    const ok = window.confirm(
-      `Please Confirm your assignment:\n\n` +
-        `Project: ${projectTitle}\n` +
-        `Consultants: ${names.length ? names.join(", ") : "—"}\n` +
-        `Validity: From ${validFrom} To ${validTo}\n\n` +
-        `Press OK to assign, or Cancel to go back.`
-    );
-    if (!ok) return;
-
-    const items = selected.map((u) => ({
-      userId: u.userId,
-      role: "Consultant",
-      scopeType: "Project",
-      projectId: selectedProjectId,
-      companyId: consultantCompanyId(u),
-      validFrom,
-      validTo,
-      isDefault: false,
-    }));
-
-    try {
-      setAssignLoading(true);
-      setErr(null);
-      const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(
-        `Assigned ${
-          data?.created ?? items.length
-        } consultant(s) to "${projectTitle}".`
-      );
-
-      setSelectedIds(new Set());
-      setMovedIds(new Set());
-      setValidFrom("");
-      setValidTo("");
-
-      try {
-        const { data: fresh } = await api.get("/admin/users", {
-          params: { includeMemberships: "1" },
-        });
-        setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
-      } catch {}
-
-      const el = document.querySelector(
-        '[data-tile-name="Browse Consultants"]'
-      );
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Assign failed.";
-      setErr(msg);
-      alert(`Error: ${msg}`);
-    } finally {
-      setAssignLoading(false);
-    }
-  };
-
-  // Move from Tile 3 to Tile 2
-  const onMoveToTile2 = (user: UserLite) => {
-    if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
-      const projectTitle =
-        projects.find((p) => p.projectId === selectedProjectId)?.title ||
-        "(Selected Project)";
-      const name = displayName(user) || "(No name)";
-      alert(
-        `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the Consultant Assignments.`
-      );
-      return;
-    }
-    setPicked((prev) =>
-      prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]
-    );
-    setMovedIds((prev) => {
+  // ----- Actions -----
+  const togglePick = (userId: string) => {
+    setPicked((prev) => {
       const next = new Set(prev);
-      next.add(user.userId);
-      return next;
-    });
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.add(user.userId);
-      return next;
-    });
-    const el = document.querySelector('[data-tile-name="Roles & Options"]');
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const movedList = useMemo<UserLite[]>(() => {
-    if (movedIds.size === 0) return [];
-    return picked.filter((u) => movedIds.has(u.userId));
-  }, [picked, movedIds]);
-
-  const toggleChecked = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
       return next;
     });
   };
 
-  useEffect(() => {
-    if (validFrom && validTo && validTo <= validFrom) setValidTo("");
-  }, [validFrom, validTo]);
-
-  // ---- Tile 4 data: flatten Consultant assignments
-  type AssignmentRow = {
-    userId: string;
-    userName: string;
-    projectId: string;
-    projectTitle: string;
-    company: string;
-    projects: string;
-    status: string;
-    validFrom: string;
-    validTo: string;
-    validity: string;
-    updated: string;
-    membershipId?: string | null;
-    _user?: UserLite;
-    _mem?: MembershipLite;
+  const moveOne = (userId: string) => {
+    if (!projectId) return;
+    togglePick(userId);
   };
 
-  const assignedRows = useMemo<AssignmentRow[]>(() => {
-    const rows: AssignmentRow[] = [];
-    for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
-      for (const m of mems) {
-        if (String(m?.role || "").toLowerCase() !== "consultant") continue;
-        const pj = m?.project;
-        if (!pj?.projectId || !pj?.title) continue;
-
-        const vf = fmtLocalDateOnly(
-          m.validFrom ??
-            (m as any).validFromDate ??
-            (m as any).from ??
-            (m as any).startDate ??
-            (m as any).end ??
-            (m as any).valid_from ??
-            (m as any).validFromAt ??
-            (m as any).valid_from_at
-        );
-        const vt = fmtLocalDateOnly(
-          m.validTo ??
-            (m as any).validToDate ??
-            (m as any).to ??
-            (m as any).endDate ??
-            (m as any).end ??
-            (m as any).valid_to ??
-            (m as any).validToAt ??
-            (m as any).valid_to_at
-        );
-
-        rows.push({
-          userId: u.userId,
-          userName: displayName(u) || "(No name)",
-          projectId: pj.projectId,
-          projectTitle: pj.title,
-          company: m?.company?.name || "",
-          projects: pj.title,
-          status: u.userStatus || "",
-          validFrom: vf,
-          validTo: vt,
-          validity: computeValidityLabel(vf, vt),
-          updated: m?.updatedAt || u.updatedAt || "",
-          membershipId: m?.id ?? null,
-          _user: u,
-          _mem: m,
-        });
-      }
-    }
-    return rows;
-  }, [allUsers]);
-
-  const [aSortKey, setASortKey] = useState<
-    | "userName"
-    | "company"
-    | "projects"
-    | "status"
-    | "validFrom"
-    | "validTo"
-    | "updated"
-  >("updated");
-  const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
-
-  const assignedSortedRows = useMemo<AssignmentRow[]>(() => {
-    const rows = [...assignedRows];
-    const key = aSortKey;
-    const dir = aSortDir;
-    const cmp = (a: any, b: any) => {
-      if (a === b) return 0;
-      if (a == null) return -1;
-      if (b == null) return 1;
-      const aTime = Date.parse(String(a));
-      const bTime = Date.parse(String(b));
-      if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a),
-        bn = Number(b);
-      if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
-      return String(a).localeCompare(String(b));
-    };
-    rows.sort((ra, rb) => {
-      const delta = cmp((ra as any)[key], (rb as any)[key]);
-      return dir === "asc" ? delta : -delta;
-    });
-    return rows;
-  }, [assignedRows, aSortKey, aSortDir]);
-
-  // ===== Assignments pagination (shares same pageSize) =====
-  const [aPage, setAPage] = useState(1);
-  const aPageSize = pageSize;
-  const aTotal = assignedSortedRows.length;
-  const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
-  const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
-
-  const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
-    const start = (aPageSafe - 1) * aPageSize;
-    return assignedSortedRows.slice(start, start + aPageSize);
-  }, [assignedSortedRows, aPageSafe, aPageSize]);
-
-  useEffect(() => {
-    if (aPage > aTotalPages) setAPage(aTotalPages);
-  }, [aTotalPages, aPage]);
-
-  // ===== Modals =====
-  const [viewOpen, setViewOpen] = useState(false);
-  const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editRow, setEditRow] = useState<AssignmentRow | null>(null);
-  const [editFrom, setEditFrom] = useState<string>("");
-  const [editTo, setEditTo] = useState<string>("");
-  const [origFrom, setOrigFrom] = useState<string>("");
-  const [origTo, setOrigTo] = useState<string>("");
-  const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const onHardDeleteFromEdit = async () => {
-    if (!editRow?.membershipId) {
-      alert("Cannot remove: missing membership id.");
-      return;
-    }
-
-    const confirm = window.confirm(
-      [
-        "This will permanently remove this Consultant assignment from the project.",
-        "",
-        `Consultant: ${editRow.userName}`,
-        `Project:    ${editRow.projectTitle}`,
-        "",
-        "Are you sure you want to proceed?",
-      ].join("\n")
-    );
-    if (!confirm) return;
-
-    try {
-      setDeleting(true);
-
-      await api.delete(`/admin/assignments/${editRow.membershipId}`);
-
-      const successMsg = [
-        "Removed Consultant assignment",
-        "",
-        `Project:    ${editRow.projectTitle}`,
-        `Consultant: ${editRow.userName}`,
-      ].join("\n");
-
-      const { data: fresh } = await api.get("/admin/users", {
-        params: { includeMemberships: "1" },
-      });
-      setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
-
-      setEditOpen(false);
-      setEditRow(null);
-      setPendingEditAlert(successMsg);
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Failed to remove assignment.";
-      alert(msg);
-    } finally {
-      setDeleting(false);
-    }
+  const clearFilters = () => {
+    setSearch("");
+    setStatus("All");
+    setState("All States");
+    setDistrict("All Districts");
+    setRowsPerPage(10);
+    setSortField("name");
+    setSortDir("asc");
+    setBPage(1);
   };
 
-  const openView = (row: AssignmentRow) => {
-    setViewRow(row);
+  const openView = (m: MembershipLite) => {
+    setSelectedMembership(m);
     setViewOpen(true);
   };
-  const openEdit = (row: AssignmentRow) => {
-    setDeleting(false);
-    setEditRow(row);
 
-    const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
-    const currentTo = fmtLocalDateOnly(row.validTo) || "";
-
-    setEditFrom(currentFrom || todayLocalISO());
-    setEditTo(currentTo || addDaysISO(todayLocalISO(), 1));
-
-    setOrigFrom(currentFrom);
-    setOrigTo(currentTo);
-
+  const openEdit = (m: MembershipLite) => {
+    setSelectedMembership(m);
+    setEditValidFrom(isoToYmd(m.validFrom));
+    setEditValidTo(isoToYmd(m.validTo));
+    setPendingEditAlert(false);
     setEditOpen(true);
   };
 
-  useEffect(() => {
-    if (!editOpen && pendingEditAlert) {
-      const msg = pendingEditAlert;
-      setPendingEditAlert(null);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => alert(msg));
-      });
+  const closeModals = () => {
+    setViewOpen(false);
+    setEditOpen(false);
+    setSelectedMembership(null);
+    setPendingEditAlert(false);
+  };
+
+  const reloadAssigned = async () => {
+    if (!projectId) return;
+    setLoadingAssigned(true);
+    setAssignedErr(null);
+    try {
+      const { data } = await api.get<MembershipLite[]>(
+        `/admin/projects/${projectId}/roles`,
+        { params: { role: "Consultant" } }
+      );
+      setAssigned(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setAssigned([]);
+      setAssignedErr(
+        e?.response?.data?.message ||
+          "Failed to load assigned consultants for the project."
+      );
+    } finally {
+      setLoadingAssigned(false);
     }
-  }, [editOpen, pendingEditAlert]);
+  };
 
-  useEffect(() => {
-    if (!editOpen) return;
+  const onAssign = async () => {
+    if (!projectId) return;
+    if (picked.size === 0) return;
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (deleting) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        setEditOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editOpen, deleting]);
+    const userIds = Array.from(picked);
 
+    try {
+      await api.post(`/admin/projects/${projectId}/assign-roles`, {
+        role: "Consultant",
+        userIds,
+      });
+      setPicked(new Set());
+      await reloadAssigned();
+    } catch (e: any) {
+      alert(
+        e?.response?.data?.message ||
+          "Failed to assign consultants. Please try again."
+      );
+    }
+  };
+
+  const onUpdateValidity = async () => {
+    if (!projectId || !selectedMembership?.id) return;
+
+    try {
+      await api.post(`/admin/assignments`, {
+        id: selectedMembership.id,
+        validFrom: editValidFrom ? new Date(editValidFrom).toISOString() : null,
+        validTo: editValidTo ? new Date(editValidTo).toISOString() : null,
+      });
+      await reloadAssigned();
+      setEditOpen(false);
+      setSelectedMembership(null);
+    } catch (e: any) {
+      alert(
+        e?.response?.data?.message ||
+          "Failed to update validity. Please try again."
+      );
+    }
+  };
+
+  const onHardDeleteFromEdit = async () => {
+    if (!selectedMembership?.id) return;
+
+    try {
+      await api.delete(`/admin/assignments`, {
+        data: { id: selectedMembership.id },
+      });
+      await reloadAssigned();
+      closeModals();
+    } catch (e: any) {
+      alert(
+        e?.response?.data?.message ||
+          "Failed to remove assignment. Please try again."
+      );
+    }
+  };
+
+  // ----- Render -----
   return (
     <div className="mx-auto max-w-6xl">
+      {/* Header (keep consistent with Client page expectation) */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">
-          Consultant Assignments
-        </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles & Options · <b>Browse Consultants</b> · Consultant
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
           Assignments
+        </h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Projects · Roles &amp; Options · <b>Browse Consultants</b> · Assignments
         </p>
-        {err && (
-          <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>
-        )}
+        <div className="mt-3 h-1 w-12 rounded bg-[#FCC020]" />
       </div>
 
-      {/* Tile 1 — Projects */}
-      <section
-        className={TILE_SHELL}
-        aria-label="Tile: Projects"
-        data-tile-name="Projects"
-      >
-        <TileHeader title="Projects" subtitle="Choose the project to assign." />
-        <div className="max-w-xl mt-2">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+      {/* Tile: Projects */}
+      <section className={TILE_SHELL} aria-label="Tile: Projects">
+        <TileHeader
+          title="Projects"
+          subtitle="Choose the project to assign consultants to."
+        />
+
+        <div className="max-w-xl">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1">
             Project
-          </label>
+          </div>
           <div className="relative">
             <select
               className={SOFT_SELECT}
-              value={selectedProjectId}
-              onChange={(e) => {
-                setSelectedProjectId(e.target.value);
-                setPage(1);
-                setAPage(1);
-              }}
-              title="Select project"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              disabled={loadingProjects}
             >
-              {projects.length === 0 ? (
-                <option value="">Loading…</option>
-              ) : (
-                <>
-                  <option value="">Select a project…</option>
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.title}
-                    </option>
-                  ))}
-                </>
-              )}
+              <option value="">
+                {loadingProjects ? "Loading projects..." : "Select a project..."}
+              </option>
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
             </select>
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
               ▼
             </span>
           </div>
+
+          {projectId ? (
+            <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              Selected:{" "}
+              <span className="font-medium text-slate-900 dark:text-white">
+                {projectTitle}
+              </span>
+            </div>
+          ) : null}
         </div>
       </section>
 
-      {/* Tile 2 — Roles & Options (Consultant) */}
-      <section
-        className={TILE_SHELL}
-        aria-label="Tile: Roles & Options"
-        data-tile-name="Roles & Options"
-      >
+      {/* Tile: Roles & Options */}
+      <section className={TILE_SHELL} aria-label="Tile: Roles & Options">
         <TileHeader
           title="Roles & Options"
-          subtitle="Pick from moved consultants & set validity."
+          subtitle="Pick from moved consultants and set validity."
         />
 
-        {/* IMPORTANT: stacked layout (Validity below moved list) */}
-        <div className="mt-3 space-y-4">
-          {/* Subtile: moved list */}
-          <div className="space-y-3" aria-label="Subtile: Moved Consultants">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
-              Moved Consultants (select with checkbox)
-            </label>
-
-            <div
-              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
-              style={{ maxHeight: 300 }}
-            >
-              {movedIds.size === 0 ? (
-                <div className="p-3 text-sm text-gray-600 dark:text-gray-300">
-                  <b>Move Consultants</b> from list below to assign roles.
+        <div className="flex flex-col gap-4">
+          {/* moved list summary */}
+          <div className="rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white/60 dark:bg-neutral-950/20 p-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <div className="text-sm font-medium text-slate-900 dark:text-white">
+                  Moved Consultants
                 </div>
-              ) : (
-                <ul className="divide-y dark:divide-neutral-800">
-                  {movedList.map((u: UserLite) => {
-                    const checked = selectedIds.has(u.userId);
-                    return (
-                      <li
-                        key={u.userId}
-                        className="flex items-center justify-between gap-3 px-3 py-2"
-                      >
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleChecked(u.userId)}
-                          />
-                          <div className="flex flex-col">
-                            <div className="font-medium dark:text-white">
-                              {displayName(u) || "(No name)"}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {u.code || ""}
-                              {u.code ? " · " : ""}
-                              {u.email || ""}
-                              {u.email ? " · " : ""}
-                              {phoneDisplay(u)}
-                            </div>
-                          </div>
-                        </label>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-neutral-700">
-                          {u.userStatus || "—"}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300">
+                  Selected to be assigned to{" "}
+                  <span className="font-medium">{projectTitle || "—"}</span>
+                </div>
+              </div>
 
-            {movedList.length > 0 && (
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 text-xs font-medium dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800/40">
+                  {pickedCount} selected
+                </span>
+
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                  onClick={() =>
-                    setSelectedIds(new Set(movedList.map((m) => m.userId)))
-                  }
-                >
-                  Select All
-                </button>
-                <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                  onClick={() => setSelectedIds(new Set())}
+                  className={PILL_BTN}
+                  onClick={() => setPicked(new Set())}
+                  disabled={pickedCount === 0}
                 >
                   Clear
                 </button>
-              </div>
-            )}
-          </div>
 
-          {/* Subtile: Validity */}
-          <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
-              Validity
-            </label>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid From
-                </div>
-                <input
-                  type="date"
-                  className={SOFT_DATE}
-                  value={validFrom}
-                  min={todayLocalISO()}
-                  onChange={(e) => setValidFrom(e.target.value)}
-                />
-              </div>
-              <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid To
-                </div>
-                <input
-                  type="date"
-                  className={SOFT_DATE}
-                  value={validTo}
-                  min={validFrom || todayLocalISO()}
-                  onChange={(e) => setValidTo(e.target.value)}
-                />
+                <button
+                  className={PILL_BTN_PRIMARY}
+                  onClick={onAssign}
+                  disabled={!projectId || pickedCount === 0}
+                  title={!projectId ? "Select a project first" : undefined}
+                >
+                  Assign
+                </button>
               </div>
             </div>
 
-            <div className="mt-2 flex items-center justify-end gap-2">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => {
-                  setValidFrom("");
-                  setValidTo("");
-                  setSelectedIds(new Set());
-                  setMovedIds(new Set());
-                  const el = document.querySelector(
-                    '[data-tile-name="Browse Consultants"]'
-                  );
-                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className={
-                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
-                  (canSubmit
-                    ? "bg-emerald-600 hover:bg-emerald-700"
-                    : "bg-emerald-600/50 cursor-not-allowed")
-                }
-                onClick={onAssign}
-                disabled={!canSubmit}
-                title={
-                  canSubmit
-                    ? "Assign selected consultants to project"
-                    : "Select all required fields"
-                }
-              >
-                {assignLoading ? "Assigning…" : "Assign"}
-              </button>
-            </div>
+            {pickedCount > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {Array.from(picked)
+                  .slice(0, 10)
+                  .map((id) => {
+                    const u = browseRows.find((x) => x.userId === id);
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1 text-xs text-slate-700 dark:text-neutral-100"
+                      >
+                        <span className="font-medium">
+                          {u ? fullName(u) : id}
+                        </span>
+                        <button
+                          className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                          onClick={() => togglePick(id)}
+                          title="Remove from selection"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    );
+                  })}
+
+                {pickedCount > 10 ? (
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    +{pickedCount - 10} more
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
 
-      {/* Tile 3 — Browse Consultants */}
+      {/* Tile: Browse Consultants */}
       <section
         className={TILE_SHELL}
         aria-label="Tile: Browse Consultants"
@@ -1079,889 +655,692 @@ export default function ConsultantsAssignments() {
       >
         <TileHeader
           title="Browse Consultants"
-          subtitle="Search and filter; sort columns; paginate. Use the up arrow to move consultants to Tile 2."
+          subtitle="Search, filter, sort and move consultants into the selection."
         />
 
-        {/* === CONTROLS === */}
-        <div className="mb-3">
-          {/* Line 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                Search
-              </label>
-              <input
-                className={SOFT_INPUT}
-                placeholder="Code, name, company, project, phone, email…"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                Status
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value as any);
-                    setPage(1);
-                  }}
-                >
-                  <option value="all">All</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                State
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={stateFilter}
-                  onChange={(e) => {
-                    setStateFilter(e.target.value);
-                    setDistrictFilter("");
-                    setPage(1);
-                  }}
-                >
-                  <option value="">All States</option>
-                  {statesRef.map((s) => (
-                    <option key={s.stateId} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                District
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={districtFilter}
-                  onChange={(e) => {
-                    setDistrictFilter(e.target.value);
-                    setPage(1);
-                  }}
-                  disabled={!stateFilter}
-                  title={
-                    stateFilter ? "Filter by district" : "Select a state first"
-                  }
-                >
-                  <option value="">All Districts</option>
-                  {districtsRef.map((d) => (
-                    <option key={d.districtId} value={d.name}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                Company
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={companyFilter}
-                  onChange={(e) => {
-                    setCompanyFilter(e.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="">All Companies</option>
-                  {companyOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
-              </div>
-            </div>
+        {!projectId ? (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            Select a project first to start assigning.
           </div>
-
-          {/* Line 2 */}
-          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div className="flex items-end gap-2">
-              <div>
-                <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                  Sort By
-                </label>
-                <div className="relative">
-                  <select
-                    className={SOFT_SELECT}
-                    value={sortKey}
+        ) : (
+          <>
+            {/* Controls */}
+            <div className="mb-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                {/* Search */}
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                    Search
+                  </label>
+                  <input
+                    className={SOFT_INPUT}
+                    value={search}
                     onChange={(e) => {
-                      setSortKey(e.target.value as any);
-                      setPage(1);
+                      setSearch(e.target.value);
+                      setBPage(1);
                     }}
-                  >
-                    <option value="name">Name</option>
-                    <option value="code">Code</option>
-                    <option value="company">Company</option>
-                    <option value="projects">Projects</option>
-                    <option value="mobile">Mobile</option>
-                    <option value="email">Email</option>
-                    <option value="state">State</option>
-                    <option value="zone">Zone</option>
-                    <option value="status">Status</option>
-                    <option value="updated">Updated</option>
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                    ▼
-                  </span>
+                    placeholder="Code, name, project, phone, email..."
+                  />
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                    Status
+                  </label>
+                  <div className="relative">
+                    <select
+                      className={SOFT_SELECT}
+                      value={status}
+                      onChange={(e) => {
+                        setStatus(e.target.value);
+                        setBPage(1);
+                      }}
+                    >
+                      <option value="All">All</option>
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                      ▼
+                    </span>
+                  </div>
+                </div>
+
+                {/* State */}
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                    State
+                  </label>
+                  <div className="relative">
+                    <select
+                      className={SOFT_SELECT}
+                      value={state}
+                      onChange={(e) => {
+                        setState(e.target.value);
+                        setBPage(1);
+                      }}
+                    >
+                      <option value="All States">All States</option>
+                      {uniqueStates.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                      ▼
+                    </span>
+                  </div>
+                </div>
+
+                {/* District */}
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                    District
+                  </label>
+                  <div className="relative">
+                    <select
+                      className={SOFT_SELECT}
+                      value={district}
+                      onChange={(e) => {
+                        setDistrict(e.target.value);
+                        setBPage(1);
+                      }}
+                    >
+                      <option value="All Districts">All Districts</option>
+                      {uniqueDistricts.map((ds) => (
+                        <option key={ds} value={ds}>
+                          {ds}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                      ▼
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <button
-                className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                onClick={() =>
-                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-                }
-                title="Toggle sort direction"
-                aria-label="Toggle sort direction"
-              >
-                {sortDir === "asc" ? "▲" : "▼"}
-              </button>
+              {/* Line 2 */}
+              <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                {/* Sort by */}
+                <div className="flex items-end gap-2">
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                      Sort by
+                    </label>
+                    <div className="relative w-full md:w-[190px]">
+                      <select
+                        className={SOFT_SELECT}
+                        value={sortField}
+                        onChange={(e) => {
+                          setSortField(e.target.value as any);
+                          setBPage(1);
+                        }}
+                      >
+                        <option value="name">Name</option>
+                        <option value="code">Code</option>
+                        <option value="projects">Projects</option>
+                        <option value="mobile">Mobile</option>
+                        <option value="email">Email</option>
+                        <option value="state">State</option>
+                        <option value="district">District</option>
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                        ▼
+                      </span>
+                    </div>
+                  </div>
 
-              <button
-                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
-                onClick={clearFilters}
-                disabled={!hasActiveFilters}
-                title="Clear all filters"
-              >
-                Clear
-              </button>
-            </div>
+                  <button
+                    className="h-9 w-9 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 hover:bg-slate-50 dark:hover:bg-neutral-800 shadow-sm"
+                    onClick={() => {
+                      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                      setBPage(1);
+                    }}
+                    title={sortDir === "asc" ? "Ascending" : "Descending"}
+                  >
+                    <span className="text-xs text-slate-700 dark:text-neutral-100">
+                      {sortDir === "asc" ? "▲" : "▼"}
+                    </span>
+                  </button>
 
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block text-left md:text-right">
-                Rows per page
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                    setAPage(1);
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
+                  <button className={PILL_BTN} onClick={clearFilters}>
+                    Clear
+                  </button>
+                </div>
+
+                {/* Rows per page */}
+                <div className="md:justify-self-end md:w-[170px]">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block text-left md:text-right">
+                    Rows per page
+                  </label>
+                  <div className="relative">
+                    <select
+                      className={SOFT_SELECT}
+                      value={rowsPerPage}
+                      onChange={(e) => {
+                        setRowsPerPage(parseInt(e.target.value, 10));
+                        setBPage(1);
+                      }}
+                    >
+                      {[5, 10, 15, 20, 25].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                      ▼
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Table shell */}
+            <div className="border border-[#c9ded3] dark:border-[#2b3c35] rounded-2xl overflow-hidden bg-white dark:bg-neutral-900">
+              {browseErr ? (
+                <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b border-[#c9ded3] dark:border-[#2b3c35]">
+                  {browseErr}
+                </div>
+              ) : null}
+
+              <div className="overflow-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-[#f7fbf9] dark:bg-neutral-900/60">
+                    <tr>
+                      {[
+                        { key: "action", label: "Action" },
+                        { key: "code", label: "Code" },
+                        { key: "name", label: "Name" },
+                        { key: "projects", label: "Projects" },
+                        { key: "mobile", label: "Mobile" },
+                        { key: "email", label: "Email" },
+                        { key: "state", label: "State" },
+                        { key: "district", label: "District" },
+                      ].map((h) => {
+                        const sortable =
+                          h.key !== "action" &&
+                          ["code", "name", "projects", "mobile", "email", "state", "district"].includes(
+                            h.key
+                          );
+                        const isActive = sortable && sortField === (h.key as any);
+                        return (
+                          <th
+                            key={h.key}
+                            className={
+                              "px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] text-left font-semibold text-gray-700 dark:text-neutral-100 whitespace-nowrap select-none " +
+                              (sortable ? "cursor-pointer hover:text-slate-900 dark:hover:text-white" : "")
+                            }
+                            onClick={() => {
+                              if (!sortable) return;
+                              const key = h.key as any;
+                              if (sortField === key) {
+                                setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                              } else {
+                                setSortField(key);
+                                setSortDir("asc");
+                              }
+                              setBPage(1);
+                            }}
+                            title={sortable ? `Sort by ${h.label}` : undefined}
+                          >
+                            <div className="flex items-center gap-1">
+                              <span>{h.label}</span>
+                              {isActive ? (
+                                <span className="text-[11px] text-slate-500">
+                                  {sortDir === "asc" ? "▲" : "▼"}
+                                </span>
+                              ) : null}
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {loadingBrowse ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-3 py-6 text-center text-sm text-slate-600 dark:text-slate-300"
+                        >
+                          Loading consultants...
+                        </td>
+                      </tr>
+                    ) : browsePaged.rows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-3 py-6 text-center text-sm text-slate-600 dark:text-slate-300"
+                        >
+                          No consultants found.
+                        </td>
+                      </tr>
+                    ) : (
+                      browsePaged.rows.map((u) => {
+                        const isPicked = picked.has(u.userId);
+                        return (
+                          <tr
+                            key={u.userId}
+                            className="odd:bg-[#f7fbf9]/70
+                        dark:odd:bg-neutral-900/40"
+                          >
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              <button
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 hover:bg-slate-50 dark:hover:bg-neutral-800 shadow-sm"
+                                onClick={() => moveOne(u.userId)}
+                                title={isPicked ? "Remove from selection" : "Move to selection"}
+                              >
+                                <span className="text-slate-700 dark:text-neutral-100">
+                                  {isPicked ? "✓" : "↑"}
+                                </span>
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {u.code || "—"}
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35]">
+                              <div className="font-medium text-slate-900 dark:text-white">
+                                {fullName(u) || "—"}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {u.projectCount ?? 0}
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {phonePretty(u)}
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {u.email || "—"}
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {u.state || "—"}
+                            </td>
+                            <td className="px-3 py-2 border-b border-[#c9ded3] dark:border-[#2b3c35] whitespace-nowrap">
+                              {u.district || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* pagination */}
+              <div className="flex items-center justify-between p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
+                  Page {browsePaged.page} of {browsePaged.totalPages} · Showing{" "}
+                  {browsePaged.rows.length} of {browseFiltered.length} consultants
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                    disabled={browsePaged.page <= 1}
+                    onClick={() => setBPage(1)}
+                  >
+                    « First
+                  </button>
+                  <button
+                    className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                    disabled={browsePaged.page <= 1}
+                    onClick={() => setBPage((p) => Math.max(1, p - 1))}
+                  >
+                    ‹ Prev
+                  </button>
+                  <button
+                    className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                    disabled={browsePaged.page >= browsePaged.totalPages}
+                    onClick={() =>
+                      setBPage((p) => Math.min(browsePaged.totalPages, p + 1))
+                    }
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                    disabled={browsePaged.page >= browsePaged.totalPages}
+                    onClick={() => setBPage(browsePaged.totalPages)}
+                  >
+                    Last »
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Tile: Consultant Assignments */}
+      <section
+        className={TILE_SHELL}
+        aria-label="Tile: Consultant Assignments"
+        data-tile-name="Consultant Assignments"
+      >
+        <TileHeader
+          title="Consultant Assignments"
+          subtitle="Current assignments for the selected project."
+        />
+
+        {!projectId ? (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            Select a project to view assigned consultants.
           </div>
-        </div>
-
-        {/* Table shell */}
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
-            {usersErr && (
-              <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
-                {usersErr}
-              </div>
-            )}
-            {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
-                Loading consultants…
-              </div>
-            ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
-                No consultants match the selected criteria.
-              </div>
-            ) : (
+        ) : assignedErr ? (
+          <div className="text-sm text-red-700 dark:text-red-400">{assignedErr}</div>
+        ) : loadingAssigned ? (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            Loading assigned consultants...
+          </div>
+        ) : assignedList.length === 0 ? (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            No consultants assigned yet.
+          </div>
+        ) : (
+          <>
+            <div className="overflow-auto rounded-2xl border border-slate-200/80 dark:border-neutral-800">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+                <thead className="bg-gray-50 dark:bg-neutral-800">
                   <tr>
                     {[
                       { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
                       { key: "company", label: "Company" },
-                      { key: "projects", label: "Project" },
-                      { key: "mobile", label: "Mobile" },
-                      { key: "email", label: "Email" },
-                      { key: "state", label: "State" },
-                      { key: "zone", label: "Zone" },
-                      { key: "status", label: "Status" },
+                      { key: "validity", label: "Validity" },
                       { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const sortable = h.key !== "action";
-                      const active = sortKey === (h.key as any);
-                      return (
-                        <th
-                          key={h.key}
-                          className={
-                            "text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
-                            (sortable ? "cursor-pointer" : "")
-                          }
-                          title={sortable ? `Sort by ${h.label}` : undefined}
-                          onClick={() => {
-                            if (!sortable) return;
-                            if (sortKey !== (h.key as any)) {
-                              setSortKey(h.key as any);
-                              setSortDir("asc");
-                            } else {
-                              setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-                            }
-                            setPage(1);
-                          }}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            {sortable && (
-                              <span className="text-xs opacity-70">
-                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                              </span>
-                            )}
-                          </span>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowsPaged.map((r) => (
-                    <tr
-                      key={r._id}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
-                    >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <button
-                          type="button"
-                          aria-label="Move consultant"
-                          title="Move to selection"
-                          onClick={() => onMoveToTile2(r._raw!)}
-                          className="
-                            inline-flex items-center justify-center
-                            w-8 h-8 rounded-full
-                            border border-slate-200
-                            bg-white text-slate-700
-                            hover:bg-slate-50
-                            dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800
-                          "
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M12 19V5" />
-                            <path d="M6.5 10.5L12 5l5.5 5.5" />
-                          </svg>
-                        </button>
-                      </td>
-
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.code}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.name}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[260px]">
-                          {r.company}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.mobile}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.email}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.state}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.zone}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status}
-                      </td>
-                      <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
-                        title={fmtLocalDateTime(r.updated)}
+                    ].map((h) => (
+                      <th
+                        key={h.key}
+                        className="px-3 py-2 border-b border-slate-200 dark:border-neutral-700 text-left font-semibold text-gray-700 dark:text-neutral-100 whitespace-nowrap"
                       >
-                        {fmtLocalDateTime(r.updated)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
-              <b>{rowsPaged.length}</b> of <b>{total}</b> consultants
-              {stateFilter ? (
-                <>
-                  {" "}
-                  · State: <b>{stateFilter}</b>
-                </>
-              ) : null}
-              {districtFilter ? (
-                <>
-                  {" "}
-                  · District: <b>{districtFilter}</b>
-                </>
-              ) : null}
-              {statusFilter !== "all" ? (
-                <>
-                  {" "}
-                  · Status: <b>{statusFilter}</b>
-                </>
-              ) : null}
-              {companyFilter ? (
-                <>
-                  {" "}
-                  · Company: <b>{companyFilter}</b>
-                </>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(1)}
-                disabled={pageSafe <= 1}
-                title="First"
-              >
-                « First
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={pageSafe <= 1}
-                title="Previous"
-              >
-                ‹ Prev
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={pageSafe >= totalPages}
-                title="Next"
-              >
-                Next ›
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setPage(totalPages)}
-                disabled={pageSafe >= totalPages}
-                title="Last"
-              >
-                Last »
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Tile 4 — Consultant Assignments */}
-      <section
-        className={TILE_SHELL.replace("mb-4", "")}
-        aria-label="Tile: Consultant Assignments"
-        data-tile-name="Consultant Assignments"
-      >
-        <TileHeader
-          title="Consultant Assignments"
-          subtitle="All consultants who have been assigned to projects."
-        />
-
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
-            {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
-                No consultant assignments found.
-              </div>
-            ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
-                  <tr>
-                    <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">
-                      Action
-                    </th>
-                    {[
-                      { key: "userName", label: "Name" },
-                      { key: "company", label: "Company" },
-                      { key: "projects", label: "Projects" },
-                      { key: "status", label: "Status" },
-                      { key: "validFrom", label: "Valid From" },
-                      { key: "validTo", label: "Valid To" },
-                      { key: "updated", label: "Last Updated" },
-                    ].map((h) => {
-                      const active = aSortKey === (h.key as any);
-                      return (
-                        <th
-                          key={h.key}
-                          className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none cursor-pointer"
-                          title={`Sort by ${h.label}`}
-                          onClick={() => {
-                            if (aSortKey !== (h.key as any)) {
-                              setASortKey(h.key as any);
-                              setASortDir("asc");
-                            } else {
-                              setASortDir((d) =>
-                                d === "asc" ? "desc" : "asc"
-                              );
-                            }
-                          }}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            <span className="text-xs opacity-70">
-                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
-                            </span>
-                          </span>
-                        </th>
-                      );
-                    })}
+                        {h.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
 
                 <tbody>
-                  {assignedRowsPaged.map((r, i) => (
-                    <tr
-                      key={`${r.userId}-${r.projectId}-${i}`}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
-                    >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            aria-label="View assignment"
-                            title="View"
-                            onClick={() => openView(r)}
-                            className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth={1.6}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                              <circle cx="12" cy="12" r="2.5" />
-                            </svg>
-                          </button>
+                  {assignedPaged.rows.map((m, idx) => {
+                    const u = m.company ? null : null;
+                    const nm = m.company?.name || "—";
+                    const code = (m.company as any)?.code || "—";
+                    const person = m.project?.title || projectTitle || "—";
 
-                          <button
-                            type="button"
-                            aria-label="Edit assignment"
-                            title="Edit"
-                            onClick={() => openEdit(r)}
-                            disabled={!r.membershipId}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40 disabled:opacity-50"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.7"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
+                    return (
+                      <tr
+                        key={m.id || idx}
+                        className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
+                      >
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <button
+                              className={PILL_BTN}
+                              onClick={() => openView(m)}
                             >
-                              <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
-                              <path d="M14.5 5.5l4 4" />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
+                              View
+                            </button>
+                            <button
+                              className={PILL_BTN}
+                              onClick={() => openEdit(m)}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.userName}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.company || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects || "—"}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {fmtLocalDateOnly(r.validFrom) || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {fmtLocalDateOnly(r.validTo) || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {fmtLocalDateTime(r.updated) || "—"}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 whitespace-nowrap">
+                          {code}
+                        </td>
+
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800">
+                          <div className="font-medium text-slate-900 dark:text-white">
+                            {person}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 whitespace-nowrap">
+                          {nm}
+                        </td>
+
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 whitespace-nowrap">
+                          <div className="text-xs text-slate-600 dark:text-slate-300">
+                            From:{" "}
+                            <span className="font-medium text-slate-900 dark:text-white">
+                              {isoToYmd(m.validFrom) || "—"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 dark:text-slate-300">
+                            To:{" "}
+                            <span className="font-medium text-slate-900 dark:text-white">
+                              {isoToYmd(m.validTo) || "—"}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2 border-b border-slate-200 dark:border-neutral-800 whitespace-nowrap">
+                          <div className="text-xs text-slate-600 dark:text-slate-300">
+                            {isoToYmd(m.updatedAt || m.createdAt) || "—"}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
 
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
-              <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> consultant
-              assignments
+            {/* assigned pagination */}
+            <div className="flex items-center justify-between mt-3">
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                Page {assignedPaged.page} of {assignedPaged.totalPages} · Showing{" "}
+                {assignedPaged.rows.length} of {assignedList.length} consultants
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  disabled={assignedPaged.page <= 1}
+                  onClick={() => setAPage(1)}
+                >
+                  « First
+                </button>
+                <button
+                  className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  disabled={assignedPaged.page <= 1}
+                  onClick={() => setAPage((p) => Math.max(1, p - 1))}
+                >
+                  ‹ Prev
+                </button>
+                <button
+                  className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  disabled={assignedPaged.page >= assignedPaged.totalPages}
+                  onClick={() =>
+                    setAPage((p) => Math.min(assignedPaged.totalPages, p + 1))
+                  }
+                >
+                  Next ›
+                </button>
+                <button
+                  className="h-8 px-3 rounded-full border border-[#c9ded3] dark:border-[#2b3c35] bg-white dark:bg-neutral-900/80 text-xs text-slate-700 dark:text-neutral-100 shadow-sm hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  disabled={assignedPaged.page >= assignedPaged.totalPages}
+                  onClick={() => setAPage(assignedPaged.totalPages)}
+                >
+                  Last »
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setAPage(1)}
-                disabled={aPageSafe <= 1}
-                title="First"
-              >
-                « First
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setAPage((p) => Math.max(1, p - 1))}
-                disabled={aPageSafe <= 1}
-                title="Previous"
-              >
-                ‹ Prev
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
-                disabled={aPageSafe >= aTotalPages}
-                title="Next"
-              >
-                Next ›
-              </button>
-              <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
-                onClick={() => setAPage(aTotalPages)}
-                disabled={aPageSafe >= aTotalPages}
-                title="Last"
-              >
-                Last »
-              </button>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </section>
 
-      {/* ===== View Modal ===== */}
-      {viewOpen && viewRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setViewOpen(false)}
-          />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">
-              Consultant Assignment
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {viewRow.userName} · {viewRow.projectTitle}
-            </div>
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
-              <table className="min-w-full text-sm">
-                <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Consultant
-                    </td>
-                    <td className="px-3 py-2">{viewRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{viewRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{viewRow.status || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid From
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validFrom) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid To
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validTo) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Validity
-                    </td>
-                    <td className="px-3 py-2">{viewRow.validity || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Updated
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateTime(viewRow.updated) || "—"}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-2 flex justify-end">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => setViewOpen(false)}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== Edit Modal ===== */}
-      {editOpen && editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => {
-              if (!deleting) setEditOpen(false);
-            }}
-          />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            {deleting && (
-              <div className="absolute inset-0 rounded-2xl bg-white/40 dark:bg:black/30 backdrop-blur-[1px] cursor-wait" />
-            )}
-
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">
-                Edit Validity
-              </div>
-              <button
-                className="h-9 px-3 rounded-full text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                onClick={onHardDeleteFromEdit}
-                disabled={deleting || !editRow?.membershipId}
-                title={
-                  editRow?.membershipId
-                    ? "Permanently remove this assignment"
-                    : "Missing membership id"
-                }
-              >
-                {deleting ? "Removing…" : "Remove"}
-              </button>
-            </div>
-
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {editRow.userName} · {editRow.projectTitle}
-            </div>
-
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
-              <table className="min-w-full text-sm">
-                <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Consultant
-                    </td>
-                    <td className="px-3 py-2">{editRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{editRow.status || "—"}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* View Modal */}
+      {viewOpen && selectedMembership ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid From
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  View Assignment
                 </div>
-                <input
-                  type="date"
-                  className={SOFT_DATE}
-                  value={editFrom}
-                  min={todayLocalISO()}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setEditFrom(v);
-                    if (editTo && editTo < v) setEditTo(v);
-                  }}
-                  disabled={deleting}
-                />
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  Project:{" "}
+                  <span className="font-medium">{projectTitle || "—"}</span>
+                </div>
               </div>
-              <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid To
+              <button
+                className="h-9 w-9 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                onClick={closeModals}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-neutral-800 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Validity
                 </div>
-                <input
-                  type="date"
-                  className={SOFT_DATE}
-                  value={editTo}
-                  min={
-                    editFrom && editFrom > todayLocalISO()
-                      ? editFrom
-                      : todayLocalISO()
-                  }
-                  onChange={(e) => setEditTo(e.target.value)}
-                  disabled={deleting}
-                />
+                <div className="mt-1 text-sm text-slate-800 dark:text-neutral-100">
+                  From:{" "}
+                  <span className="font-medium">
+                    {isoToYmd(selectedMembership.validFrom) || "—"}
+                  </span>
+                </div>
+                <div className="text-sm text-slate-800 dark:text-neutral-100">
+                  To:{" "}
+                  <span className="font-medium">
+                    {isoToYmd(selectedMembership.validTo) || "—"}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
-                onClick={() => setEditOpen(false)}
-                disabled={deleting}
-              >
-                Cancel
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button className={PILL_BTN} onClick={closeModals}>
+                Close
               </button>
               <button
-                className="h-9 px-4 rounded-full text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-                onClick={async () => {
-                  const today = todayLocalISO();
-                  if (!editFrom || !editTo) {
-                    alert("Both Valid From and Valid To are required.");
-                    return;
-                  }
-                  if (editTo < today) {
-                    alert("Valid To cannot be before today.");
-                    return;
-                  }
-                  if (editTo < editFrom) {
-                    alert("Valid To must be on or after Valid From.");
-                    return;
-                  }
-                  if (!editRow?.membershipId) {
-                    alert("Cannot update: missing membership id.");
-                    return;
-                  }
-
-                  try {
-                    const companyId =
-                      editRow?._mem?.company?.companyId ||
-                      (editRow?._user
-                        ? consultantCompanyId(editRow._user)
-                        : null);
-
-                    const payload: any = {
-                      validTo: editTo,
-                      scopeType: "Project",
-                      projectId: editRow.projectId,
-                      ...(companyId ? { companyId } : {}),
-                    };
-                    if (!origFrom || editFrom !== origFrom) {
-                      payload.validFrom = editFrom;
-                    }
-
-                    await api.patch(
-                      `/admin/assignments/${editRow.membershipId}`,
-                      payload
-                    );
-
-                    const successMsg = [
-                      `Updated validity`,
-                      ``,
-                      `Project: ${editRow.projectTitle}`,
-                      `Consultant: ${editRow.userName}`,
-                      ``,
-                      `Valid From: ${origFrom || "—"} → ${editFrom}`,
-                      `Valid To:   ${origTo || "—"} → ${editTo}`,
-                    ].join("\n");
-
-                    const { data: fresh } = await api.get("/admin/users", {
-                      params: { includeMemberships: "1" },
-                    });
-                    setAllUsers(
-                      Array.isArray(fresh) ? fresh : fresh?.users ?? []
-                    );
-
-                    setEditOpen(false);
-                    setEditRow(null);
-                    setPendingEditAlert(successMsg);
-                  } catch (e: any) {
-                    const msg =
-                      e?.response?.data?.message ||
-                      e?.response?.data?.error ||
-                      e?.message ||
-                      "Update failed.";
-                    alert(msg);
-                  }
+                className={PILL_BTN}
+                onClick={() => {
+                  setViewOpen(false);
+                  openEdit(selectedMembership);
                 }}
-                title="Update validity dates"
-                disabled={!editRow?.membershipId || deleting}
               >
-                Update
+                Edit
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
+
+      {/* Edit Modal */}
+      {editOpen && selectedMembership ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Edit Assignment
+                </div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  Update assignment validity for{" "}
+                  <span className="font-medium">{projectTitle || "—"}</span>
+                </div>
+              </div>
+              <button
+                className="h-9 w-9 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                onClick={closeModals}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                  Valid from
+                </div>
+                <input
+                  type="date"
+                  className={SOFT_DATE}
+                  value={editValidFrom}
+                  onChange={(e) => setEditValidFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                  Valid to
+                </div>
+                <input
+                  type="date"
+                  className={SOFT_DATE}
+                  value={editValidTo}
+                  onChange={(e) => setEditValidTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {pendingEditAlert ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-200">
+                <div className="font-semibold">Remove assignment?</div>
+                <div className="mt-1">
+                  This will permanently remove this Consultant assignment from the
+                  project.
+                </div>
+
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    className={PILL_BTN}
+                    onClick={() => setPendingEditAlert(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="h-9 px-4 rounded-full bg-red-600 text-white text-xs sm:text-sm font-medium shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/40"
+                    onClick={onHardDeleteFromEdit}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                className="h-9 px-4 rounded-full border border-red-200 bg-white text-red-700 text-xs sm:text-sm shadow-sm hover:bg-red-50 dark:border-red-800/40 dark:bg-neutral-900 dark:text-red-200 dark:hover:bg-red-900/20"
+                onClick={() => setPendingEditAlert(true)}
+              >
+                Remove Assignment
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button className={PILL_BTN} onClick={closeModals}>
+                  Cancel
+                </button>
+                <button className={PILL_BTN_PRIMARY} onClick={onUpdateValidity}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Back */}
+      <div className="mt-6">
+        <button
+          className={PILL_BTN}
+          onClick={() => nav("/admin/assignments")}
+        >
+          ← Back to Assignments
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,13 @@
 // pms-frontend/src/views/admin/projects/ProjectCreate.tsx
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
+
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
 
 /* ---------- Reference-data types ---------- */
 type StateOpt = { stateId: string; name: string; code: string };
@@ -120,14 +126,23 @@ export default function ProjectCreate() {
   const [description, setDescription] = useState("");
 
   // ---------- Refs ----------
-  const [states, setStates] = useState<StateOpt[]>([]);
-  const [districts, setDistricts] = useState<DistrictOpt[]>([]);
+  const [statesRef, setStatesRef] = useState<StateOpt[]>([]);
+  const [districtsRef, setDistrictsRef] = useState<DistrictOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
 
   // ---------- UI ----------
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showNote, setShowNote] = useState(false);
+
+  // Page title/subtitle (Admin header)
+  useEffect(() => {
+    document.title = "Trinity PMS — Create Project";
+    window.__ADMIN_SUBTITLE__ = "Fill project details, then save.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
 
   // --- Auth gate simple check ---
   useEffect(() => {
@@ -158,7 +173,7 @@ export default function ProjectCreate() {
           })(),
         ]);
 
-        setStates(Array.isArray(s) ? s : s?.states || []);
+        setStatesRef(Array.isArray(s) ? s : s?.states || []);
         setCompanies(Array.isArray(c) ? c : c?.companies || []);
 
         const tagList = Array.isArray(tg) ? tg : tg?.tags || [];
@@ -178,7 +193,7 @@ export default function ProjectCreate() {
   // Districts by state
   useEffect(() => {
     if (!stateId) {
-      setDistricts([]);
+      setDistrictsRef([]);
       setDistrictId("");
       return;
     }
@@ -187,7 +202,7 @@ export default function ProjectCreate() {
         const { data } = await api.get("/admin/districts", {
           params: { stateId },
         });
-        setDistricts(Array.isArray(data) ? data : data?.districts || []);
+        setDistrictsRef(Array.isArray(data) ? data : data?.districts || []);
       } catch (e: any) {
         setErr(e?.response?.data?.error || "Failed to load districts.");
       }
@@ -205,7 +220,7 @@ export default function ProjectCreate() {
     return true;
   }, [title, status, startDate, plannedCompletionDate]);
 
-  const onPickTags = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const onPickTags = (e: ChangeEvent<HTMLSelectElement>) => {
     const values = Array.from(e.target.selectedOptions).map((o) => o.value);
     setSelectedTagCodes(values);
   };
@@ -226,7 +241,6 @@ export default function ProjectCreate() {
     if (projPart && compPart && pinPart) {
       return `${projPart}-${compPart}-${pinPart}`;
     }
-
     return "e.g. PRO-COM-110001";
   }, [title, clientCompanyName, pin]);
 
@@ -306,149 +320,139 @@ export default function ProjectCreate() {
 
       nav("/admin/projects", { replace: true });
     } catch (e: any) {
-      setErr(
-        e?.response?.data?.error || e?.message || "Failed to create project"
-      );
+      setErr(e?.response?.data?.error || e?.message || "Failed to create project");
     } finally {
       setSaving(false);
     }
   };
 
-  const stateLabel = useMemo(() => {
-    if (!stateId) return "";
-    const s = states.find((x) => x.stateId === stateId);
-    return s ? `${s.name} (${s.code})` : "(unknown state)";
-  }, [stateId, states]);
+  /* ========================= CompanyEdit exact button tokens ========================= */
+  const btnBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+    "disabled:opacity-60 disabled:pointer-events-none";
+  const btnLight =
+    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const btnPrimary =
+    "bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35 border border-transparent";
 
-  const districtLabel = useMemo(() => {
-    if (!districtId) return "";
-    const d = districts.find((x) => x.districtId === districtId);
-    return d ? d.name : "(unknown district)";
-  }, [districtId, districts]);
+  const infoBtn =
+    "ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white " +
+    "text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="w-full">
       <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Create Project
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Fill the details below and save. Project Title is mandatory field.
-              </span>
-
-              {/* Info icon (replaces Note button functionality) */}
+        {/* Top helper row (CompanyEdit style) */}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              Fill the details below and save. Project Title is mandatory.
               <button
                 type="button"
                 onClick={() => setShowNote(true)}
                 aria-label="Info"
                 title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className={infoBtn}
               >
                 i
               </button>
-            </p>
+            </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/projects")}
               type="button"
+              className={`${btnBase} ${btnLight}`}
+              onClick={() => nav("/admin/projects")}
             >
               Cancel
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+              type="button"
+              className={`${btnBase} ${btnPrimary}`}
               onClick={submit}
               disabled={!canSave || saving}
-              type="button"
             >
               {saving ? "Saving…" : "Create"}
             </button>
           </div>
         </div>
 
-        {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+        {err ? (
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-800/40 dark:bg-rose-950/30 dark:text-rose-200">
             {err}
           </div>
-        )}
+        ) : null}
 
         {/* ========== Summary ========== */}
         <Section title="Summary">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Text
-              label="Project Title"
-              value={title}
-              setValue={setTitle}
-              required
-            />
-            <Text
+            <Input label="Project Title" value={title} onChange={setTitle} required />
+            <Input
               label="Project Code"
               value={code}
-              setValue={setCode}
+              onChange={setCode}
               placeholder={projectCodePlaceholder}
             />
 
-            <Select
+            <SelectStrict
               label="Status"
               value={status}
-              setValue={setStatus}
-              options={projectStatuses as unknown as string[]}
+              onChange={setStatus}
+              options={projectStatuses.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+            <SelectStrict
               label="Stage"
               value={stage}
-              setValue={setStage}
-              options={["", ...stages]}
+              onChange={setStage}
+              placeholder="Select (optional)"
+              options={stages.map((x) => ({ value: x, label: x }))}
             />
 
-            <Select
+            <SelectStrict
               label="Project Type"
               value={projectType}
-              setValue={setProjectType}
-              options={["", ...projectTypes]}
+              onChange={setProjectType}
+              placeholder="Select (optional)"
+              options={projectTypes.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+            <SelectStrict
               label="Structure Type"
               value={structureType}
-              setValue={setStructureType}
-              options={["", ...structureTypes]}
+              onChange={setStructureType}
+              placeholder="Select (optional)"
+              options={structureTypes.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+            <SelectStrict
               label="Construction Mode"
               value={constructionType}
-              setValue={setConstructionType}
-              options={["", ...constructionTypes]}
+              onChange={setConstructionType}
+              placeholder="Select (optional)"
+              options={constructionTypes.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+            <SelectStrict
               label="Contract Type"
               value={contractType}
-              setValue={setContractType}
-              options={["", ...contractTypes]}
+              onChange={setContractType}
+              placeholder="Select (optional)"
+              options={contractTypes.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+            <SelectStrict
               label="Project Health"
               value={health}
-              setValue={setHealth}
-              options={healthOptions as unknown as string[]}
+              onChange={setHealth}
+              options={healthOptions.map((x) => ({ value: x, label: x }))}
             />
 
-            <Select
+            <SelectStrict
               label="Client / Owner Company"
               value={clientCompanyId}
-              setValue={setClientCompanyId}
-              options={[
-                "",
-                ...companies.map((c) => ({
-                  value: c.companyId,
-                  label: c.name,
-                })),
-              ]}
+              onChange={setClientCompanyId}
+              placeholder="Select (optional)"
+              options={companies.map((c) => ({ value: c.companyId, label: c.name }))}
             />
           </div>
         </Section>
@@ -456,64 +460,55 @@ export default function ProjectCreate() {
         {/* ========== Location ========== */}
         <Section title="Location">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <TextArea label="Address" value={address} setValue={setAddress} />
+            <TextArea
+              label="Address"
+              value={address}
+              onChange={setAddress}
+              placeholder="Optional"
+              rows={3}
+              className="md:col-span-2"
+            />
 
-            <Select
+            <SelectStrict
               label="State / UT"
               value={stateId}
-              setValue={(v) => {
+              onChange={(v) => {
                 setStateId(v);
                 setDistrictId("");
               }}
-              options={[
-                "",
-                ...states.map((s) => ({
-                  value: s.stateId,
-                  label: `${s.name} (${s.code})`,
-                })),
-                ...(stateId && !states.some((s) => s.stateId === stateId)
-                  ? [{ value: stateId, label: stateLabel }]
-                  : []),
-              ]}
+              placeholder="Select (optional)"
+              options={statesRef.map((s) => ({
+                value: s.stateId,
+                label: `${s.name} (${s.code})`,
+              }))}
             />
-            <Select
+            <SelectStrict
               label="District"
               value={districtId}
-              setValue={setDistrictId}
-              options={[
-                "",
-                ...districts.map((d) => ({
-                  value: d.districtId,
-                  label: d.name,
-                })),
-                ...(districtId &&
-                !districts.some((d) => d.districtId === districtId)
-                  ? [{ value: districtId, label: districtLabel }]
-                  : []),
-              ]}
+              onChange={setDistrictId}
+              placeholder={stateId ? "Select (optional)" : "Select state first"}
+              options={districtsRef.map((d) => ({ value: d.districtId, label: d.name }))}
               disabled={!stateId}
             />
-            <Text label="City/Town" value={cityTown} setValue={setCityTown} />
-            <Text
+
+            <Input label="City/Town" value={cityTown} onChange={setCityTown} />
+            <Input
               label="PIN Code"
               value={pin}
-              setValue={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
+              onChange={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
               placeholder="6-digit PIN"
             />
-            <Text
+
+            <Input
               label="Latitude"
               value={latitude}
-              setValue={(v) =>
-                setLatitude(v.replace(/[^0-9.\-]/g, "").slice(0, 12))
-              }
+              onChange={(v) => setLatitude(v.replace(/[^0-9.\-]/g, "").slice(0, 12))}
               placeholder="e.g., 12.9716"
             />
-            <Text
+            <Input
               label="Longitude"
               value={longitude}
-              setValue={(v) =>
-                setLongitude(v.replace(/[^0-9.\-]/g, "").slice(0, 13))
-              }
+              onChange={(v) => setLongitude(v.replace(/[^0-9.\-]/g, "").slice(0, 13))}
               placeholder="e.g., 77.5946"
             />
           </div>
@@ -522,28 +517,24 @@ export default function ProjectCreate() {
         {/* ========== Dates & Cost ========== */}
         <Section title="Dates and Cost">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <DateInput
-              label="Start Date"
-              value={startDate}
-              setValue={setStartDate}
-            />
+            <DateInput label="Start Date" value={startDate} onChange={setStartDate} />
             <DateInput
               label="Planned Completion"
               value={plannedCompletionDate}
-              setValue={setPlannedCompletionDate}
+              onChange={setPlannedCompletionDate}
               min={startDate || undefined}
             />
 
-            <Select
+            <SelectStrict
               label="Currency"
               value={currency}
-              setValue={setCurrency}
-              options={currencies as unknown as string[]}
+              onChange={setCurrency}
+              options={currencies.map((x) => ({ value: x, label: x }))}
             />
-            <Text
+            <Input
               label="Contract Value"
               value={contractValue}
-              setValue={(v) => setContractValue(v.replace(/[^0-9.]/g, ""))}
+              onChange={(v) => setContractValue(v.replace(/[^0-9.]/g, ""))}
               placeholder="e.g., 12500000.00"
             />
           </div>
@@ -552,28 +543,29 @@ export default function ProjectCreate() {
         {/* ========== Attributes ========== */}
         <Section title="Attributes">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Select
+            <SelectStrict
               label="Area Units"
               value={areaUnit}
-              setValue={setAreaUnit}
-              options={["", ...areaUnits]}
+              onChange={setAreaUnit}
+              placeholder="Select (optional)"
+              options={areaUnits.map((x) => ({ value: x, label: x }))}
             />
-            <Text
+            <Input
               label="Plot Area"
               value={plotArea}
-              setValue={(v) => setPlotArea(v.replace(/[^0-9.]/g, ""))}
+              onChange={(v) => setPlotArea(v.replace(/[^0-9.]/g, ""))}
               placeholder="e.g., 10000.00"
             />
-            <Text
+            <Input
               label="Built-up Area"
               value={builtUpArea}
-              setValue={(v) => setBuiltUpArea(v.replace(/[^0-9.]/g, ""))}
+              onChange={(v) => setBuiltUpArea(v.replace(/[^0-9.]/g, ""))}
               placeholder="e.g., 25000.00"
             />
-            <Text
+            <Input
               label="Floors"
               value={floors}
-              setValue={(v) => setFloors(v.replace(/[^\d]/g, "").slice(0, 3))}
+              onChange={(v) => setFloors(v.replace(/[^\d]/g, "").slice(0, 3))}
               placeholder="e.g., 12"
             />
           </div>
@@ -600,167 +592,187 @@ export default function ProjectCreate() {
             <TextArea
               label="Description"
               value={description}
-              setValue={setDescription}
+              onChange={setDescription}
+              placeholder="Optional"
+              rows={4}
             />
           </div>
         </Section>
 
-        {/* Footer actions */}
-        <div className="mt-6 flex justify-end gap-2">
+        {/* Footer actions (CompanyEdit style) */}
+        <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-white/10">
           <button
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => nav("/admin/projects")}
             type="button"
+            className={`${btnBase} ${btnLight}`}
+            onClick={() => nav("/admin/projects")}
           >
             Cancel
           </button>
           <button
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            type="button"
+            className={`${btnBase} ${btnPrimary}`}
             onClick={submit}
             disabled={!canSave || saving}
-            type="button"
           >
             {saving ? "Saving…" : "Create"}
           </button>
         </div>
       </div>
 
-      {/* Note modal */}
-      {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900 mx-4">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Note for Admins — Creating a New Project
-              </h2>
-              <button
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-5 text-sm leading-6 text-gray-800 dark:text-gray-100 space-y-3">
-              <div>
-                <b>Required to save:</b> Project Title and Status.
+      {/* Note modal (CompanyEdit style) */}
+      {showNote ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowNote(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-white/10">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Note for Admins — Creating a New Project
+                  </h2>
+                  <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
+                </div>
+                <button
+                  type="button"
+                  className={`${btnBase} ${btnLight}`}
+                  onClick={() => setShowNote(false)}
+                >
+                  Close
+                </button>
               </div>
 
-              <div>
-                <b>Dates rule:</b> if you enter both Start Date and Planned
-                Completion, the completion date cannot be before the start date.
+              <div className="p-5 text-sm leading-6 text-slate-800 dark:text-slate-200 space-y-3">
+                <div>
+                  <b>Required to save:</b> Project Title and Status.
+                </div>
+                <div>
+                  <b>Dates rule:</b> if you enter both Start Date and Planned Completion,
+                  the completion date cannot be before the start date.
+                </div>
+                <div>
+                  <b>Optional but helpful:</b> Stage, Project Type, Structure Type, Construction
+                  Mode, Contract Type, Project Health, Client/Owner Company, Description/Notes, and Tags.
+                </div>
+                <div>
+                  <b>Location (optional):</b> Address, State, District, City/Town, PIN, Latitude, Longitude.
+                  <ul className="mt-1 list-disc pl-5 space-y-1">
+                    <li>PIN should be a 6-digit number.</li>
+                    <li>Latitude/Longitude accept only numbers, decimal points, and minus signs.</li>
+                  </ul>
+                </div>
+                <div>
+                  <b>Currency &amp; Contract Value (optional):</b> Currency defaults to INR; Contract Value accepts numbers and decimals.
+                </div>
+                <div>
+                  <b>Tags (optional):</b> You can select multiple tags.
+                </div>
+                <div>
+                  <b>After a successful save:</b> you’ll be taken back to the Projects page.
+                </div>
               </div>
 
-              <div>
-                <b>Optional but helpful:</b> Stage, Project Type, Structure
-                Type, Construction Mode, Contract Type, Project Health,
-                Client/Owner Company, Description/Notes, and Tags.
+              <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
+                <button
+                  type="button"
+                  className={`${btnBase} ${btnPrimary}`}
+                  onClick={() => setShowNote(false)}
+                >
+                  Done
+                </button>
               </div>
-
-              <div>
-                <b>Location (optional):</b> Address, State, District, City/Town,
-                PIN, Latitude, Longitude.
-                <ul className="list-disc pl-5 mt-1 space-y-1">
-                  <li>PIN should be a 6-digit number.</li>
-                  <li>
-                    Latitude/Longitude accept only numbers, decimal points, and
-                    minus signs.
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <b>Currency &amp; Contract Value (optional):</b> Currency
-                defaults to INR; Contract Value accepts numbers and decimals.
-              </div>
-
-              <div>
-                <b>Tags (optional):</b> You can select multiple tags.
-              </div>
-
-              <div>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Projects page.
-              </div>
-
-              <div>
-                <b>Cancel:</b> returns to the Projects list without saving.
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-200 dark:border-neutral-800 flex justify-end gap-2">
-              <button
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNote(false)}
-                type="button"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-/* ------------------------ Small UI helpers ------------------------ */
+/* ========================= CompanyEdit-style components ========================= */
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
           {title}
         </div>
-        {children}
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
-    </section>
+      {children}
+    </div>
   );
 }
 
-function Text({
+function Input({
   label,
   value,
-  setValue,
-  type = "text",
-  required = false,
+  onChange,
   placeholder,
+  type = "text",
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+        {required ? <span className="text-rose-600"> *</span> : null}
+      </span>
+      <input
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        type={type}
+      />
+    </label>
+  );
+}
+
+function SelectStrict({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder = "Select…",
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
-  type?: string;
-  required?: boolean;
+  onChange: (v: string) => void;
+  options: Array<{ value: string; label: string }>;
   placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
-        {required && <span className="text-red-500"> *</span>}
       </span>
-      <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+      <select
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        type={type}
-        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-      />
+      >
+        <option value="">{placeholder}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -768,60 +780,32 @@ function Text({
 function TextArea({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
+  rows = 3,
+  className = "",
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+  className?: string;
 }) {
   return (
-    <label className="block md:col-span-2">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <label className={`block ${className}`}>
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
       />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  value,
-  setValue,
-  options,
-  disabled = false,
-}: {
-  label: string;
-  value: string;
-  setValue: (v: string) => void;
-  options: (string | { value: string; label: string })[];
-  disabled?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => setValue(e.target.value)}
-      >
-        {options.map((o, i) => {
-          const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? o || "—" : o.label;
-          return (
-            <option key={v || `empty-${i}`} value={v}>
-              {l || "—"}
-            </option>
-          );
-        })}
-      </select>
     </label>
   );
 }
@@ -835,18 +819,20 @@ function MultiSelect({
 }: {
   label: string;
   value: string[];
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
   options: { value: string; label: string }[];
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
         multiple
-        className="w-full min-h-[8rem] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full min-h-[8rem] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -857,9 +843,9 @@ function MultiSelect({
           </option>
         ))}
       </select>
-      <span className="text-xs text-gray-600 dark:text-gray-400">
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         Hold Ctrl/Cmd to select multiple.
-      </span>
+      </div>
     </label>
   );
 }
@@ -867,28 +853,30 @@ function MultiSelect({
 function DateInput({
   label,
   value,
-  setValue,
+  onChange,
   min,
   max,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
   min?: string;
   max?: string;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <input
         type="date"
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
         min={min}
         max={max}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
       />
     </label>
   );

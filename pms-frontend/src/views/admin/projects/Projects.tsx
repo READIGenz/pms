@@ -144,6 +144,16 @@ export default function Projects() {
   const location = useLocation();
   const modalProjectId = params.id || null;
 
+  // Title + subtitle at top (same pattern as Users)
+  useEffect(() => {
+    document.title = "Trinity PMS — Projects";
+    (window as any).__ADMIN_SUBTITLE__ =
+      "Browse project records, filter, search, export, and manage project details.";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
   // --- data state ---
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -156,7 +166,7 @@ export default function Projects() {
   const [companiesRef, setCompaniesRef] = useState<CompanyRef[]>([]);
   const [refsErr, setRefsErr] = useState<string | null>(null);
 
-  // ---- Filters (status/stage/state/health) ----
+  // ---- Filters ----
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
   const [stateFilter, setStateFilter] = useState<string>(""); // filter by state NAME
@@ -254,7 +264,6 @@ export default function Projects() {
     setErr(null);
     setLoading(true);
     try {
-      // Accept either [] or {projects: []}
       const { data } = await api.get("/admin/projects");
       const list: any[] = Array.isArray(data)
         ? data
@@ -262,6 +271,7 @@ export default function Projects() {
         ? data.projects
         : [];
       console.log({ data });
+
       const rawMap: Record<string, RawProject> = {};
       const normalized: DisplayRow[] = list.map((p) => {
         rawMap[p.projectId] = p;
@@ -282,7 +292,6 @@ export default function Projects() {
             : undefined,
         });
 
-        // Fallbacks for state/district names if backend returns plain strings
         if (
           !("state.name" in flat) &&
           typeof (flat as any).state === "string" &&
@@ -335,7 +344,6 @@ export default function Projects() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // refresh districts when state filter changes (if refs present)
   useEffect(() => {
     if (statesRef.length === 0) return;
     loadRefs(stateFilter || undefined);
@@ -412,7 +420,6 @@ export default function Projects() {
   const cityOptions = useMemo(() => {
     const s = new Set<string>();
     rows.forEach((r) => {
-      // backend field is cityTown; fall back to plain city if ever used
       const v = (r.cityTown ?? (r as any).city ?? "").toString().trim();
       if (v) s.add(v);
     });
@@ -433,7 +440,6 @@ export default function Projects() {
     return rows.filter((r) => {
       if (statusFilter && String(r.status ?? "").trim() !== statusFilter.trim())
         return false;
-
       if (stageFilter && String(r.stage ?? "").trim() !== stageFilter.trim())
         return false;
 
@@ -594,36 +600,46 @@ export default function Projects() {
     !stateFilter &&
     !healthFilter;
 
+  /* ========================= UI tokens (small like Users) ========================= */
+  const controlBase =
+    "h-8 rounded-full border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:bg-neutral-900";
+  const controlBorder =
+    "border-slate-200 text-slate-700 placeholder:text-slate-400 " +
+    "dark:border-white/10 dark:text-neutral-100";
+  const controlFocus =
+    "focus:ring-[#00379C]/25 focus:border-[#00379C] " +
+    "dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]";
+  const btnOutline =
+    "inline-flex items-center justify-center h-8 rounded-full border border-slate-200 bg-white px-3 " +
+    "text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/25 " +
+    "dark:bg-neutral-900 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-800 dark:focus:ring-[#FCC020]/20";
+  const btnPrimary =
+    "inline-flex items-center justify-center h-8 rounded-full bg-[#00379C] px-3 text-[11px] font-semibold text-white " +
+    "shadow-sm hover:brightness-110 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00379C]/30";
+  const btnAccent =
+    "inline-flex items-center justify-center h-8 rounded-full bg-[#23A192] px-3 text-[11px] font-semibold text-white " +
+    "shadow-sm hover:brightness-110 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#23A192]/30";
+
   /* ========================= Render ========================= */
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
+    <div className="w-full">
+      <div className="w-full">
+        {/* Controls (same 3:2 layout as Users; no surrounding box) */}
         <div className="mb-4">
-          {/* Line 1 + 2: title + subtitle (+ refs error) */}
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold dark:text-white">
-                Projects
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Browse all projects.
-              </p>
-              {refsErr && (
-                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                  {refsErr}
-                </p>
-              )}
+          {refsErr && (
+            <div className="mb-2 text-xs text-amber-700 dark:text-amber-400">
+              {refsErr}
             </div>
-          </div>
+          )}
 
-          {/* Line 3: Filters (left ~60%) + page size / refresh / new project (right ~40%) */}
-          <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            {/* Left: filters */}
-            <div className="flex flex-wrap items-center gap-2 md:basis-3/5">
-              {/* Status */}
+          {/* Row 1: filters (3/5) + pageSize + buttons (2/5) */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            {/* LEFT (3/5): filters */}
+            <div className="flex flex-wrap items-center gap-2 lg:basis-3/5 lg:pr-3">
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by Status"
                 value={statusFilter}
                 onChange={(e) => {
@@ -639,9 +655,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Stage */}
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by Stage"
                 value={stageFilter}
                 onChange={(e) => {
@@ -657,9 +672,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Type */}
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by Type"
                 value={projectTypeFilter}
                 onChange={(e) => {
@@ -675,9 +689,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Structure */}
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by Structure"
                 value={structureTypeFilter}
                 onChange={(e) => {
@@ -693,9 +706,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* City */}
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by City"
                 value={cityFilter}
                 onChange={(e) => {
@@ -711,9 +723,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Contract */}
               <select
-                className="h-9 w-28 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[8.25rem]`}
                 title="Filter by Contract Type"
                 value={contractTypeFilter}
                 onChange={(e) => {
@@ -729,9 +740,8 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Health */}
               <select
-                className="h-9 w-24 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
                 title="Filter by Health"
                 value={healthFilter}
                 onChange={(e) => {
@@ -747,10 +757,9 @@ export default function Projects() {
                 ))}
               </select>
 
-              {/* Clear */}
               <button
                 type="button"
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className={btnOutline}
                 title="Clear all filters"
                 onClick={() => {
                   setStatusFilter("");
@@ -767,12 +776,17 @@ export default function Projects() {
               >
                 Clear
               </button>
+
+              {/* keep unused refs hooks, unchanged */}
+              {stateOptions.length > 0 ? null : null}
+              {districtsRef.length > 0 ? null : null}
+              {companiesRef.length > 0 ? null : null}
             </div>
 
-            {/* Right: page size + refresh + new project */}
-            <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end md:basis-2/5">
+            {/* RIGHT (2/5): page size + actions */}
+            <div className="flex items-center gap-2 lg:basis-2/5 lg:pl-3 lg:justify-end lg:flex-nowrap lg:items-start">
               <select
-                className="h-9 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus}`}
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));
@@ -792,7 +806,7 @@ export default function Projects() {
                   loadRefs(stateFilter || undefined);
                   loadProjects();
                 }}
-                className="h-9 rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className={btnAccent}
                 disabled={loading}
                 title="Reload"
               >
@@ -801,7 +815,7 @@ export default function Projects() {
 
               <button
                 onClick={() => nav("/admin/projects/new")}
-                className="h-9 rounded-full bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className={btnPrimary}
                 title="Create a new project"
               >
                 + New Project
@@ -809,11 +823,11 @@ export default function Projects() {
             </div>
           </div>
 
-          {/* Line 4: Search (left) + Export CSV (right) */}
-          <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="md:basis-3/5">
+          {/* Row 2: search left, export right (same as Users) */}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sm:w-[360px]">
               <input
-                className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-neutral-100 dark:border-neutral-700"
+                className={`${controlBase} ${controlBorder} ${controlFocus} w-full`}
                 placeholder="Search…"
                 value={q}
                 onChange={(e) => {
@@ -823,10 +837,10 @@ export default function Projects() {
               />
             </div>
 
-            <div className="flex items-center justify-start md:justify-end md:basis-2/5">
+            <div>
               <button
                 onClick={exportCsv}
-                className="h-9 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className={btnOutline}
                 title="Export filtered result as CSV"
               >
                 Export CSV
@@ -836,23 +850,23 @@ export default function Projects() {
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border dark:border-neutral-800 overflow-hidden">
+        <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm border border-slate-200 dark:border-white/10 overflow-hidden">
           {err && (
-            <div className="p-4 text-red-700 dark:text-red-400 text-sm border-b dark:border-neutral-800">
+            <div className="p-4 text-rose-700 dark:text-rose-300 text-sm border-b border-slate-200 dark:border-white/10">
               {err}
             </div>
           )}
 
           <div
-            className="overflow-x-auto overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300/60 dark:scrollbar-thumb-neutral-700/60"
+            className="overflow-x-auto overflow-y-auto thin-scrollbar"
             style={{ maxHeight: "65vh" }}
           >
             {loading ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 Fetching projects…
               </div>
             ) : rows.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No projects found.
               </div>
             ) : (
@@ -872,11 +886,11 @@ export default function Projects() {
                         <th
                           key={key}
                           className={[
-                            "bg-slate-50/95 dark:bg-neutral-900/95 backdrop-blur",
-                            "text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide",
-                            "px-3 py-2 border-b border-slate-200 dark:border-neutral-700 whitespace-nowrap select-none",
+                            "bg-slate-50/95 dark:bg-neutral-950/90 backdrop-blur",
+                            "text-[11px] sm:text-xs font-extrabold text-slate-500 dark:text-slate-300 uppercase tracking-wide",
+                            "px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none",
                             sortable
-                              ? "cursor-pointer hover:bg-slate-100/80 dark:hover:bg-neutral-800/80"
+                              ? "cursor-pointer hover:bg-slate-100/80 dark:hover:bg-neutral-900/60"
                               : "",
                             isFirst ? "rounded-tl-2xl" : "",
                             isLast ? "rounded-tr-2xl" : "",
@@ -914,14 +928,15 @@ export default function Projects() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
                   {paged.map((row, idx) => (
                     <tr
                       key={row._id ?? idx}
                       className={
                         (idx % 2
-                          ? "bg-white dark:bg-neutral-900"
-                          : "bg-gray-50/40 dark:bg-neutral-900/60") +
+                          ? "bg-white dark:bg-neutral-950"
+                          : "bg-slate-50/40 dark:bg-neutral-950/60") +
                         " text-xs sm:text-sm"
                       }
                     >
@@ -930,16 +945,15 @@ export default function Projects() {
                           return (
                             <td
                               key={`${row._id}-action`}
-                              className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap align-middle"
+                              className="px-3 py-1.5 border-b border-slate-100 dark:border-white/10 whitespace-nowrap align-middle"
                             >
                               <div className="flex items-center gap-2">
-                                {/* View (eye) – emerald line icon */}
                                 <button
                                   type="button"
                                   aria-label="View project"
                                   title="View"
                                   onClick={() => onView(row._id)}
-                                  className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
                                 >
                                   <svg
                                     viewBox="0 0 24 24"
@@ -955,13 +969,12 @@ export default function Projects() {
                                   </svg>
                                 </button>
 
-                                {/* Edit (pencil) – red line icon (same style as Users/Companies) */}
                                 <button
                                   type="button"
                                   aria-label="Edit project"
                                   title="Edit"
                                   onClick={() => onEdit(row._id)}
-                                  className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15"
                                 >
                                   <svg
                                     xmlns="http://www.w3.org/2000/svg"
@@ -986,7 +999,7 @@ export default function Projects() {
                         return (
                           <td
                             key={`${row._id}-${c}`}
-                            className="px-3 py-1.5 border-b border-slate-100 dark:border-neutral-800 whitespace-nowrap align-middle max-w-[12rem] overflow-hidden text-ellipsis"
+                            className="px-3 py-1.5 border-b border-slate-100 dark:border-white/10 whitespace-nowrap align-middle max-w-[12rem] overflow-hidden text-ellipsis text-slate-800 dark:text-neutral-100"
                             title={formatCell(value)}
                           >
                             {formatCell(value)}
@@ -1001,14 +1014,15 @@ export default function Projects() {
           </div>
 
           {/* Pagination footer */}
-          <div className="flex items-center justify-between px-3 py-2 text-sm border-t dark:border-neutral-800">
-            <div className="text-gray-600 dark:text-gray-300">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-3 py-3 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{paged.length}</b> of <b>{total}</b> records
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className={btnOutline}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -1016,7 +1030,7 @@ export default function Projects() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className={btnOutline}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -1024,7 +1038,7 @@ export default function Projects() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className={btnOutline}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -1032,7 +1046,7 @@ export default function Projects() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded border dark:border-neutral-800 disabled:opacity-50"
+                className={btnOutline}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -1052,16 +1066,15 @@ export default function Projects() {
               aria-hidden="true"
             />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-6xl rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 shadow-xl overflow-hidden">
-                {/* Header with title, code & stickers */}
-                <div className="flex items-center justify-between px-4 py-3 border-b dark:border-neutral-800">
+              <div className="w-full max-w-6xl rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-lg font-semibold dark:text-white truncate">
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white truncate">
                         {modalFlat.title || "Untitled Project"}
                       </h3>
                       {modalFlat.code && (
-                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 border dark:border-neutral-700">
+                        <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10">
                           {modalFlat.code}
                         </span>
                       )}
@@ -1069,28 +1082,27 @@ export default function Projects() {
                       <Badge kind="health" value={modalFlat.health} />
                     </div>
                   </div>
-                  <button
-                    className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    onClick={closeModal}
-                  >
+                  <button className={btnOutline} onClick={closeModal}>
                     Close
                   </button>
                 </div>
 
-                {/* Body: 4 columns */}
                 <div className="p-4 text-sm">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     {VIEW_COLS.map((section) => (
                       <div
                         key={section.title}
-                        className="bg-gray-50/60 dark:bg-neutral-900 rounded-xl border dark:border-neutral-800 p-4"
+                        className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4 shadow-sm"
                       >
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-3">
-                          {section.title}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="inline-block h-4 w-1 rounded-full bg-[#FCC020]" />
+                          <div className="text-xs font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+                            {section.title}
+                          </div>
                         </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {section.rows.map(({ key, label, span }) => {
-                            // fallbacks for state/district if API returned plain strings
                             let raw: any = (modalFlat as any)[key];
                             if (raw == null) {
                               if (
@@ -1119,11 +1131,8 @@ export default function Projects() {
                   </div>
                 </div>
 
-                <div className="px-4 py-3 border-t dark:border-neutral-800 text-right">
-                  <button
-                    className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={closeModal}
-                  >
+                <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 text-right">
+                  <button className={btnPrimary} onClick={closeModal}>
                     Done
                   </button>
                 </div>
@@ -1132,6 +1141,37 @@ export default function Projects() {
           </div>
         )}
         {/* -------- /Modal -------- */}
+
+        <style>{`
+  .thin-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+  .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.55);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+  .thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.55) transparent; }
+
+/* hide scrollbar arrow buttons (Chromium/Edge/Chrome on Windows) */
+.thin-scrollbar::-webkit-scrollbar-button,
+.thin-scrollbar::-webkit-scrollbar-button:single-button,
+.thin-scrollbar::-webkit-scrollbar-button:horizontal:decrement,
+.thin-scrollbar::-webkit-scrollbar-button:horizontal:increment,
+.thin-scrollbar::-webkit-scrollbar-button:vertical:decrement,
+.thin-scrollbar::-webkit-scrollbar-button:vertical:increment {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}
+
+.thin-scrollbar::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+`}</style>
       </div>
     </div>
   );
@@ -1141,10 +1181,10 @@ export default function Projects() {
 function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </div>
-      <div className="mt-0.5 font-medium dark:text-white break-words">
+      <div className="mt-0.5 font-medium text-slate-900 dark:text-white break-words">
         {value || "—"}
       </div>
     </div>
@@ -1156,35 +1196,37 @@ function Badge({ kind, value }: { kind: "status" | "health"; value?: string }) {
   if (!v) return null;
 
   let cls =
-    "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700";
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900 dark:text-slate-200 dark:border-white/10";
   if (kind === "status") {
     const map: Record<string, string> = {
       Draft:
-        "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+        "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900 dark:text-slate-200 dark:border-white/10",
       Active:
-        "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+        "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800/40",
       OnHold:
-        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+        "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800/40",
       Completed:
-        "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+        "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800/40",
       Archived:
-        "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
+        "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900 dark:text-slate-200 dark:border-white/10",
     };
     cls = map[v] || cls;
   } else if (kind === "health") {
     const map: Record<string, string> = {
       Green:
-        "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+        "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800/40",
       Amber:
-        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-      Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+        "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800/40",
+      Red: "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800/40",
       Unknown:
-        "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+        "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900 dark:text-slate-200 dark:border-white/10",
     };
     cls = map[v] || cls;
   }
 
   return (
-    <span className={`text-xs px-2 py-0.5 rounded border ${cls}`}>{v}</span>
+    <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>
+      {v}
+    </span>
   );
 }

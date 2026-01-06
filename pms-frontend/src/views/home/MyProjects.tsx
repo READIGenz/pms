@@ -57,6 +57,24 @@ const normalizeRole = (raw?: string) => {
   }
 };
 
+const gotoModules = (
+  navigate: ReturnType<typeof useNavigate>,
+  role: string,
+  proj: Project
+) => {
+  navigate(`/home/projects/${proj.projectId}/modules`, {
+    state: {
+      role: normalizeRole(role),
+      project: {
+        projectId: proj.projectId,
+        code: proj.code,
+        title: proj.title,
+      },
+    },
+    replace: false,
+  });
+};
+
 // --- Role → WIR path resolver ---
 const wirPathForRole = (role: string, projectId: string) => {
   switch (normalizeRole(role)) {
@@ -162,30 +180,31 @@ function Badge({
   if (!v) return null;
 
   let cls =
-    "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700";
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900/50 dark:text-neutral-200 dark:border-white/10";
+
   if (kind === "status") {
     const map: Record<string, string> = {
       Draft:
-        "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+        "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900/50 dark:text-neutral-200 dark:border-white/10",
       Active:
-        "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+        "bg-[#23A192]/10 text-[#0f766e] border-[#23A192]/25 dark:bg-[#23A192]/15 dark:text-[#7de0d3] dark:border-[#23A192]/30",
       OnHold:
-        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
+        "bg-[#FCC020]/15 text-[#8a5b00] border-[#FCC020]/35 dark:bg-[#FCC020]/15 dark:text-[#ffd88a] dark:border-[#FCC020]/30",
       Completed:
-        "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+        "bg-[#00379C]/10 text-[#00379C] border-[#00379C]/25 dark:bg-[#00379C]/15 dark:text-[#9db7ff] dark:border-[#00379C]/30",
       Archived:
-        "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800",
+        "bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-900/50 dark:text-neutral-300 dark:border-white/10",
     };
     cls = map[v] || cls;
   } else {
     const map: Record<string, string> = {
       Green:
-        "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
+        "bg-[#23A192]/10 text-[#0f766e] border-[#23A192]/25 dark:bg-[#23A192]/15 dark:text-[#7de0d3] dark:border-[#23A192]/30",
       Amber:
-        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-      Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
+        "bg-[#FCC020]/15 text-[#8a5b00] border-[#FCC020]/35 dark:bg-[#FCC020]/15 dark:text-[#ffd88a] dark:border-[#FCC020]/30",
+      Red: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-800/40",
       Unknown:
-        "bg-gray-100 text-gray-800 border-gray-200 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700",
+        "bg-slate-50 text-slate-700 border-slate-200 dark:bg-neutral-900/50 dark:text-neutral-200 dark:border-white/10",
     };
     cls = map[v] || cls;
   }
@@ -205,9 +224,9 @@ type QuickFilter =
   | "completed"
   | "onhold";
 
-type GroupBy = "none" | "stage" | "city" | "pm";
+type GroupBy = "none" | "stage" | "city" | "status" | "health";
 
-// Filters inside modal (UPDATED to your requested options)
+// Filters inside modal
 type StatusFilter = "all" | "active" | "completed" | "onhold";
 type HealthFilter = "all" | "green" | "amber" | "red";
 type ScheduleFilter = "any" | "overdue" | "due7" | "future";
@@ -224,6 +243,7 @@ const FIXED_STAGE_OPTIONS: { id: CanonicalStage; label: string }[] = [
 
 export default function MyProjects() {
   const { user, claims } = useAuth();
+
   const profileName: string = user?.firstName
     ? `${user.firstName}${user?.lastName ? ` ${user.lastName}` : ""}`
     : claims?.firstName
@@ -270,7 +290,7 @@ export default function MyProjects() {
 
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("none");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none"); // visual label
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
 
   const [showFilter, setShowFilter] = useState(false);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
@@ -279,12 +299,12 @@ export default function MyProjects() {
   const [unitsPref, setUnitsPref] = useState<"SI" | "Imperial">("SI");
   const [languagePref, setLanguagePref] = useState("English");
 
-  // modal filters (UPDATED defaults)
+  // modal filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
   const [scheduleFilter, setScheduleFilter] = useState<ScheduleFilter>("any");
   const [openFormsFilter, setOpenFormsFilter] =
-    useState<OpenFormsFilter>("any"); // placeholder
+    useState<OpenFormsFilter>("any");
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [selectedPMs, setSelectedPMs] = useState<string[]>([]);
@@ -319,7 +339,6 @@ export default function MyProjects() {
       setLoading(true);
       setErr(null);
       try {
-        // 1) User w/ memberships (for client projects)
         const { data: ures } = await api.get(`/admin/users/${userId}`, {
           params: { includeMemberships: "1" },
         });
@@ -328,7 +347,6 @@ export default function MyProjects() {
           ? u.userRoleMemberships
           : [];
 
-        // 2) All projects (for enrichment + service-provider detection)
         const { data: pres } = await api.get("/admin/projects");
         const projectList: any[] = Array.isArray(pres)
           ? pres
@@ -336,7 +354,6 @@ export default function MyProjects() {
         const byId = new Map<string, any>();
         projectList.forEach((p) => p?.projectId && byId.set(p.projectId, p));
 
-        // Client projects straight from memberships
         const clientProjects: Project[] = memberships
           .filter(
             (m) => m.scopeType === "Project" && m.role === "Client" && m.project
@@ -373,7 +390,6 @@ export default function MyProjects() {
             };
           });
 
-        // Service-provider: include any projects where THIS user appears in assignments
         const svcProjects: Project[] = [];
         const CONCURRENCY = 8;
         const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -447,7 +463,6 @@ export default function MyProjects() {
         const chosen = normalizeRole(role);
         const pool = chosen === "Client" ? clientProjects : svcProjects;
 
-        // De-dupe with enrichment
         const map = new Map<string, Project>();
         pool.forEach((p) => {
           if (!p?.projectId) return;
@@ -502,7 +517,6 @@ export default function MyProjects() {
     };
   }, [userId, role]);
 
-  // City, PM options for modal (kept as-is)
   const cityOptions = useMemo(
     () =>
       Array.from(
@@ -530,11 +544,9 @@ export default function MyProjects() {
     [all]
   );
 
-  // ---- Search + quick filters + modal filters + sort ----
   const filtered = useMemo(() => {
     let list = [...all];
 
-    // Quick filter (health/status)
     if (quickFilter !== "none") {
       list = list.filter((p) => {
         const s = canonicalStatus(p.status);
@@ -556,7 +568,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: Status (UPDATED)
     if (statusFilter !== "all") {
       list = list.filter((p) => {
         const s = canonicalStatus(p.status);
@@ -567,7 +578,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: Health (UPDATED)
     if (healthFilter !== "all") {
       list = list.filter((p) => {
         const h = canonicalHealth(p.health);
@@ -578,7 +588,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: Stage (UPDATED fixed options; still multi-select)
     if (selectedStages.length) {
       const set = new Set(selectedStages);
       list = list.filter((p) => {
@@ -587,7 +596,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: City
     if (selectedCities.length) {
       const set = new Set(selectedCities);
       list = list.filter((p) => {
@@ -596,7 +604,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: Project Manager
     if (selectedPMs.length) {
       const set = new Set(selectedPMs);
       list = list.filter((p) =>
@@ -604,7 +611,6 @@ export default function MyProjects() {
       );
     }
 
-    // Modal: Schedule (based on plannedCompletionDate) — keep as-is
     if (scheduleFilter !== "any") {
       const now = new Date();
       list = list.filter((p) => {
@@ -621,10 +627,6 @@ export default function MyProjects() {
       });
     }
 
-    // Modal: OpenFormsFilter – placeholder (no underlying data yet)
-    // (kept for UI parity)
-
-    // search
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((p) => {
@@ -642,7 +644,6 @@ export default function MyProjects() {
       });
     }
 
-    // sort by title
     list.sort((a, b) => {
       const aa = (a.title || "").toLowerCase();
       const bb = (b.title || "").toLowerCase();
@@ -683,11 +684,8 @@ export default function MyProjects() {
     arr: string[],
     setArr: (v: string[]) => void
   ) => {
-    if (arr.includes(value)) {
-      setArr(arr.filter((v) => v !== value));
-    } else {
-      setArr([...arr, value]);
-    }
+    if (arr.includes(value)) setArr(arr.filter((v) => v !== value));
+    else setArr([...arr, value]);
   };
 
   const handleSignOut = () => {
@@ -700,24 +698,33 @@ export default function MyProjects() {
     window.location.assign("/login");
   };
 
+  const pillBase =
+    "px-3 py-1 rounded-full border text-xs sm:text-sm transition-colors";
+  const pillOn =
+    "bg-[#00379C] text-white border-[#00379C] shadow-sm hover:brightness-110";
+  const pillOff =
+    "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900";
+
   return (
-    <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 p-4 sm:p-5 lg:p-6">
+    <section className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/10 p-4 sm:p-5 lg:p-6">
       {/* Header + back + profile */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+          <p className="text-xs text-slate-500 dark:text-neutral-400 mb-1">
             {role || "User"}
           </p>
-          <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-slate-900 dark:text-white">
             My Projects
           </h1>
+          <div className="mt-3 h-1 w-14 rounded-full bg-[#FCC020]" />
         </div>
+
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/home/tiles")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+            className="inline-flex items-center gap-1.5 h-8 rounded-full border border-slate-200 bg-white px-4 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
                        hover:bg-slate-50 hover:border-slate-300
-                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900"
             type="button"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
@@ -732,7 +739,9 @@ export default function MyProjects() {
           <button
             type="button"
             onClick={() => setShowProfilePanel(true)}
-            className="inline-flex items-center justify-center h-9 w-9 rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+            className="inline-flex items-center justify-center h-10 w-10 rounded-full bg-[#00379C] text-white shadow-sm hover:brightness-110
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                       dark:focus-visible:ring-[#FCC020]/35 dark:focus-visible:ring-offset-neutral-950"
             title="Profile"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -757,7 +766,7 @@ export default function MyProjects() {
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="w-full sm:max-w-md">
           <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
               <svg
                 width="16"
                 height="16"
@@ -774,10 +783,11 @@ export default function MyProjects() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search project, code, city, PM…"
-              className="w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-gray-900
+              className="w-full h-10 rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900
                          outline-none transition
-                         focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-300
-                         dark:bg-neutral-900 dark:border-neutral-800 dark:text-white"
+                         focus:ring-2 focus:ring-[#00379C]/20 focus:border-[#00379C]/30
+                         dark:bg-neutral-950 dark:border-white/10 dark:text-white
+                         dark:focus:ring-[#FCC020]/20 dark:focus:border-[#FCC020]/30"
             />
           </div>
         </div>
@@ -786,12 +796,11 @@ export default function MyProjects() {
           <button
             type="button"
             onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
-               hover:bg-slate-50 hover:border-slate-300
-               dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            className="inline-flex items-center gap-2 h-10 rounded-full border border-slate-200 bg-white px-4 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+                       hover:bg-slate-50 hover:border-slate-300
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900"
             title="Sort"
           >
-            {/* sort icon */}
             <svg
               width="16"
               height="16"
@@ -804,19 +813,17 @@ export default function MyProjects() {
                 className="fill-current"
               />
             </svg>
-            <span className="hidden xs:inline">Sort</span>
-            <span className="xs:hidden">Sort</span>
+            <span>Sort</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowFilter(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
-               hover:bg-slate-50 hover:border-slate-300
-               dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            className="inline-flex items-center gap-2 h-10 rounded-full border border-slate-200 bg-white px-4 text-xs sm:text-sm font-medium text-slate-700 shadow-sm
+                       hover:bg-slate-50 hover:border-slate-300
+                       dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900"
             title="Filter"
           >
-            {/* filter icon */}
             <svg
               width="16"
               height="16"
@@ -829,80 +836,79 @@ export default function MyProjects() {
                 className="fill-current"
               />
             </svg>
-            <span className="hidden xs:inline">Filter</span>
-            <span className="xs:hidden">Filter</span>
+            <span>Filter</span>
           </button>
         </div>
       </div>
 
       {/* Group row */}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Group</span>
+        <span className="text-slate-500 dark:text-neutral-400">Group</span>
         {[
           { id: "none", label: "None" },
           { id: "stage", label: "Stage" },
           { id: "city", label: "City" },
-          { id: "pm", label: "PM" },
+          { id: "status", label: "Status" },
+          { id: "health", label: "Health" },
         ].map((g) => (
           <button
             key={g.id}
             type="button"
             onClick={() => setGroupBy(g.id as GroupBy)}
-            className={
-              "px-3 py-1 rounded-full border text-xs sm:text-sm " +
-              (groupBy === g.id
-                ? "bg-emerald-600 text-white border-emerald-600"
-                : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800")
-            }
+            className={`${pillBase} ${groupBy === g.id ? pillOn : pillOff}`}
           >
             {g.label}
           </button>
         ))}
       </div>
 
-      {/* Quick filters row */}
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Quick</span>
-        {[
-          { id: "atrisk", label: "At Risk" },
-          { id: "delayed", label: "Delayed" },
-          { id: "ongoing", label: "Ongoing" },
-          { id: "completed", label: "Completed" },
-          { id: "onhold", label: "On Hold" },
-        ].map((q) => (
-          <button
-            key={q.id}
-            type="button"
-            onClick={() =>
-              setQuickFilter((prev) =>
-                prev === q.id ? "none" : (q.id as QuickFilter)
-              )
-            }
-            className={
-              "px-3 py-1 rounded-full border text-xs sm:text-sm " +
-              (quickFilter === q.id
-                ? "bg-emerald-600 text-white border-emerald-600"
-                : "bg-white text-gray-700 border-slate-200 hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800")
-            }
-          >
-            {q.label}
-          </button>
-        ))}
+      {/* Quick filters row (boxed) */}
+      <div className="mt-3 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/70 dark:bg-neutral-900/25 p-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+          <span className="text-slate-500 dark:text-neutral-400">
+            Quick tabs
+          </span>
+
+          {[
+            { id: "atrisk", label: "At Risk" },
+            { id: "delayed", label: "Delayed" },
+            { id: "ongoing", label: "Ongoing" },
+            { id: "completed", label: "Completed" },
+            { id: "onhold", label: "On Hold" },
+          ].map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() =>
+                setQuickFilter((prev) =>
+                  prev === q.id ? "none" : (q.id as QuickFilter)
+                )
+              }
+              className={`${pillBase} ${
+                quickFilter === q.id ? pillOn : pillOff
+              }`}
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* States */}
       {loading && (
-        <div className="mt-4 text-sm text-gray-700 dark:text-gray-300">
+        <div className="mt-4 text-sm text-slate-700 dark:text-neutral-300">
           Loading your projects…
         </div>
       )}
 
       {err && !loading && (
-        <div className="mt-4 text-sm text-red-700 dark:text-red-400">{err}</div>
+        <div className="mt-4 text-sm text-rose-700 dark:text-rose-300">
+          {err}
+        </div>
       )}
 
       {!loading && !err && filtered.length === 0 && (
-        <div className="mt-6 text-sm text-gray-600 dark:text-gray-400">
+        <div className="mt-6 text-sm text-slate-600 dark:text-neutral-400">
           No projects yet. If you believe this is incorrect, contact your
           administrator.
         </div>
@@ -921,28 +927,29 @@ export default function MyProjects() {
             <button
               key={p.projectId}
               type="button"
-              onClick={() => gotoWir(navigate, role, p)}
-              className="w-full text-left rounded-3xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4 sm:px-5 sm:py-5 shadow-sm
+              onClick={() => gotoModules(navigate, role, p)}
+              className="group w-full text-left rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-neutral-950 px-4 py-4 sm:px-5 sm:py-5 shadow-sm
                          hover:shadow-md hover:-translate-y-0.5 transition
-                         focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/25 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                         dark:focus-visible:ring-[#FCC020]/25 dark:focus-visible:ring-offset-neutral-950"
             >
-              {/* Top row: title + status badge */}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate">
+                  <h2 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white truncate">
                     {p.title}
                   </h2>
-                  <p className="mt-0.5 text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">
+                  <p className="mt-0.5 text-xs sm:text-sm text-slate-600 dark:text-neutral-400 truncate">
                     {p.code ? `${p.code} • ` : ""}
                     {p.projectType || "—"}
                     {cityState ? ` • ${cityState}` : ""}
                   </p>
                   {p.projectManagerName && (
-                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-neutral-400 truncate">
                       PM: {p.projectManagerName}
                     </p>
                   )}
                 </div>
+
                 <div className="flex flex-col items-end gap-1">
                   {statusLabel && <Badge kind="status" value={statusLabel} />}
                   {healthLabel !== "Unknown" && (
@@ -951,24 +958,24 @@ export default function MyProjects() {
                 </div>
               </div>
 
-              {/* Chips row */}
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700 dark:bg-neutral-900/50 dark:border-white/10 dark:text-neutral-200">
                   Stage: {p.stage || "—"}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700 dark:bg-neutral-900/50 dark:border-white/10 dark:text-neutral-200">
                   Next: {fmtDate(p.plannedCompletionDate) || "—"}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700 dark:bg-neutral-900/50 dark:border-white/10 dark:text-neutral-200">
                   City: {cityState || "—"}
                 </span>
               </div>
 
-              {/* Open bar */}
+              {/* Open bar (no gradient) */}
               <div
-                className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
-                              group-hover:border-emerald-500 group-hover:text-emerald-700
-                              dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
+                className="mt-4 h-10 rounded-full border border-slate-200 bg-white px-4 grid place-items-center text-sm font-medium text-slate-800 shadow-sm
+                           group-hover:border-[#00379C]/35 group-hover:text-[#00379C]
+                           dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100
+                           dark:group-hover:border-[#FCC020]/35 dark:group-hover:text-[#FCC020]"
               >
                 Open
               </div>
@@ -980,30 +987,26 @@ export default function MyProjects() {
       {/* Filter bottom sheet */}
       {showFilter && (
         <div className="fixed inset-0 z-40">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40"
             onClick={() => setShowFilter(false)}
             aria-hidden="true"
           />
 
-          {/* Sheet */}
           <div className="absolute inset-0 flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-md sm:max-w-lg bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xl max-h-[85vh] overflow-hidden">
-              {/* drag handle */}
+            <div className="w-full max-w-md sm:max-w-lg bg-white dark:bg-neutral-950 rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl max-h-[85vh] overflow-hidden">
               <div className="pt-3 pb-1 flex justify-center">
                 <div className="h-1 w-16 rounded-full bg-slate-300/80 dark:bg-neutral-700" />
               </div>
 
-              {/* content */}
               <div className="px-4 sm:px-5 pb-4 sm:pb-5 overflow-y-auto max-h-[75vh] space-y-5">
                 <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white">
                   Filters
                 </h2>
 
-                {/* Status (UPDATED) */}
+                {/* Status */}
                 <div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                     Status
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1027,12 +1030,11 @@ export default function MyProjects() {
                                 : (opt.id as StatusFilter)
                             )
                           }
-                          className={
-                            "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                            (active
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                          }
+                          className={`${pillBase} ${
+                            active
+                              ? pillOn
+                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-900/50 dark:border-white/10 dark:text-neutral-100"
+                          }`}
                         >
                           {opt.label}
                         </button>
@@ -1041,21 +1043,18 @@ export default function MyProjects() {
                   </div>
                 </div>
 
-                {/* Stage (UPDATED fixed list) */}
+                {/* Stage */}
                 <div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                     Stage
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => setSelectedStages([])}
-                      className={
-                        "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                        (selectedStages.length === 0
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                          : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                      }
+                      className={`${pillBase} ${
+                        selectedStages.length === 0 ? pillOn : pillOff
+                      }`}
                     >
                       All
                     </button>
@@ -1073,12 +1072,7 @@ export default function MyProjects() {
                               setSelectedStages
                             )
                           }
-                          className={
-                            "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                            (active
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                          }
+                          className={`${pillBase} ${active ? pillOn : pillOff}`}
                         >
                           {s.label}
                         </button>
@@ -1087,10 +1081,10 @@ export default function MyProjects() {
                   </div>
                 </div>
 
-                {/* City (kept as-is) */}
+                {/* City */}
                 {cityOptions.length > 0 && (
                   <div>
-                    <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                    <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                       City
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1107,12 +1101,9 @@ export default function MyProjects() {
                                 setSelectedCities
                               )
                             }
-                            className={
-                              "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                              (active
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                                : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                            }
+                            className={`${pillBase} ${
+                              active ? pillOn : pillOff
+                            }`}
                           >
                             {c}
                           </button>
@@ -1122,10 +1113,10 @@ export default function MyProjects() {
                   </div>
                 )}
 
-                {/* Project Manager (kept as-is) */}
+                {/* PM */}
                 {pmOptions.length > 0 && (
                   <div>
-                    <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                    <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                       Project Manager
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1138,12 +1129,9 @@ export default function MyProjects() {
                             onClick={() =>
                               toggleFromArray(pm, selectedPMs, setSelectedPMs)
                             }
-                            className={
-                              "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                              (active
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                                : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                            }
+                            className={`${pillBase} ${
+                              active ? pillOn : pillOff
+                            }`}
                           >
                             {pm}
                           </button>
@@ -1153,9 +1141,9 @@ export default function MyProjects() {
                   </div>
                 )}
 
-                {/* Health (UPDATED) */}
+                {/* Health */}
                 <div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                     Health
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1179,12 +1167,7 @@ export default function MyProjects() {
                                 : (opt.id as HealthFilter)
                             )
                           }
-                          className={
-                            "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                            (active
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                          }
+                          className={`${pillBase} ${active ? pillOn : pillOff}`}
                         >
                           {opt.label}
                         </button>
@@ -1193,9 +1176,9 @@ export default function MyProjects() {
                   </div>
                 </div>
 
-                {/* Schedule (keep as-is) */}
+                {/* Schedule */}
                 <div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                     Schedule
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1213,12 +1196,7 @@ export default function MyProjects() {
                           onClick={() =>
                             setScheduleFilter(opt.id as ScheduleFilter)
                           }
-                          className={
-                            "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                            (active
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                          }
+                          className={`${pillBase} ${active ? pillOn : pillOff}`}
                         >
                           {opt.label}
                         </button>
@@ -1227,9 +1205,9 @@ export default function MyProjects() {
                   </div>
                 </div>
 
-                {/* Open Forms – keep as-is */}
+                {/* Open Forms */}
                 <div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-gray-100 mb-2">
+                  <div className="text-xs sm:text-sm font-medium text-slate-800 dark:text-neutral-100 mb-2">
                     Open Forms
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1246,12 +1224,7 @@ export default function MyProjects() {
                           onClick={() =>
                             setOpenFormsFilter(opt.id as OpenFormsFilter)
                           }
-                          className={
-                            "px-3 py-1.5 rounded-full border text-xs sm:text-sm transition-colors " +
-                            (active
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                              : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-100")
-                          }
+                          className={`${pillBase} ${active ? pillOn : pillOff}`}
                         >
                           {opt.label}
                         </button>
@@ -1262,19 +1235,21 @@ export default function MyProjects() {
               </div>
 
               {/* Footer buttons */}
-              <div className="border-t border-slate-200/80 dark:border-neutral-800 px-4 sm:px-5 py-3 flex gap-3 bg-slate-50/60 dark:bg-neutral-900/60">
+              <div className="border-t border-slate-200/80 dark:border-white/10 px-4 sm:px-5 py-3 flex gap-3 bg-slate-50/60 dark:bg-neutral-950/60">
                 <button
                   type="button"
                   onClick={handleClearFilters}
-                  className="flex-1 rounded-full border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-100
-                             dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100 dark:hover:bg-neutral-800"
+                  className="flex-1 h-10 rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-800 hover:bg-slate-100
+                             dark:bg-neutral-950 dark:border-white/10 dark:text-neutral-100 dark:hover:bg-neutral-900"
                 >
                   Clear
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowFilter(false)}
-                  className="flex-1 rounded-full bg-emerald-600 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-700"
+                  className="flex-1 h-10 rounded-full bg-[#00379C] text-sm font-medium text-white shadow-sm hover:brightness-110
+                             focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00379C]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                             dark:focus-visible:ring-[#FCC020]/35 dark:focus-visible:ring-offset-neutral-950"
                 >
                   Apply
                 </button>
@@ -1283,6 +1258,7 @@ export default function MyProjects() {
           </div>
         </div>
       )}
+
       {/* Profile side panel */}
       {showProfilePanel && (
         <div className="fixed inset-0 z-40 flex justify-end">
@@ -1294,12 +1270,12 @@ export default function MyProjects() {
           />
 
           {/* right side drawer */}
-          <aside className="relative h-full w-full max-w-sm bg-white dark:bg-neutral-950 shadow-xl border-l border-slate-200/80 dark:border-neutral-800 flex flex-col">
+          <aside className="relative h-full w-full max-w-sm bg-white dark:bg-neutral-950 shadow-xl border-l border-slate-200/80 dark:border-white/10 flex flex-col">
             {/* header / handle */}
-            <div className="px-4 pt-3 pb-2 border-b border-slate-200/70 dark:border-neutral-800 flex items-center justify-between">
+            <div className="px-4 pt-3 pb-2 border-b border-slate-200/70 dark:border-white/10 flex items-center justify-between">
               {/* user summary */}
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-emerald-500 via-emerald-400 to-lime-300 text-white grid place-items-center text-sm font-semibold">
+                <div className="h-9 w-9 rounded-full bg-[#00379C] text-white grid place-items-center text-sm font-semibold ring-2 ring-[#FCC020]/30">
                   {profileInitials}
                 </div>
                 <div className="leading-tight">
@@ -1312,14 +1288,14 @@ export default function MyProjects() {
                     </div>
                   )}
                   {role && (
-                    <div className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+                    <div className="mt-0.5 text-[11px] text-[#23A192]">
                       {role}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* close button stays same */}
+              {/* close button */}
               <button
                 type="button"
                 onClick={() => setShowProfilePanel(false)}
@@ -1353,8 +1329,7 @@ export default function MyProjects() {
                     type="button"
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      {/* user icon */}
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#00379C]/10 text-[#00379C] dark:bg-white/10 dark:text-[#FCC020]">
                       <svg
                         width="18"
                         height="18"
@@ -1379,8 +1354,7 @@ export default function MyProjects() {
                     type="button"
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      {/* bell icon */}
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#00379C]/10 text-[#00379C] dark:bg-white/10 dark:text-[#FCC020]">
                       <svg
                         width="18"
                         height="18"
@@ -1395,7 +1369,6 @@ export default function MyProjects() {
                         <span className="font-medium text-gray-900 dark:text-white">
                           Notifications
                         </span>
-                        {/* red count pill */}
                         <span className="inline-flex items-center justify-center rounded-full bg-rose-500 text-white text-[11px] px-1.5">
                           5
                         </span>
@@ -1411,8 +1384,7 @@ export default function MyProjects() {
                     type="button"
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      {/* card icon */}
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#00379C]/10 text-[#00379C] dark:bg-white/10 dark:text-[#FCC020]">
                       <svg
                         width="18"
                         height="18"
@@ -1437,8 +1409,7 @@ export default function MyProjects() {
                     type="button"
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      {/* brush icon */}
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#00379C]/10 text-[#00379C] dark:bg-white/10 dark:text-[#FCC020]">
                       <svg
                         width="18"
                         height="18"
@@ -1473,7 +1444,6 @@ export default function MyProjects() {
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-neutral-800 dark:text-neutral-100">
-                      {/* chat icon */}
                       <svg
                         width="18"
                         height="18"
@@ -1499,7 +1469,6 @@ export default function MyProjects() {
                     className="w-full flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-neutral-900"
                   >
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-neutral-800 dark:text-neutral-100">
-                      {/* help icon */}
                       <svg
                         width="18"
                         height="18"
@@ -1526,8 +1495,8 @@ export default function MyProjects() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
                   Preferences
                 </div>
+
                 <div className="space-y-3">
-                  {/* Dark mode toggle (local only) */}
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-medium text-gray-900 dark:text-white">
@@ -1565,7 +1534,6 @@ export default function MyProjects() {
                     </button>
                   </div>
 
-                  {/* Language */}
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-medium text-gray-900 dark:text-white">
@@ -1578,14 +1546,13 @@ export default function MyProjects() {
                     <select
                       value={languagePref}
                       onChange={(e) => setLanguagePref(e.target.value)}
-                      className="text-xs rounded-full border border-slate-200 bg-white px-3 py-1 dark:bg-neutral-900 dark:border-neutral-700 dark:text-white"
+                      className="text-xs rounded-full border border-slate-200 bg-white px-3 py-1 dark:bg-neutral-900 dark:border-white/10 dark:text-white"
                     >
                       <option>English</option>
                       <option>Hindi</option>
                     </select>
                   </div>
 
-                  {/* Units */}
                   <div>
                     <div className="font-medium text-gray-900 dark:text-white mb-1">
                       Units
@@ -1593,13 +1560,13 @@ export default function MyProjects() {
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                       SI / Imperial
                     </div>
-                    <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-0.5 dark:bg-neutral-900 dark:border-neutral-700">
+                    <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-0.5 dark:bg-neutral-900 dark:border-white/10">
                       <button
                         type="button"
                         onClick={() => setUnitsPref("SI")}
                         className={`px-3 py-1 text-xs rounded-full ${
                           unitsPref === "SI"
-                            ? "bg-white dark:bg-emerald-600 text-emerald-700 dark:text-white shadow-sm"
+                            ? "bg-white dark:bg-neutral-900 text-[#00379C] dark:text-white shadow-sm"
                             : "text-gray-600 dark:text-gray-400"
                         }`}
                       >
@@ -1610,7 +1577,7 @@ export default function MyProjects() {
                         onClick={() => setUnitsPref("Imperial")}
                         className={`px-3 py-1 text-xs rounded-full ${
                           unitsPref === "Imperial"
-                            ? "bg-white dark:bg-emerald-600 text-emerald-700 dark:text-white shadow-sm"
+                            ? "bg-white dark:bg-neutral-900 text-[#00379C] dark:text-white shadow-sm"
                             : "text-gray-600 dark:text-gray-400"
                         }`}
                       >
@@ -1693,7 +1660,7 @@ export default function MyProjects() {
   );
 }
 
-/* --- Small KPI Card (2x2 tiles) --- */
+/* --- Small KPI Card --- */
 function KPI({
   label,
   value,
@@ -1703,21 +1670,23 @@ function KPI({
   value: number | string;
   tone?: "base" | "info" | "warn" | "alert";
 }) {
-  const toneClasses =
+  const toneCls =
     tone === "info"
-      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+      ? "bg-[#23A192]/10 border-[#23A192]/25 dark:bg-[#23A192]/15 dark:border-[#23A192]/25"
       : tone === "warn"
-      ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+      ? "bg-[#FCC020]/15 border-[#FCC020]/35 dark:bg-[#FCC020]/15 dark:border-[#FCC020]/25"
       : tone === "alert"
-      ? "bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
-      : "bg-gray-50 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200";
+      ? "bg-rose-100 border-rose-200 dark:bg-rose-900/25 dark:border-rose-800/40"
+      : "bg-slate-50 border-slate-200 dark:bg-neutral-900/50 dark:border-white/10";
 
   return (
-    <div
-      className={`rounded-3xl border border-slate-200/80 dark:border-neutral-800 px-4 py-3 ${toneClasses}`}
-    >
-      <div className="text-xs text-gray-600 dark:text-gray-200">{label}</div>
-      <div className="mt-1 text-xl sm:text-2xl font-semibold">{value}</div>
+    <div className={`rounded-2xl border px-4 py-3 ${toneCls}`}>
+      <div className="text-xs text-slate-600 dark:text-neutral-300">
+        {label}
+      </div>
+      <div className="mt-1 text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white">
+        {value}
+      </div>
     </div>
   );
 }

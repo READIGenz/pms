@@ -82,57 +82,100 @@ export type RefChecklist = {
   tags?: string[] | null; // prisma: tags (string[])
   status: ChecklistStatus; // prisma: status
   version: number | null; // prisma: Int @default(1)
-  // tolerant extras so UI can show 1.2.3 if backend adds them later:
 
   versionLabel?: string | null;
   versionMajor?: number | null;
   versionMinor?: number | null;
   versionPatch?: number | null;
-  items?: Array<any> | null; // when backend expands relation
-  itemsCount?: number | null; // or when backend sends count only
+  items?: Array<any> | null;
+  itemsCount?: number | null;
   _count?: { items?: number } | null;
-  aiDefault?: boolean | null; // optional UI flag (HTML prototype)
-  updatedAt: string; // prisma: updatedAt
+  aiDefault?: boolean | null;
+  updatedAt: string;
   createdAt?: string;
 };
 
 type ChecklistLite = RefChecklist;
 type ListResp = { items: ChecklistLite[]; total: number } | ChecklistLite[];
 
-/* ========================= Small UI bits ========================= */
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-5 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/70 dark:border-neutral-800 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 mb-2.5">
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
+/* ========================= UI tokens (match reference) ========================= */
+const cls = {
+  pageWrap: "min-h-screen w-full bg-white dark:bg-neutral-950",
+  container: "mx-auto w-full max-w-6xl",
+  headerRow:
+    "mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
+  title: "text-xl font-extrabold tracking-tight text-slate-900 dark:text-white",
+  subtitle: "text-sm text-slate-600 dark:text-slate-300",
+  meta: "text-xs text-slate-500 dark:text-slate-400",
+
+  label:
+    "block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1",
+  control:
+    "h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] text-slate-800 placeholder:text-slate-400 shadow-sm " +
+    "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/20 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-white",
+  selectControl:
+    "h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm " +
+    "focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/20 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-white",
+
+  btnBase:
+    "inline-flex h-8 items-center justify-center rounded-full px-3 text-[12.5px] font-semibold shadow-sm " +
+    "transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60",
+  btnOutline:
+    "inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm " +
+    "transition hover:bg-slate-50 active:translate-y-[0.5px] disabled:opacity-60 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:hover:bg-white/5",
+  btnTeal:
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#23A192] px-3 text-[12.5px] font-semibold text-white shadow-sm " +
+    "transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60",
+  btnPrimary:
+    "inline-flex h-8 items-center justify-center rounded-full bg-[#00379C] px-3 text-[12.5px] font-semibold text-white shadow-sm " +
+    "transition hover:brightness-110 active:translate-y-[0.5px] disabled:opacity-60",
+
+  kpiCard:
+    "rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-neutral-950",
+  kpiLabel:
+    "text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400",
+  kpiValue:
+    "mt-1 text-xl font-semibold leading-none text-slate-900 dark:text-white",
+
+  tableCard:
+    "rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden " +
+    "dark:border-white/10 dark:bg-neutral-950",
+  tableWrap: "overflow-auto max-h-[62vh] thin-scrollbar",
+  table:
+    "w-full min-w-[1400px] text-[12.5px] table-fixed [word-break:break-word] [overflow-wrap:anywhere]",
+  thead:
+    "sticky top-0 z-10 bg-slate-50 dark:bg-neutral-900 border-b border-slate-200 dark:border-white/10",
+  tr: "border-t border-slate-100/80 hover:bg-slate-50/60 dark:border-white/10 dark:hover:bg-white/5",
+  thBtn:
+    "inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-widest text-slate-600 dark:text-slate-200 select-none hover:underline",
+  thCell: "px-3 py-2 align-middle",
+  td: "px-3 py-2 align-middle",
+
+  actionCellSticky: "",
+  actionBtnBase:
+    "inline-flex h-8 w-8 items-center justify-center rounded-full transition",
+  actionView: "text-[#23A192] hover:bg-[#23A192]/10 dark:hover:bg-[#23A192]/15",
+  actionEdit:
+    "text-[#00379C] hover:bg-[#00379C]/10 dark:text-[#FCC020] dark:hover:bg-[#FCC020]/15",
+};
 
 function StatusPill({ value }: { value: ChecklistStatus }) {
-  const cls =
+  // Match reference mapping:
+  // Active = teal, Draft = navy (gold in dark), Inactive = gold, Archived = rose
+  const base =
+    "inline-block rounded-full border px-2 py-0.5 text-xs font-semibold";
+  const clsByValue =
     value === "Active"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900"
+      ? "bg-[#23A192]/10 text-[#23A192] border-[#23A192]/25 dark:bg-[#23A192]/15 dark:border-[#23A192]/25"
       : value === "Draft"
-      ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/20 dark:text-sky-300 dark:border-sky-900"
+      ? "bg-[#00379C]/10 text-[#00379C] border-[#00379C]/25 dark:bg-[#FCC020]/15 dark:text-[#FCC020] dark:border-[#FCC020]/25"
       : value === "Inactive"
-      ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900"
+      ? "bg-[#FCC020]/15 text-[#8A5B00] border-[#FCC020]/30 dark:bg-[#FCC020]/15 dark:text-[#FCC020] dark:border-[#FCC020]/25"
       : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900";
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded-full border text-xs font-medium ${cls}`}
-    >
-      {value}
-    </span>
-  );
+  return <span className={`${base} ${clsByValue}`}>{value}</span>;
 }
 
 const SortIcon = ({
@@ -161,11 +204,11 @@ function Th({
   className?: string;
 }) {
   return (
-    <th className={`px-3 py-2 align-middle ${className}`}>
+    <th className={`${cls.thCell} ${className}`}>
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-200 select-none hover:underline"
+        className={cls.thBtn}
         title="Sort"
       >
         <span>{children}</span>
@@ -190,11 +233,9 @@ function Input({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <span className={cls.label}>{label}</span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+        className={cls.control}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -209,7 +250,7 @@ function SelectStrict({
   value,
   onChange,
   options,
-  placeholder = "Select…",
+  placeholder = "All…",
 }: {
   label: string;
   value: string;
@@ -219,11 +260,9 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <span className={cls.label}>{label}</span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+        className={cls.selectControl}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -251,6 +290,16 @@ function fmt(iso?: string) {
 export default function ChecklistLib() {
   const location = useLocation();
   const nav = useNavigate();
+
+  // Page title + shell subtitle
+  useEffect(() => {
+    document.title = "Trinity PMS — Checklist Library";
+    (window as any).__ADMIN_SUBTITLE__ =
+      "Standardised checklists for PMS modules.";
+    return () => {
+      (window as any).__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
 
   useEffect(() => {
     const refreshFlag = (location.state as any)?.refresh;
@@ -414,18 +463,21 @@ export default function ChecklistLib() {
     setErr(null);
     setLoading(true);
     try {
-      const params: any = { q, discipline, stageLabel, status, page, pageSize };
+      const params: any = { page, pageSize };
+
+      const qq = (q ?? "").trim();
+      if (qq) params.q = qq;
+
+      if (discipline) params.discipline = discipline;
+
+      // ✅ keep as stageLabel (not "stage")
+      if (stageLabel) params.stageLabel = stageLabel;
+
+      if (status) params.status = status;
+
       if (aiDefault) params.aiDefault = aiDefault === "on";
 
-      const { data } = await api
-        .get("/admin/ref/checklists", { params })
-        .catch(async (e: any) => {
-          if (e?.response?.status === 404) {
-            const { data: all } = await api.get("/admin/ref/checklists");
-            return { data: all };
-          }
-          throw e;
-        });
+      const { data } = await api.get("/admin/ref/checklists", { params });
 
       let items: ChecklistLite[] = [];
       let ttl = 0;
@@ -472,7 +524,6 @@ export default function ChecklistLib() {
     if (refreshFlag) {
       fetchList();
       fetchStats();
-      // clear state so it doesn't refire on next renders
       nav(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,19 +550,6 @@ export default function ChecklistLib() {
     setViewOpen(false);
     setViewItem(null);
   }
-
-  /* ---- UI helpers ---- */
-  const asChips = (arr?: string[] | null) =>
-    arr && arr.length
-      ? arr.map((t) => (
-          <span
-            key={t}
-            className="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full border text-xs bg-gray-50 dark:bg-neutral-800 dark:border-neutral-700"
-          >
-            {t}
-          </span>
-        ))
-      : "—";
 
   const versionText = (r: ChecklistLite) =>
     `v${(r as any).versionLabel ?? r.version ?? 1}`;
@@ -587,235 +625,268 @@ export default function ChecklistLib() {
 
   /* ========================= UI ========================= */
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
-      <div className="mx-auto max-w-7xl">
+    <div className={cls.pageWrap}>
+      <div className={cls.container}>
         {/* Header */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Top header (same placement as ActivityLib) */}
+        {/* Header */}
+        <div className={cls.headerRow}>
           <div>
-            <h1 className="text-2xl font-semibold dark:text-white">
-              Checklist Library
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Standardised checklists for PMS modules.
-            </p>
+            <div className={cls.meta}>
+              {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
+            </div>
           </div>
+
           <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
             <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={refresh}
-              type="button"
-            >
-              {loading ? "Loading…" : "Refresh"}
-            </button>
-            <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+              className={cls.btnOutline}
               onClick={exportCsv}
               type="button"
             >
               Export CSV
             </button>
-            <button
-              className="h-9 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
-              onClick={openNew}
-              type="button"
-            >
+            <button className={cls.btnTeal} onClick={refresh} type="button">
+              Refresh
+            </button>
+            <button className={cls.btnPrimary} onClick={openNew} type="button">
               + Create
             </button>
           </div>
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
             {err}
           </div>
         )}
 
         {/* KPIs */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Active
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
+          <div className={cls.kpiCard}>
+            <div className={cls.kpiLabel}>Active</div>
+            <div className={cls.kpiValue}>
               {statsLoading ? "…" : stats.byStatus.Active}
             </div>
           </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Draft
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
+          <div className={cls.kpiCard}>
+            <div className={cls.kpiLabel}>Draft</div>
+            <div className={cls.kpiValue}>
               {statsLoading ? "…" : stats.byStatus.Draft}
             </div>
           </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Inactive
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
+          <div className={cls.kpiCard}>
+            <div className={cls.kpiLabel}>Inactive</div>
+            <div className={cls.kpiValue}>
               {statsLoading ? "…" : stats.byStatus.Inactive}
             </div>
           </div>
-          <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Archived
-            </div>
-            <div className="mt-1 text-2xl font-semibold dark:text-white">
+          <div className={cls.kpiCard}>
+            <div className={cls.kpiLabel}>Archived</div>
+            <div className={cls.kpiValue}>
               {statsLoading ? "…" : stats.byStatus.Archived}
             </div>
           </div>
         </div>
 
-        {/* Filters */}
-        <Section title="Find">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
-            <Input
-              label="Search"
-              value={q}
-              onChange={(v) => {
-                setQ(v);
-                setPage(1);
-              }}
-              placeholder="id/code, title, stage…"
-            />
-            <SelectStrict
-              label="Discipline"
-              value={discipline}
-              onChange={(v) => {
-                setDiscipline(v as Discipline | "");
-                setStageLabel("");
-                setPage(1);
-              }}
-              options={["", ...DISCIPLINES].map((d) => ({
-                value: d as any,
-                label: d || "All",
-              }))}
-            />
-            <SelectStrict
-              label="Stage"
-              value={stageLabel}
-              onChange={(v) => {
-                setStageLabel(v);
-                setPage(1);
-              }}
-              options={[
-                "",
-                ...(discipline
-                  ? STAGE_LIBRARY[discipline] || []
-                  : Object.values(STAGE_LIBRARY).flat()),
-              ].map((s) => ({ value: s, label: s || "All" }))}
-            />
-            <SelectStrict
-              label="Status"
-              value={status}
-              onChange={(v) => {
-                setStatus((v as ChecklistStatus) || "");
-                setPage(1);
-              }}
-              options={["", ...STATUS_OPTIONS].map((s) => ({
-                value: s as any,
-                label: s || "All",
-              }))}
-            />
-            <SelectStrict
-              label="AI Default"
-              value={aiDefault}
-              onChange={(v) => setAiDefault((v as any) || "")}
-              options={[
-                { value: "on", label: "On" },
-                { value: "off", label: "Off" },
-              ]}
-              placeholder="Any"
-            />
-          </div>
-          <div className="mt-3">
-            <button
-              className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={clearFilters}
-              type="button"
-            >
-              Clear
-            </button>
-          </div>
-        </Section>
+        {/* Filters (no outer box, matches reference pattern) */}
+        <div className="mb-4">
+          {/* Row 1: filters + Clear (same line) */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-wrap items-end gap-3 sm:flex-1">
+              {/* Discipline */}
+              <div className="w-full sm:w-[100px]">
+                <SelectStrict
+                  label="Discipline"
+                  value={discipline}
+                  onChange={(v) => {
+                    setDiscipline(v as Discipline | "");
+                    setStageLabel("");
+                    setPage(1);
+                  }}
+                  options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
+                  placeholder="All"
+                />
+              </div>
 
-        {/* Table info */}
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-          {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
+              {/* Stage */}
+              <div className="w-full sm:w-[200px]">
+                <SelectStrict
+                  label="Stage"
+                  value={stageLabel}
+                  onChange={(v) => {
+                    setStageLabel(v);
+                    setPage(1);
+                  }}
+                  options={(discipline
+                    ? STAGE_LIBRARY[discipline] || []
+                    : Object.values(STAGE_LIBRARY).flat()
+                  ).map((s) => ({ value: s, label: s }))}
+                  placeholder="All"
+                />
+              </div>
+
+              {/* Status */}
+              <div className="w-full sm:w-[130px]">
+                <SelectStrict
+                  label="Status"
+                  value={status}
+                  onChange={(v) => {
+                    setStatus((v as ChecklistStatus) || "");
+                    setPage(1);
+                  }}
+                  options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+                  placeholder="All"
+                />
+              </div>
+
+              {/* AI Default */}
+              <div className="w-full sm:w-[80px]">
+                <SelectStrict
+                  label="AI Default"
+                  value={aiDefault}
+                  onChange={(v) => setAiDefault((v as any) || "")}
+                  options={[
+                    { value: "on", label: "On" },
+                    { value: "off", label: "Off" },
+                  ]}
+                  placeholder="Any"
+                />
+              </div>
+
+              {/* Clear */}
+              <div className="mt-[18px]">
+                <button
+                  className={`${cls.btnOutline} h-7 px-2 text-[12px]`}
+                  onClick={clearFilters}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: search left, page size right (same as Activity layout) */}
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            {/* Search - fixed width like Activity */}
+            <div className="w-full sm:max-w-[520px]">
+              <Input
+                label="Search"
+                value={q}
+                onChange={(v) => {
+                  setQ(v);
+                  setPage(1);
+                }}
+                placeholder="id/code, title, stage…"
+              />
+            </div>
+
+            {/* Page size */}
+            <div className="w-full sm:w-[100px]">
+              <label className="block">
+                <span className={cls.label}>Page Size</span>
+                <select
+                  className={`${cls.selectControl} h-7 text-[12px]`}
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setPage(1);
+                  }}
+                >
+                  {[10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}/page
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-neutral-800 overflow-hidden">
-          <div className="overflow-auto max-h-[70vh] thin-scrollbar">
-            <table className="w-full min-w-[1400px] text-sm table-fixed [word-break:break-word] [overflow-wrap:anywhere]">
+        <div className={cls.tableCard}>
+          <div className={cls.tableWrap}>
+            <table className={cls.table}>
               <colgroup>
-                <col className="w-[160px]" /> {/* Actions */}
-                <col className="w-[360px]" /> {/* Checklist */}
+                <col className="w-[160px]" />
+                <col className="w-[360px]" />
                 <col span={7} />
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur dark:bg-neutral-800/95">
+
+              <thead className={cls.thead}>
                 <tr>
-                  <th className="sticky left-0 z-10 bg-gray-50/90 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 border-b border-slate-200 dark:bg-neutral-800/95 dark:text-slate-200 dark:border-neutral-700">
+                  <th
+                    className={`${cls.thCell} text-left text-[10px] font-extrabold uppercase tracking-widest text-slate-600 dark:text-slate-200`}
+                  >
                     Actions
                   </th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("checklist")}
                     active={sortBy === "checklist"}
                     dir={sortDir}
                   >
                     Checklist (Code • Title)
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("discStage")}
                     active={sortBy === "discStage"}
                     dir={sortDir}
                   >
                     Discipline • Stage
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("version")}
                     active={sortBy === "version"}
                     dir={sortDir}
                   >
                     Version
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("items")}
                     active={sortBy === "items"}
                     dir={sortDir}
                   >
                     Items
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("aiDefault")}
                     active={sortBy === "aiDefault"}
                     dir={sortDir}
                   >
                     AI (Default)
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("tags")}
                     active={sortBy === "tags"}
                     dir={sortDir}
                   >
                     Tags
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("updated")}
                     active={sortBy === "updated"}
                     dir={sortDir}
                   >
                     Updated
                   </Th>
+
                   <Th
-                    className="border-b border-slate-200 dark:border-neutral-700"
+                    className="border-b border-slate-200 dark:border-white/10"
                     onClick={() => requestSort("status")}
                     active={sortBy === "status"}
                     dir={sortDir}
@@ -827,29 +898,24 @@ export default function ChecklistLib() {
 
               <tbody>
                 {sortedRows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-t border-slate-100/80 dark:border-neutral-800 hover:bg-slate-50/60 dark:hover:bg-neutral-800/60"
-                  >
+                  <tr key={r.id} className={cls.tr}>
                     {/* Actions */}
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 dark:bg-neutral-900">
+                    <td className={`${cls.td} ${cls.actionCellSticky}`}>
                       <div className="flex items-center gap-2">
-                        {/* View (eye) – green line icon */}
+                        {/* View */}
                         <button
                           type="button"
                           aria-label="View checklist"
                           title="View"
                           onClick={() => openView(r.id)}
-                          className="inline-flex items-center justify-center w-7 h-7 bg-transparent
-               text-emerald-600 hover:text-emerald-700
-               dark:text-emerald-400 dark:hover:text-emerald-300"
+                          className={`${cls.actionBtnBase} ${cls.actionView}`}
                         >
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-5 h-5"
+                            className="h-5 w-5"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth={1.6}
+                            strokeWidth={1.7}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
@@ -858,23 +924,21 @@ export default function ChecklistLib() {
                           </svg>
                         </button>
 
-                        {/* Edit (pencil) – red line icon */}
+                        {/* Edit */}
                         <button
                           type="button"
                           aria-label="Edit checklist"
                           title="Edit"
                           onClick={() => openEdit(r.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full
-               text-rose-500 hover:text-rose-600 hover:bg-rose-50/70
-               dark:hover:bg-rose-900/40"
+                          className={`${cls.actionBtnBase} ${cls.actionEdit}`}
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             viewBox="0 0 24 24"
-                            className="w-5 h-5"
+                            className="h-5 w-5"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="1.7"
+                            strokeWidth="1.8"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
@@ -886,52 +950,62 @@ export default function ChecklistLib() {
                     </td>
 
                     {/* Checklist (Code • Title) */}
-                    <td className="px-3 py-2">
+                    <td className={cls.td}>
                       <div className="font-semibold text-slate-900 dark:text-slate-50 line-clamp-2 break-words">
                         {r.code ? `${r.code} • ${r.title}` : r.title}
                       </div>
                     </td>
 
                     {/* Discipline • Stage */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                    <td
+                      className={`${cls.td} text-slate-700 dark:text-slate-200`}
+                    >
                       {(r.discipline || "—") + " • " + (r.stageLabel || "—")}
                     </td>
 
                     {/* Version */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-100">
+                    <td
+                      className={`${cls.td} text-slate-700 dark:text-slate-100`}
+                    >
                       {versionText(r)}
                     </td>
 
                     {/* Items */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                    <td
+                      className={`${cls.td} text-slate-700 dark:text-slate-200`}
+                    >
                       {itemsCountLocal(r)}
                     </td>
 
                     {/* AI (Default) */}
-                    <td className="px-3 py-2">
+                    <td className={cls.td}>
                       {r.aiDefault ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full border text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900">
+                        <span className="inline-block rounded-full border px-2 py-0.5 text-xs font-semibold bg-[#23A192]/10 text-[#23A192] border-[#23A192]/25 dark:bg-[#23A192]/15 dark:border-[#23A192]/25">
                           On
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full border text-xs bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900">
+                        <span className="inline-block rounded-full border px-2 py-0.5 text-xs font-semibold bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900">
                           Off
                         </span>
                       )}
                     </td>
 
                     {/* Tags */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                    <td
+                      className={`${cls.td} text-slate-700 dark:text-slate-200`}
+                    >
                       {r.tags && r.tags.length ? r.tags.join(", ") : "—"}
                     </td>
 
                     {/* Updated */}
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                    <td
+                      className={`${cls.td} text-slate-700 dark:text-slate-200`}
+                    >
                       {fmt(r.updatedAt)}
                     </td>
 
                     {/* Status */}
-                    <td className="px-3 py-2">
+                    <td className={cls.td}>
                       <StatusPill value={r.status} />
                     </td>
                   </tr>
@@ -940,7 +1014,7 @@ export default function ChecklistLib() {
                 {!sortedRows.length && !loading && (
                   <tr>
                     <td
-                      className="px-3 py-6 text-center text-gray-500 dark:text-gray-400"
+                      className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
                       colSpan={9}
                     >
                       No checklists found.
@@ -953,39 +1027,29 @@ export default function ChecklistLib() {
         </div>
 
         {/* Pagination */}
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <div className="text-gray-600 dark:text-gray-400">
+        <div className="mt-3 flex items-center justify-between">
+          <div className={cls.meta}>
             Page <b>{page}</b> of <b>{totalPages}</b>
           </div>
+
           <div className="flex items-center gap-2">
             <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+              className={cls.btnOutline}
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
+              type="button"
             >
               Prev
             </button>
+
             <button
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-sm disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+              className={cls.btnOutline}
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              type="button"
             >
               Next
             </button>
-            <select
-              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setPage(1);
-              }}
-            >
-              {[10, 20, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n}/page
-                </option>
-              ))}
-            </select>
           </div>
         </div>
       </div>
@@ -995,14 +1059,12 @@ export default function ChecklistLib() {
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={closeView} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/80 dark:border-neutral-800 shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-neutral-800">
+            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10">
                 <div className="flex flex-col">
-                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Checklist
-                  </div>
+                  <div className={cls.label}>Checklist</div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-semibold dark:text-white">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                       {viewItem?.code
                         ? `${viewItem.code} • ${viewItem.title}`
                         : viewItem?.title || "—"}
@@ -1014,9 +1076,11 @@ export default function ChecklistLib() {
                     ) : null}
                   </div>
                 </div>
+
                 <button
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                  className={cls.btnOutline}
                   onClick={closeView}
+                  type="button"
                 >
                   Close
                 </button>
@@ -1024,7 +1088,7 @@ export default function ChecklistLib() {
 
               <div className="p-4 text-sm">
                 {viewLoading ? (
-                  <div className="py-10 text-center text-gray-500 dark:text-gray-400">
+                  <div className="py-10 text-center text-slate-500 dark:text-slate-400">
                     Loading…
                   </div>
                 ) : viewItem ? (
@@ -1057,16 +1121,17 @@ export default function ChecklistLib() {
                     </div>
                   </div>
                 ) : (
-                  <div className="py-10 text-center text-red-600">
+                  <div className="py-10 text-center text-rose-600 dark:text-rose-300">
                     Failed to load.
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-neutral-800">
+              <div className="border-t border-slate-200 px-4 py-3 text-right dark:border-white/10">
                 <button
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                  className={cls.btnPrimary}
                   onClick={closeView}
+                  type="button"
                 >
                   Done
                 </button>
@@ -1103,8 +1168,10 @@ export default function ChecklistLib() {
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
-      <div className="text-gray-500 dark:text-gray-400">{k}</div>
-      <div className="dark:text-white">{v}</div>
+      <div className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+        {k}
+      </div>
+      <div className="text-slate-900 dark:text-white">{v}</div>
     </div>
   );
 }

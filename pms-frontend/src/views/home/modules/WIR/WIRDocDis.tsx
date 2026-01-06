@@ -16,7 +16,7 @@ import InspRecoInspRunner from "./InspRecoInspRunner";
 import InspRecoHODRunner from "./InspRecoHODRunner";
 import WIRDiscussion from "./WIRDiscussion";
 import FollowupScheduleModal from "./FollowupScheduleModal";
-import { ComplianceItemsGrid } from "./CreateWIR";
+import {ComplianceItemsGrid} from "./CreateWIR";
 
 type NavState = {
     role?: string;

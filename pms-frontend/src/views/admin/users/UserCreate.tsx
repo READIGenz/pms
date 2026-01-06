@@ -3,6 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
 
+declare global {
+  interface Window {
+    __ADMIN_SUBTITLE__?: string;
+  }
+}
+
 /** Reference-data types */
 type StateOpt = { stateId: string; name: string; code: string };
 type DistrictOpt = { districtId: string; name: string; stateId: string };
@@ -11,16 +17,16 @@ type CompanyOpt = {
   companyId: string;
   name: string;
   companyRole?:
-  | "IH_PMT"
-  | "IH-PMT"
-  | "Contractor"
-  | "Consultant"
-  | "PMC"
-  | "Supplier"
-  | null;
+    | "IH_PMT"
+    | "IH-PMT"
+    | "Contractor"
+    | "Consultant"
+    | "PMC"
+    | "Supplier"
+    | null;
 };
 
-/** Enums from prisma schema */
+/** Enums */
 const preferredLanguages = [
   "en",
   "hi",
@@ -48,6 +54,22 @@ export default function UserCreate() {
   const nav = useNavigate();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
+  // -------- Page title/subtitle for AdminHome header bar --------
+  useEffect(() => {
+    document.title = "Trinity PMS — Create User";
+    window.__ADMIN_SUBTITLE__ =
+      "Create a user profile, set location, affiliations, and optional admin privileges.";
+    return () => {
+      window.__ADMIN_SUBTITLE__ = "";
+    };
+  }, []);
+
+  // -------- Auth gate --------
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) nav("/login", { replace: true });
+  }, [nav]);
+
   // ---------- CURRENT USER (who is creating) ----------
   const currentUser = (() => {
     try {
@@ -62,7 +84,7 @@ export default function UserCreate() {
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState(""); // India mobile (digits only)
+  const [phone, setPhone] = useState(""); // digits only
   const [email, setEmail] = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState<string>("");
   const [userStatus, setUserStatus] = useState<string>("Active");
@@ -82,7 +104,7 @@ export default function UserCreate() {
   const [isServiceProvider, setIsServiceProvider] = useState<boolean>(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
 
-  // ---------- Admin Privileges (visible to Super Admin only) ----------
+  // ---------- Admin privileges ----------
   const [makeSuperAdmin, setMakeSuperAdmin] = useState<boolean>(false);
   const [makeGlobalAdmin, setMakeGlobalAdmin] = useState<boolean>(false);
 
@@ -92,6 +114,23 @@ export default function UserCreate() {
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [companyRoleFilter, setCompanyRoleFilter] = useState<string>("");
+
+  // ---------- UI state ----------
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [roleWarn, setRoleWarn] = useState<string | null>(null);
+  const [showNote, setShowNote] = useState(false);
+
+  // ---- derived helpers ----
+  const phoneClean = phone.replace(/\D/g, "");
+  const pinClean = pin.replace(/\D/g, "");
+  const canSave = firstName.trim().length > 0 && phoneClean.length >= 10;
+
+  const namePreview = useMemo(
+    () => [firstName, middleName, lastName].filter(Boolean).join(" "),
+    [firstName, middleName, lastName]
+  );
+
   const filteredCompanies = useMemo(() => {
     const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
     const filter =
@@ -103,18 +142,21 @@ export default function UserCreate() {
     });
   }, [companies, companyRoleFilter]);
 
-  // ---------- UI ----------
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [showNote, setShowNote] = useState(false);
+  const normalizeDigits = (v: any) => String(v ?? "").replace(/\D/g, "");
+  const pickUserByPhone = (list: any[], desiredDigits: string) => {
+    if (!Array.isArray(list)) return null;
+    const exact = list.find((u) => normalizeDigits(u?.phone) === desiredDigits);
+    if (exact) return exact;
 
-  // --- Auth gate simple check ---
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) nav("/login", { replace: true });
-  }, [nav]);
+    const exactWithCCode = list.find((u) => {
+      const cc = normalizeDigits(u?.countryCode);
+      const ph = normalizeDigits(u?.phone);
+      return (cc === "91" || cc === "+91" || cc === "") && ph === desiredDigits;
+    });
+    return exactWithCCode || null;
+  };
 
-  // --- Load reference data ---
+  // -------- Load reference data --------
   useEffect(() => {
     (async () => {
       try {
@@ -151,32 +193,17 @@ export default function UserCreate() {
     })();
   }, [stateId]);
 
-  const namePreview = useMemo(
-    () => [firstName, middleName, lastName].filter(Boolean).join(" "),
-    [firstName, middleName, lastName]
-  );
-
-  const phoneClean = phone.replace(/\D/g, "");
-  const pinClean = pin.replace(/\D/g, "");
-
-  const canSave = firstName.trim().length > 0 && phoneClean.length >= 10;
-
-  const normalizeDigits = (v: any) => String(v ?? "").replace(/\D/g, "");
-  const pickUserByPhone = (list: any[], desiredDigits: string) => {
-    if (!Array.isArray(list)) return null;
-    const exact = list.find((u) => normalizeDigits(u?.phone) === desiredDigits);
-    if (exact) return exact;
-
-    const exactWithCCode = list.find((u) => {
-      const cc = normalizeDigits(u?.countryCode);
-      const ph = normalizeDigits(u?.phone);
-      return (cc === "91" || cc === "+91" || cc === "") && ph === desiredDigits;
+  const toggleInList = (id: string, list: string[], setList: any) => {
+    setList((prev: string[]) => {
+      const has = prev.includes(id);
+      return has ? prev.filter((x) => x !== id) : [...prev, id];
     });
-    return exactWithCCode || null;
   };
 
   const submit = async () => {
     setErr(null);
+    setRoleWarn(null);
+
     if (!canSave) {
       setErr("First Name and a valid Mobile (India) are required.");
       return;
@@ -185,7 +212,7 @@ export default function UserCreate() {
     if (!isClient && !isServiceProvider) {
       window.alert(
         "Affiliation required.\n\n" +
-        "Please mark the user as a Client and/or a Service Partner before creating."
+          "Please mark the user as a Client and/or a Service Partner before creating."
       );
       return;
     }
@@ -193,7 +220,7 @@ export default function UserCreate() {
     if (isServiceProvider && selectedCompanyIds.length === 0) {
       window.alert(
         "This user is not linked to any Service Partner company.\n\n" +
-        "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
+          "If they are NOT a service provider, please toggle “Are you working for any of our Service Partner?” to No before saving."
       );
       return;
     }
@@ -201,16 +228,15 @@ export default function UserCreate() {
     try {
       setSaving(true);
 
-      const createPayload = {
+      const createPayload: any = {
         firstName,
         middleName: middleName || undefined,
         lastName: lastName || undefined,
         email: email || undefined,
-        countryCode: "+91",
+        countryCode: "91", // keep DB clean; UI shows +91
         phone: phoneClean,
         preferredLanguage: preferredLanguage || undefined,
         userStatus: userStatus || "Active",
-        profilePhoto: undefined as string | undefined,
         stateId: stateId || undefined,
         districtId: districtId || undefined,
         cityTown: cityTown || undefined,
@@ -264,7 +290,7 @@ export default function UserCreate() {
         } catch (e: any) {
           setRoleWarn(
             e?.response?.data?.error ||
-            "User created, but failed to grant Global Admin role."
+              "User created, but failed to grant Global Admin role."
           );
         }
       }
@@ -292,7 +318,7 @@ export default function UserCreate() {
               ? res.data
               : res?.data?.users || [];
             u = pickUserByPhone(list, targetDigits);
-          } catch { }
+          } catch {}
 
           if (!u) {
             try {
@@ -303,10 +329,9 @@ export default function UserCreate() {
               if (
                 candidate &&
                 normalizeDigits(candidate.phone) === targetDigits
-              ) {
+              )
                 u = candidate;
-              }
-            } catch { }
+            } catch {}
           }
 
           if (!u) {
@@ -318,7 +343,7 @@ export default function UserCreate() {
                 ? res.data
                 : res?.data?.users || [];
               u = pickUserByPhone(list, targetDigits);
-            } catch { }
+            } catch {}
           }
 
           if (u?.userId) {
@@ -326,27 +351,28 @@ export default function UserCreate() {
               .filter(Boolean)
               .join(" ");
             const codeLine = u.userCode ? `Code: ${u.userCode}\n` : "";
-            const phoneLine = `Phone: +91 ${normalizeDigits(u.phone) || targetDigits
-              }`;
+            const phoneLine = `Phone: +91 ${
+              normalizeDigits(u.phone) || targetDigits
+            }`;
 
             const proceedToEdit = window.confirm(
               "A user with this mobile number already exists.\n\n" +
-              `${codeLine}Name: ${fullName || "(no name)"
-              }\n${phoneLine}\n\n` +
-              "Press OK to open that user's Edit page.\n" +
-              "Press Cancel to stay here — the save will be canceled."
+                `${codeLine}Name: ${
+                  fullName || "(no name)"
+                }\n${phoneLine}\n\n` +
+                "Press OK to open that user's Edit page.\n" +
+                "Press Cancel to stay here — the save will be canceled."
             );
 
-            if (proceedToEdit) {
+            if (proceedToEdit)
               nav(`/admin/users/${u.userId}/edit`, { replace: true });
-            }
             return;
           }
 
           const openList = window.confirm(
             "A user with this mobile number already exists, but we couldn't fetch an exact match automatically.\n\n" +
-            `Phone: +91 ${targetDigits}\n\n` +
-            "Press OK to open the Users list, or Cancel to stay here (save canceled)."
+              `Phone: +91 ${targetDigits}\n\n` +
+              "Press OK to open the Users list, or Cancel to stay here (save canceled)."
           );
           if (openList) nav("/admin/users");
           return;
@@ -356,114 +382,141 @@ export default function UserCreate() {
       }
 
       setErr(serverMsg || "Failed to create user");
+    } finally {
       setSaving(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Create User
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 inline-flex items-center gap-2">
-              <span>
-                Fill the details below and save. First Name and Mobile number are mandatory fields.
-              </span>
+  /* ========================= UI tokens (CompanyEdit exact style) ========================= */
+  const btnBase =
+    "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+    "disabled:opacity-60 disabled:pointer-events-none";
+  const btnLight =
+    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+  const btnPrimary =
+    "bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35 border border-transparent";
+  const btnGold =
+    "bg-[#FCC020] text-slate-900 hover:brightness-105 focus:ring-[#FCC020]/40 border border-transparent";
 
-              {/* Info icon (replaces Note button functionality) */}
+  return (
+    <div className="w-full">
+      <div className="mx-auto max-w-5xl">
+        {/* Top helper row (exact pattern like CompanyEdit) */}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+              First Name and Mobile number are mandatory fields.
               <button
                 type="button"
                 onClick={() => setShowNote(true)}
-                aria-label="Info"
                 title="Info"
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5"
               >
                 i
               </button>
-            </p>
+            </div>
+            {namePreview ? (
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Preview:{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {namePreview}
+                </span>
+              </div>
+            ) : null}
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => nav("/admin/users")}
               type="button"
+              className={`${btnBase} ${btnLight}`}
+              onClick={() => nav("/admin/users")}
+              title="Back to list"
             >
               Cancel
             </button>
             <button
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+              type="button"
+              className={`${btnBase} ${btnPrimary}`}
               onClick={submit}
               disabled={!canSave || saving}
+              title="Create user"
             >
               {saving ? "Saving…" : "Create"}
             </button>
           </div>
         </div>
 
-        {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+        {/* Alerts */}
+        {err ? (
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-800/40 dark:bg-rose-950/30 dark:text-rose-200">
             {err}
           </div>
-        )}
+        ) : null}
 
-        {/* ========== Identity Block ========== */}
+        {roleWarn ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/25 dark:text-amber-200">
+            {roleWarn}
+          </div>
+        ) : null}
+
+        {/* Sections (exact CompanyEdit style) */}
         <Section title="Identity">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Text
+            <Input
               label="First Name"
-              value={firstName}
-              setValue={setFirstName}
               required
+              value={firstName}
+              onChange={setFirstName}
             />
-            <Text
+            <Input
               label="Middle Name"
               value={middleName}
-              setValue={setMiddleName}
+              onChange={setMiddleName}
             />
-            <Text label="Last Name" value={lastName} setValue={setLastName} />
-            <Text
-              label="Email (optional)"
-              type="email"
+
+            <Input label="Last Name" value={lastName} onChange={setLastName} />
+            <Input
+              label="Email (Optional)"
               value={email}
-              setValue={setEmail}
+              onChange={setEmail}
+              placeholder="name@company.com"
+              type="email"
             />
 
-            <div className="grid grid-cols-[5rem,1fr] gap-2 md:col-span-2 lg:col-span-1">
-              <Text label="Code" value="+91" setValue={() => { }} disabled />
-              <Text
-                label="Mobile (India)"
-                value={phone}
-                setValue={(v) => setPhone(v.replace(/[^\d]/g, "").slice(0, 10))}
-                required
-                placeholder="10-digit mobile"
-              />
-            </div>
+            <Input label="Code" value="+91" onChange={() => {}} disabled />
+            <Input
+              label="Mobile (India)"
+              required
+              value={phone}
+              onChange={(v) => setPhone(v.replace(/\D/g, "").slice(0, 10))}
+              placeholder="10 digit mobile"
+              type="tel"
+            />
 
-            <Select
+            <SelectStrict
               label="Preferred Language"
               value={preferredLanguage}
-              setValue={setPreferredLanguage}
-              options={["", ...preferredLanguages]}
+              onChange={setPreferredLanguage}
+              placeholder="Select (optional)"
+              options={preferredLanguages.map((x) => ({ value: x, label: x }))}
             />
-            <Select
+
+            <SelectStrict
               label="Status"
               value={userStatus}
-              setValue={setUserStatus}
-              options={statuses as unknown as string[]}
+              onChange={setUserStatus}
+              options={statuses.map((x) => ({ value: x, label: x }))}
             />
 
-            {/* Profile Photo Upload */}
             <div className="md:col-span-2">
-              <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <div className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Profile Photo
-              </span>
+              </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="h-16 w-16 rounded-full overflow-hidden border border-slate-200 bg-slate-100 dark:border-neutral-700 dark:bg-neutral-800">
+                <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-neutral-900">
                   {profileFile ? (
                     <img
                       src={URL.createObjectURL(profileFile)}
@@ -471,195 +524,314 @@ export default function UserCreate() {
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <div className="grid h-full w-full place-items-center text-[10px] text-slate-500">
+                    <div className="grid h-full w-full place-items-center text-[10px] text-slate-500 dark:text-slate-400">
                       No photo
                     </div>
                   )}
                 </div>
 
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setProfileFile(e.target.files?.[0] || null)}
-                  className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50 dark:file:border-neutral-700 dark:file:bg-neutral-900 dark:file:text-neutral-100"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) =>
+                      setProfileFile(e.target.files?.[0] || null)
+                    }
+                    className="block w-fit shrink-0 text-xs text-slate-700
+          file:h-8 file:rounded-full file:border file:border-slate-200 file:bg-white file:px-3
+          file:text-[11px] file:font-semibold file:text-slate-700 file:shadow-sm hover:file:bg-slate-50
+          dark:text-slate-200 dark:file:border-white/10 dark:file:bg-neutral-950 dark:file:text-slate-200 dark:hover:file:bg-white/5"
+                  />
 
-                {profileFile && (
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
-                    {profileFile.name} ({Math.round(profileFile.size / 1024)} KB)
-                  </span>
-                )}
+                  {profileFile && (
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
+                      {profileFile.name} ({Math.round(profileFile.size / 1024)}{" "}
+                      KB)
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-
-          <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-            Name preview:{" "}
-            <b className="text-slate-900 dark:text-white">
-              {namePreview || "(empty)"}
-            </b>
-          </div>
         </Section>
 
-        {/* ========== Location Block ========== */}
         <Section title="Location">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Select
+            <SelectStrict
               label="State / UT"
               value={stateId}
-              setValue={(v) => {
+              onChange={(v) => {
                 setStateId(v);
                 setDistrictId("");
               }}
-              options={[
-                "",
-                ...states.map((s) => ({
-                  value: s.stateId,
-                  label: `${s.name} (${s.code})`,
-                })),
-              ]}
+              placeholder="Select (optional)"
+              options={states.map((s) => ({ value: s.stateId, label: s.name }))}
             />
-            <Select
+
+            <SelectStrict
               label="District"
               value={districtId}
-              setValue={setDistrictId}
-              options={[
-                "",
-                ...districts.map((d) => ({
-                  value: d.districtId,
-                  label: d.name,
-                })),
-              ]}
+              onChange={setDistrictId}
+              placeholder="Select (optional)"
+              options={districts.map((d) => ({
+                value: d.districtId,
+                label: d.name,
+              }))}
               disabled={!stateId}
             />
-            <Text label="City/Town" value={cityTown} setValue={setCityTown} />
-            <Text
+
+            <Input label="City/Town" value={cityTown} onChange={setCityTown} />
+
+            <Input
               label="PIN Code"
               value={pin}
-              setValue={(v) => setPin(v.replace(/[^\d]/g, "").slice(0, 6))}
+              onChange={(v) => setPin(v.replace(/\D/g, "").slice(0, 6))}
               placeholder="6-digit PIN"
             />
-            <Select
+
+            <SelectStrict
               label="Operating Zone"
               value={operatingZone}
-              setValue={setOperatingZone}
-              options={["", ...zones]}
+              onChange={setOperatingZone}
+              placeholder="Select (optional)"
+              options={zones.map((z) => ({ value: z, label: z }))}
             />
-            <TextArea label="Address" value={address} setValue={setAddress} />
+
+            <div className="md:col-span-2">
+              <TextArea
+                label="Address"
+                value={address}
+                onChange={setAddress}
+                placeholder="Optional"
+                rows={3}
+              />
+            </div>
           </div>
         </Section>
 
-        {/* ========== Affiliations Block ========== */}
         <Section title="Affiliations">
           <div className="space-y-6">
-            {/* Client Projects */}
+            {/* Client */}
             <div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm text-slate-700 dark:text-slate-200">
                   Are you Client for any Project?
-                </span>
-                <ToggleYN value={isClient} setValue={setIsClient} />
-              </div>
-            </div>
-
-            {/* Service Partner Companies */}
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
-                  Are you working for any of our Service Partner?
-                </span>
+                </div>
                 <ToggleYN
-                  value={isServiceProvider}
-                  setValue={setIsServiceProvider}
+                  value={isClient}
+                  onChange={(v) => {
+                    setIsClient(v);
+                    if (!v) setSelectedProjectIds([]);
+                  }}
                 />
               </div>
 
-              {isServiceProvider && (
-                <div className="mt-3 space-y-3">
-                  <div className="max-w-xs">
-                    <Select
-                      label="Filter by Role"
-                      value={companyRoleFilter}
-                      setValue={setCompanyRoleFilter}
-                      options={[
-                        "",
-                        { value: "IH_PMT", label: "IH-PMT" },
-                        { value: "Contractor", label: "Contractor" },
-                        { value: "Consultant", label: "Consultant" },
-                        { value: "PMC", label: "PMC" },
-                        { value: "Supplier", label: "Supplier" },
-                      ]}
-                    />
+              {isClient ? (
+                <div className="mt-3">
+                  <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                    Select project(s) (optional).
                   </div>
 
-                  <CheckboxGroup
-                    label={
-                      companyRoleFilter
-                        ? `Select Company(ies) — ${companyRoleFilter === "IH_PMT"
-                          ? "IH-PMT"
-                          : companyRoleFilter
-                        }`
-                        : "Select Company(ies)"
-                    }
-                    items={filteredCompanies.map((c) => ({
-                      value: c.companyId,
-                      label: c.companyRole ? `${c.name}` : c.name,
-                    }))}
-                    selected={selectedCompanyIds}
-                    setSelected={setSelectedCompanyIds}
-                  />
+                  <ListBox>
+                    {projects.length === 0 ? (
+                      <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                        No projects found.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-200 dark:divide-white/10">
+                        {projects.map((p) => {
+                          const checked = selectedProjectIds.includes(
+                            p.projectId
+                          );
+                          return (
+                            <label
+                              key={p.projectId}
+                              className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  toggleInList(
+                                    p.projectId,
+                                    selectedProjectIds,
+                                    setSelectedProjectIds
+                                  )
+                                }
+                              />
+                              <span className="text-slate-900 dark:text-white">
+                                {p.title}
+                              </span>
+                              {p.code ? (
+                                <span className="ml-auto text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {p.code}
+                                </span>
+                              ) : null}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </ListBox>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Not a client.
+                </div>
+              )}
+            </div>
 
-                  {filteredCompanies.length === 0 && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      No companies match the selected role.
+            {/* Service Partner */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm text-slate-700 dark:text-slate-200">
+                  Are you working for any of our Service Partner?
+                </div>
+                <ToggleYN
+                  value={isServiceProvider}
+                  onChange={(v) => {
+                    setIsServiceProvider(v);
+                    if (!v) setSelectedCompanyIds([]);
+                  }}
+                />
+              </div>
+
+              {isServiceProvider ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <SelectStrict
+                      label="Filter by Role"
+                      value={companyRoleFilter}
+                      onChange={setCompanyRoleFilter}
+                      placeholder="All roles"
+                      options={companyRoles.map((r) => ({
+                        value: r,
+                        label: r === "IH_PMT" ? "IH-PMT" : r,
+                      }))}
+                    />
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        className={`${btnBase} ${btnLight}`}
+                        onClick={() => setCompanyRoleFilter("")}
+                      >
+                        Clear
+                      </button>
                     </div>
-                  )}
+                  </div>
+
+                  <ListBox>
+                    {filteredCompanies.length === 0 ? (
+                      <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                        No companies found.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-200 dark:divide-white/10">
+                        {filteredCompanies.map((c) => {
+                          const checked = selectedCompanyIds.includes(
+                            c.companyId
+                          );
+                          return (
+                            <label
+                              key={c.companyId}
+                              className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  toggleInList(
+                                    c.companyId,
+                                    selectedCompanyIds,
+                                    setSelectedCompanyIds
+                                  )
+                                }
+                              />
+                              <span className="text-slate-900 dark:text-white">
+                                {c.name}
+                              </span>
+                              {c.companyRole ? (
+                                <span className="ml-auto text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {String(c.companyRole).replace(
+                                    "IH_PMT",
+                                    "IH-PMT"
+                                  )}
+                                </span>
+                              ) : null}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </ListBox>
+
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    Tip: If Service Partner is YES, select at least 1 company.
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Not a service provider.
                 </div>
               )}
             </div>
           </div>
         </Section>
 
-        {/* ========== Admin Privileges (Super Admin only) ========== */}
-        {canGrantAdmin && (
-          <Section title="Admin Privileges (Super Admin only)">
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
-                  Super Admin
-                </span>
-                <ToggleYN value={makeSuperAdmin} setValue={setMakeSuperAdmin} />
+        {canGrantAdmin ? (
+          <Section title="Admin Privileges">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-white/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                      Make Super Admin
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                      Grants SuperAdmin flag to this user.
+                    </div>
+                    <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
+                  </div>
+                  <ToggleYN
+                    value={makeSuperAdmin}
+                    onChange={setMakeSuperAdmin}
+                  />
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
-                  Admin (Global)
-                </span>
-                <ToggleYN
-                  value={makeGlobalAdmin}
-                  setValue={setMakeGlobalAdmin}
-                />
+
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-white/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                      Make Global Admin
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                      Adds a Global Admin role membership after creation.
+                    </div>
+                    <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
+                  </div>
+                  <ToggleYN
+                    value={makeGlobalAdmin}
+                    onChange={setMakeGlobalAdmin}
+                  />
+                </div>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Super Admin has full platform access, including toggling audit
-                logging and assigning roles. Admin (Global) receives a global{" "}
-                <code>Admin</code> role via role membership.
-              </p>
             </div>
           </Section>
-        )}
+        ) : null}
 
-        {/* Footer actions */}
-        <div className="mt-6 flex justify-end gap-2">
+        {/* Footer actions (exact CompanyEdit pattern) */}
+        <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-white/10">
           <button
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => nav("/admin/users")}
             type="button"
+            className={`${btnBase} ${btnLight}`}
+            onClick={() => nav("/admin/users")}
           >
             Cancel
           </button>
           <button
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            type="button"
+            className={`${btnBase} ${btnPrimary}`}
             onClick={submit}
             disabled={!canSave || saving}
           >
@@ -668,122 +840,45 @@ export default function UserCreate() {
         </div>
       </div>
 
-      {/* NOTE MODAL */}
-      {showNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="note-modal-title"
+      {/* Note modal */}
+      {showNote ? (
+        <Modal
+          title="Notes"
+          onClose={() => setShowNote(false)}
+          btnBase={btnBase}
+          btnLight={btnLight}
+          btnGold={btnGold}
         >
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-neutral-800">
-              <h2
-                id="note-modal-title"
-                className="text-base font-semibold text-slate-900 dark:text-white"
-              >
-                Note for Admins — Creating a New User
-              </h2>
-              <button
-                onClick={() => setShowNote(false)}
-                className="rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800"
-                aria-label="Close"
-              >
-                ✕
-              </button>
+          <div className="space-y-3 text-sm leading-6 text-slate-800 dark:text-slate-200">
+            <div>
+              <b>Required to create:</b> First Name and a 10-digit Indian mobile
+              number.
             </div>
-
-            <div className="space-y-3 px-5 py-4 text-sm leading-6 text-gray-800 dark:text-gray-100">
-              <p>
-                <b>Required to save:</b> First Name and a 10-digit Indian mobile
-                number.
-              </p>
-
-              <p>
-                <b>Affiliation is mandatory:</b> Mark the person as Client
-                and/or Service Partner. (At least one must be selected.)
-              </p>
-
-              <p>
-                If you choose <b>Service Partner = Yes</b>, you must also pick
-                at least one company from the list.
-              </p>
-
-              <p>
-                <b>Location fields</b> (State, District, City, PIN, Address) are
-                helpful but optional.
-              </p>
-
-              <p>
-                <b>Photo</b> upload is optional. If it fails, the user can still
-                be created.
-              </p>
-
-              <div className="space-y-2">
-                <p>
-                  <b>If the mobile number already belongs to someone:</b>
-                </p>
-                <ul className="ml-5 list-disc space-y-1">
-                  <li>You’ll see a message with that person’s details.</li>
-                  <li>
-                    <b>OK</b> takes you straight to that person’s <b>Edit</b>{" "}
-                    page so you can update them.
-                  </li>
-                  <li>
-                    <b>Cancel</b> keeps you on this page and stops the save (no
-                    duplicate will be created).
-                  </li>
-                  <li>
-                    If we can’t clearly find the exact person, you can choose{" "}
-                    <b>OK</b> to open the Users list and search, or{" "}
-                    <b>Cancel</b> to stay here (save is canceled).
-                  </li>
-                </ul>
+            <div>
+              <b>Affiliation rule:</b> User must be marked as <b>Client</b>{" "}
+              and/or <b>Service Partner</b>.
+            </div>
+            <div>
+              <b>Service Partner rule:</b> If <b>Service Partner = Yes</b>, at
+              least one company must be selected.
+            </div>
+            <div>
+              <b>Profile photo</b> is optional (uploads after user creation).
+            </div>
+            {canGrantAdmin ? (
+              <div>
+                <b>SuperAdmin only:</b> can grant SuperAdmin flag and/or Global
+                Admin role.
               </div>
-
-              <div className="space-y-2">
-                <p>
-                  <b>For Super Admins only:</b>
-                </p>
-                <ul className="ml-5 list-disc space-y-1">
-                  <li>
-                    You’ll see extra switches for <b>Super Admin</b> and{" "}
-                    <b>Admin (Global)</b> access. Turning these on gives broader
-                    access; turning them off does not block creating the user.
-                  </li>
-                </ul>
-              </div>
-
-              <p>
-                <b>After a successful save:</b> you’ll be taken back to the
-                Users page.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-neutral-800">
-              <button
-                onClick={() => setShowNote(false)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
+            ) : null}
           </div>
-        </div>
-      )}
+        </Modal>
+      ) : null}
     </div>
   );
 }
 
-/* ------------------------ Small UI helpers ------------------------ */
-
-const roleMatches = (value: string | null | undefined, filter: string) => {
-  if (!filter) return true;
-  const normalize = (s: string) => s.replace(/[_\s]/g, "-").toLowerCase();
-  const filterApi = filter === "IH_PMT" ? "IH-PMT" : filter;
-  return normalize(String(value ?? "")) === normalize(filterApi);
-};
+/* ========================= small UI bits (CompanyEdit exact style) ========================= */
 
 function Section({
   title,
@@ -793,46 +888,49 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-6">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-6 sm:py-5">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-neutral-950 sm:px-6 sm:py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-extrabold uppercase tracking-wide text-[#00379C] dark:text-white">
           {title}
         </div>
-        {children}
+        <div className="h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
-    </section>
+      {children}
+    </div>
   );
 }
 
-function Text({
+function Input({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
   type = "text",
   required = false,
-  placeholder,
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
   type?: string;
   required?: boolean;
-  placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required ? " *" : ""}
       </span>
       <input
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30 disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        type={type}
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        type={type}
         disabled={disabled}
       />
     </label>
@@ -842,150 +940,166 @@ function Text({
 function TextArea({
   label,
   value,
-  setValue,
+  onChange,
+  placeholder,
+  rows = 3,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
 }) {
   return (
-    <label className="block md:col-span-2">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <textarea
-        className="w-full min-h-[84px] resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
       />
     </label>
   );
 }
 
-function Select({
+function SelectStrict({
   label,
   value,
-  setValue,
+  onChange,
   options,
+  placeholder = "Select…",
   disabled = false,
 }: {
   label: string;
   value: string;
-  setValue: (v: string) => void;
-  options: (string | { value: string; label: string })[];
+  onChange: (v: string) => void;
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </span>
       <select
-        className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-sm focus:outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-400 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+        className="w-full h-10 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm
+          focus:outline-none focus:border-transparent focus:ring-2 focus:ring-[#00379C]/30 disabled:opacity-60
+          dark:border-white/10 dark:bg-neutral-950 dark:text-white"
         value={value}
+        onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        onChange={(e) => setValue(e.target.value)}
       >
-        {options.map((o, i) => {
-          const v = typeof o === "string" ? o : o.value;
-          const l = typeof o === "string" ? o || "—" : o.label;
-          return (
-            <option key={v || `empty-${i}`} value={v}>
-              {l || "—"}
-            </option>
-          );
-        })}
+        <option value="">{placeholder}</option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
     </label>
   );
 }
 
-function CheckboxGroup({
-  label,
-  items,
-  selected,
-  setSelected,
-}: {
-  label: string;
-  items: { value: string; label: string }[];
-  selected: string[];
-  setSelected: (vals: string[]) => void;
-}) {
-  const toggle = (val: string) => {
-    setSelected(
-      selected.includes(val)
-        ? selected.filter((v) => v !== val)
-        : [...selected, val]
-    );
-  };
-
-  return (
-    <fieldset className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-        {label}
-      </legend>
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-        {items.map((it) => (
-          <label
-            key={it.value}
-            className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              checked={selected.includes(it.value)}
-              onChange={() => toggle(it.value)}
-            />
-            <span>{it.label}</span>
-          </label>
-        ))}
-      </div>
-      {items.length === 0 && (
-        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          No options available.
-        </div>
-      )}
-    </fieldset>
-  );
-}
-
 function ToggleYN({
   value,
-  setValue,
+  onChange,
 }: {
   value: boolean;
-  setValue: (v: boolean) => void;
+  onChange: (v: boolean) => void;
 }) {
+  const base =
+    "h-8 px-4 rounded-full text-[11px] font-semibold transition " +
+    "focus:outline-none focus:ring-2 focus:ring-[#00379C]/25";
+
+  const active = "bg-[#00379C] text-white";
+  const idle =
+    "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/5";
+
   return (
-    <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-xs shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="inline-flex rounded-full border border-slate-200 bg-white p-[2px] shadow-sm dark:border-white/10 dark:bg-neutral-950">
       <button
         type="button"
-        onClick={() => setValue(true)}
-        className={
-          "px-4 py-1.5 text-xs font-medium transition-colors " +
-          (value
-            ? "bg-emerald-600 text-white"
-            : "bg-transparent text-slate-700 dark:text-neutral-100")
-        }
+        onClick={() => onChange(true)}
+        className={`${base} ${value ? active : idle}`}
       >
-        Yes
+        YES
       </button>
       <button
         type="button"
-        onClick={() => setValue(false)}
-        className={
-          "px-4 py-1.5 text-xs font-medium transition-colors " +
-          (!value
-            ? "bg-emerald-600 text-white"
-            : "bg-transparent text-slate-700 dark:text-neutral-100")
-        }
+        onClick={() => onChange(false)}
+        className={`${base} ${!value ? active : idle}`}
       >
-        No
+        NO
       </button>
     </div>
   );
 }
 
-function setRoleWarn(arg0: any) {
-  throw new Error("Function not implemented.");
+function ListBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="max-h-64 overflow-auto rounded-2xl border border-slate-200 dark:border-white/10">
+      {children}
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+  btnBase,
+  btnLight,
+  btnGold,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  btnBase: string;
+  btnLight: string;
+  btnGold: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-neutral-950 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-white/10">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                {title}
+              </h2>
+              <div className="mt-1 h-1 w-10 rounded-full bg-[#FCC020]" />
+            </div>
+            <button
+              className={`${btnBase} ${btnLight}`}
+              onClick={onClose}
+              type="button"
+              aria-label="Close"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="p-5">{children}</div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10">
+            <button
+              className={`${btnBase} ${btnGold}`}
+              onClick={onClose}
+              type="button"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
