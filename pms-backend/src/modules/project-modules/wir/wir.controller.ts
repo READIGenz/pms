@@ -133,12 +133,15 @@ export class WirController {
     @Param('wirId') wirId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Req() req: any,
+    @Body('categories') categories: string[] = [],
+    @Body('tags') tags: string[] = [],
   ) {
     const actor = {
       userId: getAuthUserId(req),
       fullName: req?.user?.fullName ?? null,
     };
-    return this.service.createWirDocuments(projectId, wirId, files, actor);
+
+    return this.service.createWirDocuments(projectId, wirId, files, actor, categories, tags);
   }
 
   // wir.controller.ts
