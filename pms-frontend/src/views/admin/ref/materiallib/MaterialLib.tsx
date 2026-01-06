@@ -1065,8 +1065,8 @@ export default function MaterialLib() {
                           Standards
                         </div>
                         <div className="dark:text-white">
-                          viewItem.standards && viewItem.standards.length ?
-                          viewItem.standards.join(", ") : "—"
+                          {viewItem.standards && viewItem.standards.length ?
+                          viewItem.standards.join(", ") : "—"}
                         </div>
                       </div>
                       <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
