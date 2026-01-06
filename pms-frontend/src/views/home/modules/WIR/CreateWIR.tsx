@@ -24,7 +24,11 @@ function logWir(label: string, obj: any) {
 }
 
 const normalizeRole = (raw?: string) => {
-  const norm = (raw || "").toString().trim().replace(/[_\s-]+/g, "").toLowerCase();
+  const norm = (raw || "")
+    .toString()
+    .trim()
+    .replace(/[_\s-]+/g, "")
+    .toLowerCase();
   switch (norm) {
     case "admin":
       return "Admin";
@@ -56,14 +60,50 @@ type NavState = {
   project?: ProjectState;
 };
 
-function FieldLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1 ${className}`}>{children}</div>;
+function FieldLabel({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1 ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
-function Note({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`text-[12px] text-gray-500 dark:text-gray-400 ${className}`}>{children}</div>;
+function Note({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`text-[12px] text-gray-500 dark:text-gray-400 ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
-function SectionTitle({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`text-sm sm:text-base font-semibold dark:text-white mb-3 ${className}`}>{children}</div>;
+function SectionTitle({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`text-sm sm:text-base font-semibold dark:text-white mb-3 ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** Strict select wrapper (mobile-friendly sizing) */
@@ -156,8 +196,12 @@ function IconImage({ className = "" }: { className?: string }) {
   );
 }
 
-const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")); // 01..12
-const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")); // 00..55
+const HOURS_12 = Array.from({ length: 12 }, (_, i) =>
+  String(i + 1).padStart(2, "0")
+); // 01..12
+const MINUTES = Array.from({ length: 12 }, (_, i) =>
+  String(i * 5).padStart(2, "0")
+); // 00..55
 
 function parseDDMMYYtoISO(v: string): string | null {
   const t = v.trim();
@@ -169,10 +213,18 @@ function parseDDMMYYtoISO(v: string): string | null {
   if (day < 1 || day > 31 || mon < 1 || mon > 12) return null;
   let year = Number(yy);
   if (yy.length === 2) year = year >= 70 ? 1900 + year : 2000 + year;
-  return `${String(year).padStart(4, "0")}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return `${String(year).padStart(4, "0")}-${String(mon).padStart(
+    2,
+    "0"
+  )}-${String(day).padStart(2, "0")}`;
 }
 
-function composeDateTimeISO(dateISO: string | null, hour12: string, minute: string, ampm: "AM" | "PM") {
+function composeDateTimeISO(
+  dateISO: string | null,
+  hour12: string,
+  minute: string,
+  ampm: "AM" | "PM"
+) {
   if (!dateISO) return null;
   let h = Number(hour12);
   if (ampm === "PM" && h !== 12) h += 12;
@@ -290,11 +342,26 @@ function normalizeArrayish(payload: any): any[] {
 }
 
 function getRefId(m: any): string {
-  return String(m?.id ?? m?.refChecklistId ?? m?.checklistId ?? m?.refId ?? m?.uuid ?? m?.code ?? "");
+  return String(
+    m?.id ??
+      m?.refChecklistId ??
+      m?.checklistId ??
+      m?.refId ??
+      m?.uuid ??
+      m?.code ??
+      ""
+  );
 }
 
 function getRefCode(m: any): string {
-  return String(m?.code ?? m?.refCode ?? m?.refChecklistCode ?? m?.shortCode ?? m?.slug ?? "");
+  return String(
+    m?.code ??
+      m?.refCode ??
+      m?.refChecklistCode ??
+      m?.shortCode ??
+      m?.slug ??
+      ""
+  );
 }
 
 function getRefTitle(m: any): string {
@@ -321,7 +388,10 @@ function normalizeParts(raw: unknown): string[] {
 }
 
 function buildAttachmentsMeta(docs: Record<string, File[] | undefined>) {
-  const meta: Record<string, Array<{ name: string; size: number; type: string }>> = {};
+  const meta: Record<
+    string,
+    Array<{ name: string; size: number; type: string }>
+  > = {};
   for (const [k, arr] of Object.entries(docs || {})) {
     if (!arr || !arr.length) continue;
     meta[k] = arr.map((f) => ({ name: f.name, size: f.size, type: f.type }));
@@ -330,7 +400,15 @@ function buildAttachmentsMeta(docs: Record<string, File[] | undefined>) {
 }
 
 function splitPlannedAtToParts(iso?: string | null) {
-  if (!iso) return { dateISO: null, dateText: "", hh: "09", mm: "00", ampm: "AM", timeText: "09:00 AM" };
+  if (!iso)
+    return {
+      dateISO: null,
+      dateText: "",
+      hh: "09",
+      mm: "00",
+      ampm: "AM",
+      timeText: "09:00 AM",
+    };
   const d = new Date(iso);
   const Y = d.getFullYear();
   const M = String(d.getMonth() + 1).padStart(2, "0");
@@ -355,9 +433,18 @@ function combineDateTimeISO(dateStr?: string | null, timeStr?: string | null) {
     mm = "00",
     ss = "00";
   if (m) {
-    hh = String(Math.min(23, Math.max(0, parseInt(m[1]!, 10)))).padStart(2, "0");
-    mm = String(Math.min(59, Math.max(0, parseInt(m[2]!, 10)))).padStart(2, "0");
-    ss = String(Math.min(59, Math.max(0, parseInt(m[3] || "0", 10)))).padStart(2, "0");
+    hh = String(Math.min(23, Math.max(0, parseInt(m[1]!, 10)))).padStart(
+      2,
+      "0"
+    );
+    mm = String(Math.min(59, Math.max(0, parseInt(m[2]!, 10)))).padStart(
+      2,
+      "0"
+    );
+    ss = String(Math.min(59, Math.max(0, parseInt(m[3] || "0", 10)))).padStart(
+      2,
+      "0"
+    );
   }
   return `${dateStr}T${hh}:${mm}:${ss}`;
 }
@@ -420,26 +507,30 @@ export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
         const isOptional = it.required === false || /^optional$/i.test(req);
 
         return (
-          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold dark:text-white">
-                {it.text || "Untitled"}
-                {tol ? ` — ${tol}` : ""}
-              </div>
-              {codeLine && (
-                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  {codeLine}
+          <div
+            key={it.id}
+            className="rounded-2xl border dark:border-neutral-800 p-3"
+          >
+            {" "}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold dark:text-white">
+                  {it.text || "Untitled"}
+                  {tol ? ` — ${tol}` : ""}
                 </div>
-              )}
+                {codeLine && (
+                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                    {codeLine}
+                  </div>
+                )}
+              </div>
+
+              {it.critical ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                  Critical
+                </span>
+              ) : null}
             </div>
-
-            {it.critical ? (
-              <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                Critical
-              </span>
-            ) : null}
-          </div>
-
             <div className="mt-2 flex flex-wrap gap-2">
               {isMandatory && (
                 <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
@@ -462,7 +553,6 @@ export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
                 </span>
               )}
             </div>
-
             {(it.tags?.length || 0) > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {it.tags!.map((t, i) => (
@@ -493,8 +583,11 @@ export default function CreateWIR() {
   const isEdit = !!editId;
 
   const initialFollowupFlag =
-    search.get("mode") === "followup" || !!(loc.state as any)?.followup || !!(loc.state as any)?.followupMode;
-  const [isFollowupMode, setIsFollowupMode] = useState<boolean>(initialFollowupFlag);
+    search.get("mode") === "followup" ||
+    !!(loc.state as any)?.followup ||
+    !!(loc.state as any)?.followupMode;
+  const [isFollowupMode, setIsFollowupMode] =
+    useState<boolean>(initialFollowupFlag);
 
   console.log("[WIR] edit: flags", { isEdit, editId, search: loc.search });
 
@@ -516,7 +609,9 @@ export default function CreateWIR() {
   const projectId = params.projectId || projectFromState?.projectId || "";
 
   useEffect(() => {
-    document.title = isEdit ? "Trinity PMS — Edit WIR" : "Trinity PMS — Create WIR";
+    document.title = isEdit
+      ? "Trinity PMS — Edit WIR"
+      : "Trinity PMS — Create WIR";
   }, [isEdit]);
 
   /* ---------------- form state ---------------- */
@@ -552,7 +647,9 @@ export default function CreateWIR() {
   const [saveDlgOpen, setSaveDlgOpen] = useState(false);
   const [saveDlgBusy, setSaveDlgBusy] = useState(false);
   const [saveDlgErr, setSaveDlgErr] = useState<string | null>(null);
-  const [saveDlgRows, setSaveDlgRows] = useState<Array<{ label: string; apiKey: string; value: any }>>([]);
+  const [saveDlgRows, setSaveDlgRows] = useState<
+    Array<{ label: string; apiKey: string; value: any }>
+  >([]);
 
   // Refs to hold what we'll submit once user confirms
   const savePayloadRef = useRef<any>(null);
@@ -560,7 +657,9 @@ export default function CreateWIR() {
   const saveMethodRef = useRef<"POST" | "PATCH">("POST");
 
   // Activities (lazy)
-  const [activityOpts, setActivityOpts] = useState<Array<{ value: string; label: string }>>([]);
+  const [activityOpts, setActivityOpts] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityErr, setActivityErr] = useState<string | null>(null);
   const [activities, setActivities] = useState<ActivityLite[]>([]);
@@ -584,7 +683,9 @@ export default function CreateWIR() {
     for (const opt of activityOpts) {
       const raw = opt.label || "";
       const parts = raw.split("•");
-      const label = (parts.length > 1 ? parts.slice(1).join("•") : raw).trim().toLowerCase();
+      const label = (parts.length > 1 ? parts.slice(1).join("•") : raw)
+        .trim()
+        .toLowerCase();
       if (label === t) return opt.value;
     }
     return null;
@@ -612,10 +713,27 @@ export default function CreateWIR() {
 
     const opts = byDiscipline
       .map((r) => ({
-        value: String(r.id ?? r.activityId ?? r.code ?? r.slug ?? r.uuid ?? r.refId ?? r.refCode ?? ""),
+        value: String(
+          r.id ??
+            r.activityId ??
+            r.code ??
+            r.slug ??
+            r.uuid ??
+            r.refId ??
+            r.refCode ??
+            ""
+        ),
         label:
           (r.code ? `${r.code} • ` : "") +
-          String(r.title ?? r.name ?? r.label ?? r.code ?? r.refTitle ?? r.refName ?? "Untitled"),
+          String(
+            r.title ??
+              r.name ??
+              r.label ??
+              r.code ??
+              r.refTitle ??
+              r.refName ??
+              "Untitled"
+          ),
       }))
       .filter((o) => !!o.value && !!o.label)
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -655,7 +773,9 @@ export default function CreateWIR() {
         setActivityOpts(opts);
         lastLoadedFor.current = d;
       } catch (e: any) {
-        setActivityErr(e?.response?.data?.error || e?.message || "Failed to load activities.");
+        setActivityErr(
+          e?.response?.data?.error || e?.message || "Failed to load activities."
+        );
       } finally {
         setActivityLoading(false);
       }
@@ -706,14 +826,23 @@ export default function CreateWIR() {
 
         // ---- Infer follow-up from row ----
         const inferredFollowup =
-          String(row?.mode || row?.meta?.mode || "").toLowerCase() === "followup" ||
+          String(row?.mode || row?.meta?.mode || "").toLowerCase() ===
+            "followup" ||
           row?.meta?.followup === true ||
           row?.followup === true ||
           row?.isFollowup === true ||
           row?.is_followup === true ||
-          !!(row?.prevWirId || row?.parentWirId || row?.sourceWirId || row?.followupOf || row?.revisionOf) ||
+          !!(
+            row?.prevWirId ||
+            row?.parentWirId ||
+            row?.sourceWirId ||
+            row?.followupOf ||
+            row?.revisionOf
+          ) ||
           // pattern: items exist (carried from prev), but checklists[] absent/empty
-          (Array.isArray(row?.items) && row.items.length > 0 && (!Array.isArray(row?.checklists) || row.checklists.length === 0));
+          (Array.isArray(row?.items) &&
+            row.items.length > 0 &&
+            (!Array.isArray(row?.checklists) || row.checklists.length === 0));
 
         if (inferredFollowup && !isFollowupMode) {
           setIsFollowupMode(true);
@@ -736,8 +865,16 @@ export default function CreateWIR() {
                 return `${y}-${m}-${da}`;
               })();
 
-        const plannedAtFromParts = combineDateTimeISO(dateOnly, row.forTime ?? row.for_time);
-        const plannedAt = row.plannedAt ?? row.planned_at ?? row.plannedAtUtc ?? plannedAtFromParts ?? null;
+        const plannedAtFromParts = combineDateTimeISO(
+          dateOnly,
+          row.forTime ?? row.for_time
+        );
+        const plannedAt =
+          row.plannedAt ??
+          row.planned_at ??
+          row.plannedAtUtc ??
+          plannedAtFromParts ??
+          null;
 
         logWir("edit:plannedAt inputs", {
           rawForDate,
@@ -747,7 +884,14 @@ export default function CreateWIR() {
         logWir("edit:plannedAt result", plannedAt);
 
         // ---- Split into UI parts ----
-        const { dateISO: dISO, dateText: dTxt, hh: H, mm: M, ampm: AP, timeText: T } = splitPlannedAtToParts(plannedAt);
+        const {
+          dateISO: dISO,
+          dateText: dTxt,
+          hh: H,
+          mm: M,
+          ampm: AP,
+          timeText: T,
+        } = splitPlannedAtToParts(plannedAt);
 
         setDateISO(dISO);
         setDateText(dTxt);
@@ -770,7 +914,11 @@ export default function CreateWIR() {
           resolvedActivityId,
         });
 
-        if (!resolvedActivityId && typeof row.title === "string" && row.title.trim()) {
+        if (
+          !resolvedActivityId &&
+          typeof row.title === "string" &&
+          row.title.trim()
+        ) {
           pendingActivityTitleRef.current = row.title.trim();
         }
 
@@ -826,7 +974,8 @@ export default function CreateWIR() {
             if (mime.startsWith("image/")) return "photos";
             if (ext.endsWith(".pdf") || ext.endsWith(".dwg")) return "drawings";
             if (ext.includes("itp")) return "itp";
-            if (ext.includes("mat") || ext.includes("material")) return "material";
+            if (ext.includes("mat") || ext.includes("material"))
+              return "material";
             if (ext.includes("sft") || ext.includes("safety")) return "safety";
             return "other";
           };
@@ -866,10 +1015,13 @@ export default function CreateWIR() {
         const refIds = pickSelectedChecklistIds(row);
         const isFU = inferredFollowup || isFollowupMode;
         setSelectedRefIds(isFU ? [] : refIds);
-
       } catch (e: any) {
-        const errMsg = e?.response?.data?.error || e?.message || "Failed to load WIR.";
-        console.error("[WIR] edit:GET error:", e?.response?.data ?? e?.message ?? e);
+        const errMsg =
+          e?.response?.data?.error || e?.message || "Failed to load WIR.";
+        console.error(
+          "[WIR] edit:GET error:",
+          e?.response?.data ?? e?.message ?? e
+        );
         setSubmitErr(errMsg);
       }
     })();
@@ -890,7 +1042,11 @@ export default function CreateWIR() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
 
-  const roleCanCreate = role === "Contractor" || role === "PMC" || role === "IH-PMT" || role === "Admin";
+  const roleCanCreate =
+    role === "Contractor" ||
+    role === "PMC" ||
+    role === "IH-PMT" ||
+    role === "Admin";
 
   const backToWirList = () => {
     const base =
@@ -904,7 +1060,10 @@ export default function CreateWIR() {
         ? `/home/client/projects/${projectId}/wir`
         : `/home/projects/${projectId}/wir`;
 
-    navigate(base, { state: { role, project: projectFromState || { projectId } }, replace: true });
+    navigate(base, {
+      state: { role, project: projectFromState || { projectId } },
+      replace: true,
+    });
   };
 
   // Build creator display name from auth
@@ -912,7 +1071,9 @@ export default function CreateWIR() {
     (user as any)?.fullName ||
     (user as any)?.name ||
     (user as any)?.displayName ||
-    [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") ||
+    [(user as any)?.firstName, (user as any)?.lastName]
+      .filter(Boolean)
+      .join(" ") ||
     (claims as any)?.fullName ||
     (claims as any)?.name ||
     (claims as any)?.displayName ||
@@ -947,7 +1108,11 @@ export default function CreateWIR() {
 
       setRefMeta(rows as RefChecklistMeta[]);
     } catch (e: any) {
-      setRefErr(e?.response?.data?.error || e?.message || "Failed to load reference checklists.");
+      setRefErr(
+        e?.response?.data?.error ||
+          e?.message ||
+          "Failed to load reference checklists."
+      );
       setRefMeta([]);
     } finally {
       setRefLoading(false);
@@ -990,7 +1155,9 @@ export default function CreateWIR() {
   const visibleIds = useMemo(() => libVisible.map(getRefId), [libVisible]);
 
   const allVisibleSelected = useMemo(
-    () => visibleIds.length > 0 && visibleIds.every((id) => selectedRefIds.includes(id)),
+    () =>
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => selectedRefIds.includes(id)),
     [visibleIds, selectedRefIds]
   );
 
@@ -1006,16 +1173,24 @@ export default function CreateWIR() {
     });
   }, [allVisibleSelected, visibleIds]);
 
-  const combinedSelectedCount = useMemo(() => selectedRefIds.length, [selectedRefIds]);
+  const combinedSelectedCount = useMemo(
+    () => selectedRefIds.length,
+    [selectedRefIds]
+  );
 
   const combinedItemsCount = useMemo(() => {
     if (combinedItems.length) return combinedItems.length;
     let s = 0;
     for (const m of filteredRefMeta) {
-      const id = String((m as any).id ?? (m as any).refChecklistId ?? (m as any).code);
+      const id = String(
+        (m as any).id ?? (m as any).refChecklistId ?? (m as any).code
+      );
       if (!selectedRefIds.includes(id)) continue;
       const c =
-        (m as any).itemsCount ?? ((m as any).items ? (m as any).items.length : undefined) ?? (m as any).count ?? 0;
+        (m as any).itemsCount ??
+        ((m as any).items ? (m as any).items.length : undefined) ??
+        (m as any).count ??
+        0;
       s += Number(c) || 0;
     }
     return s;
@@ -1059,7 +1234,9 @@ export default function CreateWIR() {
   /* ---------------- checklist modals ---------------- */
 
   const toggleSelectChecklist = (id: string) => {
-    setSelectedRefIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedRefIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   /** Prefer the real checklist id for fetching, even if selection stored a code */
@@ -1077,10 +1254,17 @@ export default function CreateWIR() {
     setViewLoading(true);
     setViewOpen(true);
     try {
-      const refLookup: Record<string, { code?: string | null; title?: string | null }> = {};
+      const refLookup: Record<
+        string,
+        { code?: string | null; title?: string | null }
+      > = {};
       for (const m of refMeta as any[]) {
         const rid = String(m?.id ?? m?.refChecklistId ?? m?.code ?? "");
-        if (rid) refLookup[rid] = { code: (m as any).code ?? null, title: (m as any).title ?? null };
+        if (rid)
+          refLookup[rid] = {
+            code: (m as any).code ?? null,
+            title: (m as any).title ?? null,
+          };
       }
 
       const arrays = await Promise.all(
@@ -1096,7 +1280,11 @@ export default function CreateWIR() {
               requirement:
                 it.requirement ??
                 it.mandatory ??
-                (it.required === true ? "Mandatory" : it.required === false ? "Optional" : null),
+                (it.required === true
+                  ? "Mandatory"
+                  : it.required === false
+                  ? "Optional"
+                  : null),
               required: typeof it.required === "boolean" ? it.required : null,
               critical: typeof it.critical === "boolean" ? it.critical : null,
               tags: Array.isArray(it.tags) ? it.tags : [],
@@ -1117,7 +1305,11 @@ export default function CreateWIR() {
       const all = arrays.flat();
       setCombinedItems(all);
     } catch (e: any) {
-      setViewErr(e?.response?.data?.error || e?.message || "Failed to load checklist items.");
+      setViewErr(
+        e?.response?.data?.error ||
+          e?.message ||
+          "Failed to load checklist items."
+      );
     } finally {
       setViewLoading(false);
     }
@@ -1131,7 +1323,9 @@ export default function CreateWIR() {
 
     try {
       const row = editWirRef.current || {};
-      const checklists: Array<any> = Array.isArray(row.checklists) ? row.checklists : [];
+      const checklists: Array<any> = Array.isArray(row.checklists)
+        ? row.checklists
+        : [];
       const byChecklistId = new Map(
         checklists.map((c: any) => [
           String(c?.checklistId ?? c?.id ?? ""),
@@ -1154,7 +1348,9 @@ export default function CreateWIR() {
           refTitle: meta.title,
           inspectorStatus: (it?.inspectorStatus ?? null) as string | null,
           status: (it?.status ?? null) as string | null,
-          lastRunStatus: (Array.isArray(it?.runs) && it.runs.length ? it.runs[0]?.status : null) as string | null,
+          lastRunStatus: (Array.isArray(it?.runs) && it.runs.length
+            ? it.runs[0]?.status
+            : null) as string | null,
           units: (it?.unit ?? null) as string | null,
           tolOp: (it?.tolerance ?? null) as string | null,
           base: (it?.base ?? null) as number | null,
@@ -1165,7 +1361,11 @@ export default function CreateWIR() {
 
       setFuItems(list);
     } catch (e: any) {
-      setFuErr(e?.response?.data?.error || e?.message || "Failed to load follow-up items.");
+      setFuErr(
+        e?.response?.data?.error ||
+          e?.message ||
+          "Failed to load follow-up items."
+      );
     } finally {
       setFuLoading(false);
     }
@@ -1176,12 +1376,24 @@ export default function CreateWIR() {
   const hasRequiredForSubmit = useMemo(() => {
     const hasDT = !!composeDateTimeISO(dateISO, hh, mm, ampm);
     const baseOk = Boolean(discipline && activityId && hasDT);
-    return isFollowupMode ? baseOk : Boolean(baseOk && selectedRefIds.length > 0);
-  }, [discipline, activityId, dateISO, hh, mm, ampm, selectedRefIds, isFollowupMode]);
+    return isFollowupMode
+      ? baseOk
+      : Boolean(baseOk && selectedRefIds.length > 0);
+  }, [
+    discipline,
+    activityId,
+    dateISO,
+    hh,
+    mm,
+    ampm,
+    selectedRefIds,
+    isFollowupMode,
+  ]);
 
   function buildDraftPayload(isPatch = false) {
     const dtISO = composeDateTimeISO(dateISO, hh, mm, ampm) || undefined;
-    const activityTitle = getActivityTitleById(activityId, activities, activityOpts) || undefined;
+    const activityTitle =
+      getActivityTitleById(activityId, activities, activityOpts) || undefined;
 
     const forDateISO = dtISO ? dtISO.slice(0, 10) : undefined; // "YYYY-MM-DD"
     const forTimeStr = dtISO ? `${hh}:${mm}` : undefined; // "HH:MM"
@@ -1201,7 +1413,11 @@ export default function CreateWIR() {
       ...headerPatch,
       header: headerPatch,
       plannedAt: isPatch ? undefined : dtISO,
-      refChecklistIds: isFollowupMode ? undefined : selectedRefIds.length ? selectedRefIds : undefined,
+      refChecklistIds: isFollowupMode
+        ? undefined
+        : selectedRefIds.length
+        ? selectedRefIds
+        : undefined,
       materializeItemsFromRef: isFollowupMode ? false : false,
       assignCode: false,
       clientHints: {
@@ -1226,22 +1442,60 @@ export default function CreateWIR() {
   function buildPreviewRows(payload: any) {
     return [
       { label: "Status", apiKey: "status", value: payload.status },
-      { label: "Discipline", apiKey: "discipline", value: payload.discipline ?? "—" },
-      { label: "Activity ID", apiKey: "activityId", value: payload.activityId ?? "—" },
-      { label: "Title (Activity)", apiKey: "title", value: payload.title ?? "—" },
-      { label: "Planned At (ISO)", apiKey: "plannedAt", value: payload.plannedAt ?? "—" },
+      {
+        label: "Discipline",
+        apiKey: "discipline",
+        value: payload.discipline ?? "—",
+      },
+      {
+        label: "Activity ID",
+        apiKey: "activityId",
+        value: payload.activityId ?? "—",
+      },
+      {
+        label: "Title (Activity)",
+        apiKey: "title",
+        value: payload.title ?? "—",
+      },
+      {
+        label: "Planned At (ISO)",
+        apiKey: "plannedAt",
+        value: payload.plannedAt ?? "—",
+      },
       { label: "forDate", apiKey: "forDate", value: payload.forDate ?? "—" },
       { label: "forTime", apiKey: "forTime", value: payload.forTime ?? "—" },
-      { label: "City/Town", apiKey: "cityTown", value: payload.cityTown ?? "—" },
-      { label: "Description (WI)", apiKey: "description", value: payload.description ?? "—" },
+      {
+        label: "City/Town",
+        apiKey: "cityTown",
+        value: payload.cityTown ?? "—",
+      },
+      {
+        label: "Description (WI)",
+        apiKey: "description",
+        value: payload.description ?? "—",
+      },
       {
         label: "Checklists Count",
         apiKey: "refChecklistIds",
-        value: Array.isArray(payload.refChecklistIds) ? payload.refChecklistIds.length : 0,
+        value: Array.isArray(payload.refChecklistIds)
+          ? payload.refChecklistIds.length
+          : 0,
       },
-      { label: "Materialize Items", apiKey: "materializeItemsFromRef", value: String(payload.materializeItemsFromRef) },
-      { label: "UI Date Text", apiKey: "clientHints.dateText", value: payload.clientHints?.dateText ?? "—" },
-      { label: "UI Time Text", apiKey: "clientHints.timeText", value: payload.clientHints?.timeText ?? "—" },
+      {
+        label: "Materialize Items",
+        apiKey: "materializeItemsFromRef",
+        value: String(payload.materializeItemsFromRef),
+      },
+      {
+        label: "UI Date Text",
+        apiKey: "clientHints.dateText",
+        value: payload.clientHints?.dateText ?? "—",
+      },
+      {
+        label: "UI Time Text",
+        apiKey: "clientHints.timeText",
+        value: payload.clientHints?.timeText ?? "—",
+      },
     ];
   }
 
@@ -1268,29 +1522,25 @@ export default function CreateWIR() {
         // Skip backend (existing) files
         if ((f as any).existing) continue;
 
-        // Append file
+        // IMPORTANT: field name must match backend (see section B)
         form.append("files", f);
 
-        // Append category/tag aligned by index
-        categories.push(f.category || key);
-        tags.push(f.tag || null);
+        categories.push((f as any).category || key);
+        tags.push((f as any).tag || ""); // avoid null -> "null"
       }
     }
 
-    if (categories.length > 0) {
-      categories.forEach((c) => form.append("categories", c));
-      tags.forEach((t) => form.append("tags", t));
+    if (!form.has("files")) {
+      console.log("[WIR] No NEW files to upload.");
+      return;
     }
 
-    if (form.has("files")) {
-      await api.post(
-        `/projects/${projectId}/wir/${wirId}/documents`,
-        form,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-    } else {
-      console.log("[WIR] No NEW files to upload on submit.");
-    }
+    // Keep indices aligned with files
+    categories.forEach((c) => form.append("categories", c));
+    tags.forEach((t) => form.append("tags", t));
+
+    // IMPORTANT: DO NOT set Content-Type manually (axios/browser adds boundary)
+    return api.post(`/projects/${projectId}/wir/${wirId}/documents`, form);
   }
 
   const saveDraft = async () => {
@@ -1299,14 +1549,19 @@ export default function CreateWIR() {
     setSubmitErr(null);
     try {
       const isPatch = isEdit && !!editId;
-      const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
+      const path = isPatch
+        ? `/projects/${projectId}/wir/${editId}`
+        : `/projects/${projectId}/wir`;
       const method = isPatch ? "PATCH" : "POST";
 
       const payload = buildDraftPayload(isPatch);
       if (isPatch) delete payload.plannedAt;
 
       logWir(`saveDraft -> ${method} ${path}`, payload);
-      const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+      const res =
+        method === "PATCH"
+          ? await api.patch(path, payload)
+          : await api.post(path, payload);
       logWir("saveDraft <- response", res?.data);
 
       if (isPatch) {
@@ -1316,26 +1571,39 @@ export default function CreateWIR() {
 
       if (isPatch && selectedRefIds.length && !isFollowupMode) {
         try {
-          await api.post(`/projects/${projectId}/wir/${editId}/sync-checklists`, {
-            refChecklistIds: selectedRefIds,
-            materializeItemsFromRef: false,
-            replace: true,
-          });
+          await api.post(
+            `/projects/${projectId}/wir/${editId}/sync-checklists`,
+            {
+              refChecklistIds: selectedRefIds,
+              materializeItemsFromRef: false,
+              replace: true,
+            }
+          );
         } catch (e: any) {
-          console.warn("[WIR] sync-checklists (draft) warn:", e?.response?.data || e?.message || e);
+          console.warn(
+            "[WIR] sync-checklists (draft) warn:",
+            e?.response?.data || e?.message || e
+          );
         }
       }
 
       // NEW: upload header docs for this WIR
       const wirId =
-        extractWirIdFromResponse(res) ||
-        (isPatch ? editId || "" : "");
+        extractWirIdFromResponse(res) || (isPatch ? editId || "" : "");
       if (wirId) {
-        await uploadHeaderDocs(projectId, wirId, docs);
+        try {
+          await uploadHeaderDocs(projectId, wirId, docs);
+        } catch (e: any) {
+          console.warn(
+            "[WIR] documents upload failed (draft still saved):",
+            e?.response?.data || e?.message || e
+          );
+          // OPTIONAL: show a softer message:
+          // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
+        }
       }
 
       backToWirList();
-
     } catch (e: any) {
       const err = e?.response?.data || e?.message || e;
       console.error("[WIR] saveDraft error:", err);
@@ -1345,7 +1613,7 @@ export default function CreateWIR() {
     }
   };
 
-    const submitFinal = async () => {
+  const submitFinal = async () => {
     if (!projectId || submitting || !hasRequiredForSubmit) return;
     setSubmitting(true);
     setSubmitErr(null);
@@ -1354,7 +1622,8 @@ export default function CreateWIR() {
 
       const forDateISO = dtISO.slice(0, 10);
       const forTimeStr = `${hh}:${mm}`;
-      const activityTitle = getActivityTitleById(activityId, activities, activityOpts) || undefined;
+      const activityTitle =
+        getActivityTitleById(activityId, activities, activityOpts) || undefined;
 
       const payload: any = {
         status: "Submitted",
@@ -1389,17 +1658,26 @@ export default function CreateWIR() {
 
       // Upload header docs for this WIR
       const wirId =
-        extractWirIdFromResponse(res) ||
-        (isEdit ? editId || "" : "");
+        extractWirIdFromResponse(res) || (isEdit ? editId || "" : "");
 
       if (wirId) {
-        await uploadHeaderDocs(projectId, wirId, docs);
+        try {
+          await uploadHeaderDocs(projectId, wirId, docs);
+        } catch (e: any) {
+          console.warn(
+            "[WIR] documents upload failed (draft still saved):",
+            e?.response?.data || e?.message || e
+          );
+          // OPTIONAL: show a softer message:
+          // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
+        }
       }
 
       backToWirList();
-
     } catch (e: any) {
-      setSubmitErr(e?.response?.data?.error || e?.message || "Failed to submit WIR.");
+      setSubmitErr(
+        e?.response?.data?.error || e?.message || "Failed to submit WIR."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1411,19 +1689,22 @@ export default function CreateWIR() {
     setSubmitErr(null);
     try {
       const isPatch = !!wirIdForModal;
-      const path = isPatch ? `/projects/${projectId}/wir/${wirIdForModal}` : `/projects/${projectId}/wir`;
+      const path = isPatch
+        ? `/projects/${projectId}/wir/${wirIdForModal}`
+        : `/projects/${projectId}/wir`;
       const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
 
       const payload = buildDraftPayload(isPatch);
       if (isPatch) delete payload.plannedAt;
 
       logWir(`autoSaveDraft -> ${method} ${path}`, payload);
-      const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+      const res =
+        method === "PATCH"
+          ? await api.patch(path, payload)
+          : await api.post(path, payload);
       logWir("autoSaveDraft <- response", res?.data);
 
-      const newId =
-        extractWirIdFromResponse(res) ||
-        wirIdForModal;
+      const newId = extractWirIdFromResponse(res) || wirIdForModal;
 
       if (newId) {
         setWirIdForModal(newId);
@@ -1432,11 +1713,12 @@ export default function CreateWIR() {
       }
 
       setDispatchOpen(true);
-
     } catch (e: any) {
       const err = e?.response?.data || e?.message || e;
       console.error("[WIR] autoSaveDraft error:", err);
-      setSubmitErr(err?.error || err?.message || "Failed to save draft before dispatch.");
+      setSubmitErr(
+        err?.error || err?.message || "Failed to save draft before dispatch."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1447,12 +1729,48 @@ export default function CreateWIR() {
   // Docs tiles config (UI only)
   const docTiles = useMemo(
     () => [
-      { key: "drawings" as const, label: "Drawings", hint: "PDF / DWG", accept: ".pdf,.dwg,.dxf", Icon: IconDoc },
-      { key: "itp" as const, label: "ITP", hint: "PDF / DOC", accept: ".pdf,.doc,.docx", Icon: IconDoc },
-      { key: "other" as const, label: "Other Documents", hint: "Any file", accept: "", Icon: IconDoc },
-      { key: "photos" as const, label: "Photos", hint: "JPG / PNG", accept: "image/*", Icon: IconImage },
-      { key: "material" as const, label: "Material Approval", hint: "PDF / IMG", accept: ".pdf,image/*", Icon: IconDoc },
-      { key: "safety" as const, label: "Safety Clearance", hint: "PDF", accept: ".pdf", Icon: IconDoc },
+      {
+        key: "drawings" as const,
+        label: "Drawings",
+        hint: "PDF / DWG",
+        accept: ".pdf,.dwg,.dxf",
+        Icon: IconDoc,
+      },
+      {
+        key: "itp" as const,
+        label: "ITP",
+        hint: "PDF / DOC",
+        accept: ".pdf,.doc,.docx",
+        Icon: IconDoc,
+      },
+      {
+        key: "other" as const,
+        label: "Other Documents",
+        hint: "Any file",
+        accept: "",
+        Icon: IconDoc,
+      },
+      {
+        key: "photos" as const,
+        label: "Photos",
+        hint: "JPG / PNG",
+        accept: "image/*",
+        Icon: IconImage,
+      },
+      {
+        key: "material" as const,
+        label: "Material Approval",
+        hint: "PDF / IMG",
+        accept: ".pdf,image/*",
+        Icon: IconDoc,
+      },
+      {
+        key: "safety" as const,
+        label: "Safety Clearance",
+        hint: "PDF",
+        accept: ".pdf",
+        Icon: IconDoc,
+      },
     ],
     []
   );
@@ -1464,7 +1782,9 @@ export default function CreateWIR() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0">
             <div className="text-base sm:text-xl md:text-2xl font-semibold dark:text-white">
-              {isEdit ? "Edit Work Inspection Request" : "Create Work Inspection Request"}
+              {isEdit
+                ? "Edit Work Inspection Request"
+                : "Create Work Inspection Request"}
             </div>
             <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 truncate">
               {projectFromState?.code ? `${projectFromState.code} — ` : ""}
@@ -1480,7 +1800,6 @@ export default function CreateWIR() {
             </button>
           </div>
         </div>
-
         {isFollowupMode && (
           <div className="mt-2">
             <div className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border dark:border-neutral-800 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
@@ -1489,19 +1808,24 @@ export default function CreateWIR() {
             </div>
           </div>
         )}
-
         {/* Body grid */}
         <div className="mt-4 sm:mt-5 space-y-4 sm:space-y-5">
           {/* ===== Section 1 — Project & Reference ===== */}
           <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-            <div className="text-sm sm:text-base font-semibold dark:text-white mb-3">Project & Reference</div>
+            <div className="text-sm sm:text-base font-semibold dark:text-white mb-3">
+              Project & Reference
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               {/* Project Code/Title (read-only display) */}
               <div className="sm:col-span-3">
-                <div className="text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1">Project</div>
+                <div className="text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1">
+                  Project
+                </div>
                 <div className="rounded-full border px-4 py-2 dark:border-neutral-800 dark:text-white">
-                  {(projectFromState?.code ? projectFromState.code + " — " : "") +
+                  {(projectFromState?.code
+                    ? projectFromState.code + " — "
+                    : "") +
                     (projectFromState?.title || `Project: ${projectId}`)}
                 </div>
               </div>
@@ -1533,7 +1857,6 @@ export default function CreateWIR() {
                     ref={activitySelectRef}
                     className="w-full px-3 py-2 rounded-full border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
                     value={activityId}
-
                     onChange={(e) => {
                       if (isFollowupMode) return;
                       setActivityId(e.target.value);
@@ -1576,11 +1899,19 @@ export default function CreateWIR() {
                     title="Reload activities"
                     aria-label="Reload activities"
                   >
-                    <IconRefresh className={`h-4 w-4 ${activityLoading ? "animate-spin" : ""}`} />
+                    <IconRefresh
+                      className={`h-4 w-4 ${
+                        activityLoading ? "animate-spin" : ""
+                      }`}
+                    />
                   </button>
                 </div>
 
-                {activityErr && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{activityErr}</div>}
+                {activityErr && (
+                  <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                    {activityErr}
+                  </div>
+                )}
               </label>
             </div>
           </section>
@@ -1658,7 +1989,9 @@ export default function CreateWIR() {
               placeholder="Describe the work to be inspected (max 200 chars)…"
               className="w-full text-[15px] sm:text-sm border rounded-2xl px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
             />
-            <div className="text-right text-[12px] text-gray-500 dark:text-gray-400">{workInspection.length}/200</div>
+            <div className="text-right text-[12px] text-gray-500 dark:text-gray-400">
+              {workInspection.length}/200
+            </div>
           </div>
 
           {/* Section 3 — Documents & Evidence */}
@@ -1708,14 +2041,21 @@ export default function CreateWIR() {
                             className="mt-0.5 text-[11px] sm:text-[12px] text-gray-600 dark:text-gray-300 leading-snug truncate"
                             title={tile.hint}
                           >
-                            Upload: <span className="font-medium">{tile.hint}</span>
+                            Upload:{" "}
+                            <span className="font-medium">{tile.hint}</span>
                           </div>
                           {/* Summary line (count) */}
                           <div
                             className="mt-2 text-[11px] text-gray-500 dark:text-gray-400"
-                            title={has ? fileSummary(files) : "Tap to choose files"}
+                            title={
+                              has ? fileSummary(files) : "Tap to choose files"
+                            }
                           >
-                            {has ? `${files!.length} file${files!.length === 1 ? "" : "s"} selected` : "Tap to choose files"}
+                            {has
+                              ? `${files!.length} file${
+                                  files!.length === 1 ? "" : "s"
+                                } selected`
+                              : "Tap to choose files"}
                           </div>
 
                           {/* Per-file rows with remove option */}
@@ -1738,13 +2078,19 @@ export default function CreateWIR() {
                                       e.stopPropagation(); // avoid reopening file dialog when deleting
 
                                       setDocs((prev) => {
-                                        const current = (prev as any)[tile.key] as File[] | undefined;
+                                        const current = (prev as any)[
+                                          tile.key
+                                        ] as File[] | undefined;
                                         if (!current) return prev;
 
-                                        const next = current.filter((_, i) => i !== idx);
+                                        const next = current.filter(
+                                          (_, i) => i !== idx
+                                        );
                                         return {
                                           ...prev,
-                                          [tile.key]: next.length ? next : undefined,
+                                          [tile.key]: next.length
+                                            ? next
+                                            : undefined,
                                         };
                                       });
                                     }}
@@ -1758,7 +2104,6 @@ export default function CreateWIR() {
                               ))}
                             </div>
                           )}
-
                         </div>
                       </div>
 
@@ -1780,47 +2125,57 @@ export default function CreateWIR() {
                       multiple
                       accept={tile.accept}
                       onChange={(e) => {
-  const picked = e.target.files ? Array.from(e.target.files) : [];
-  if (!picked.length) return;
+                        const picked = e.target.files
+                          ? Array.from(e.target.files)
+                          : [];
+                        if (!picked.length) return;
 
-  // Wrap into WirFile with category/tag + existing flag
-  const enhanced = picked.map((file) =>
-    Object.assign(file, {
-      existing: false,
-      category: tile.key,
-      tag: {
-        drawings: "dwg",
-        itp: "itp",
-        photos: "pic",
-        material: "mat",
-        safety: "sft",
-        other: "doc",
-      }[tile.key],
-    } as Partial<WirFile>)
-  ) as WirFile[];
+                        // Wrap into WirFile with category/tag + existing flag
+                        const enhanced = picked.map((file) =>
+                          Object.assign(file, {
+                            existing: false,
+                            category: tile.key,
+                            tag: {
+                              drawings: "dwg",
+                              itp: "itp",
+                              photos: "pic",
+                              material: "mat",
+                              safety: "sft",
+                              other: "doc",
+                            }[tile.key],
+                          } as Partial<WirFile>)
+                        ) as WirFile[];
 
-  setDocs((prev) => {
-    const existing = (prev as any)[tile.key] as WirFile[] | undefined;
-    const base: WirFile[] = existing ? [...existing] : [];
+                        setDocs((prev) => {
+                          const existing = (prev as any)[tile.key] as
+                            | WirFile[]
+                            | undefined;
+                          const base: WirFile[] = existing ? [...existing] : [];
 
-    // simple de-dup by name+size+lastModified
-    for (const f of enhanced) {
-      if (!base.some((g) => g.name === f.name && g.size === f.size && g.lastModified === f.lastModified)) {
-        base.push(f);
-      }
-    }
+                          // simple de-dup by name+size+lastModified
+                          for (const f of enhanced) {
+                            if (
+                              !base.some(
+                                (g) =>
+                                  g.name === f.name &&
+                                  g.size === f.size &&
+                                  g.lastModified === f.lastModified
+                              )
+                            ) {
+                              base.push(f);
+                            }
+                          }
 
-    return { ...prev, [tile.key]: base };
-  });
-}}
-
-
+                          return { ...prev, [tile.key]: base };
+                        });
+                      }}
                     />
                   </label>
                 );
               })}
               <Note className="mt-2">
-                Selected documents and photos will be uploaded when you save or submit this WIR.
+                Selected documents and photos will be uploaded when you save or
+                submit this WIR.
               </Note>
 
               {/* Section 4 — Checklist Library */}
@@ -1844,19 +2199,35 @@ export default function CreateWIR() {
                   <button
                     onClick={() => !isFollowupMode && setLibOpen(true)}
                     disabled={isFollowupMode}
-                    title={isFollowupMode ? "Disabled in follow-up: items already carried over" : "Add from Library"}
+                    title={
+                      isFollowupMode
+                        ? "Disabled in follow-up: items already carried over"
+                        : "Add from Library"
+                    }
                     className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800
-                  ${isFollowupMode ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
+                  ${
+                    isFollowupMode
+                      ? "opacity-60 cursor-not-allowed"
+                      : "hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  }`}
                   >
-                    {isFollowupMode ? "Add from Library (disabled)" : "Add from Library"}
+                    {isFollowupMode
+                      ? "Add from Library (disabled)"
+                      : "Add from Library"}
                   </button>
                 </div>
-                {refErr && <div className="mt-2 text-sm text-rose-600">{refErr}</div>}
+                {refErr && (
+                  <div className="mt-2 text-sm text-rose-600">{refErr}</div>
+                )}
               </div>
 
               {/* Section 5 — Compliance Checklist */}
               <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5 mb-24 sm:mb-0">
-                <SectionTitle>{isFollowupMode ? "Follow-up Items (Failed from previous)" : "Compliance Checklist"}</SectionTitle>
+                <SectionTitle>
+                  {isFollowupMode
+                    ? "Follow-up Items (Failed from previous)"
+                    : "Compliance Checklist"}
+                </SectionTitle>
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
@@ -1879,9 +2250,9 @@ export default function CreateWIR() {
                       onClick={openViewCompliance}
                       disabled={!selectedRefIds.length || isFollowupMode}
                       className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${
-                    !isFollowupMode && selectedRefIds.length
-                        ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                        : "opacity-60 cursor-not-allowed"
+                        !isFollowupMode && selectedRefIds.length
+                          ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                          : "opacity-60 cursor-not-allowed"
                       }`}
                       title={isFollowupMode ? "Disabled in follow-up mode" : ""}
                     >
@@ -1890,7 +2261,9 @@ export default function CreateWIR() {
                   </div>
                 </div>
 
-                {!isFollowupMode && viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+                {!isFollowupMode && viewErr && (
+                  <div className="mt-2 text-sm text-rose-600">{viewErr}</div>
+                )}
               </div>
             </div>
           </div>
@@ -1898,7 +2271,11 @@ export default function CreateWIR() {
           {/* Sticky Action Bar (mobile-first, pill-shaped buttons, no box) */}
           <div className="sticky bottom-0 left-0 right-0 z-20 -mx-4 sm:mx-0">
             <div className="px-4 sm:px-0 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-end bg-transparent">
-              {submitErr && <div className="text-sm text-rose-600 sm:mr-auto w-full sm:w-auto">{submitErr}</div>}
+              {submitErr && (
+                <div className="text-sm text-rose-600 sm:mr-auto w-full sm:w-auto">
+                  {submitErr}
+                </div>
+              )}
 
               {/* Save Draft – outline pill */}
               <button
@@ -1907,7 +2284,9 @@ export default function CreateWIR() {
                   const payload = buildDraftPayload(isPatch);
                   if (isPatch) delete payload.plannedAt;
 
-                  const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
+                  const path = isPatch
+                    ? `/projects/${projectId}/wir/${editId}`
+                    : `/projects/${projectId}/wir`;
                   const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
 
                   savePayloadRef.current = payload;
@@ -1920,7 +2299,11 @@ export default function CreateWIR() {
                 }}
                 disabled={!roleCanCreate || submitting}
                 className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border dark:border-neutral-800
-              ${!roleCanCreate || submitting ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
+              ${
+                !roleCanCreate || submitting
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:bg-gray-50 dark:hover:bg-neutral-800"
+              }`}
               >
                 Save Draft
               </button>
@@ -1932,9 +2315,9 @@ export default function CreateWIR() {
                 className={`w-full sm:w-auto text-sm px-6 py-2 rounded-full border
               ${
                 !roleCanCreate || submitting || !hasRequiredForSubmit
-                      ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                  }`}
+                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+              }`}
                 title="Discipline, Activity, Date/Time, and at least one Checklist are required"
               >
                 Submit
@@ -1947,7 +2330,9 @@ export default function CreateWIR() {
             <div className="fixed inset-0 z-50 bg-black/40">
               <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">Review Draft Save</div>
+                  <div className="text-base font-semibold dark:text-white">
+                    Review Draft Save
+                  </div>
                   <button
                     onClick={() => !saveDlgBusy && setSaveDlgOpen(false)}
                     className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
@@ -1956,13 +2341,19 @@ export default function CreateWIR() {
                     Close
                   </button>
                 </div>
-                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">This is exactly what will be saved to the WIR draft.</div>
+                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
+                  This is exactly what will be saved to the WIR draft.
+                </div>
 
                 <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y">
                   {saveDlgRows.map((r, i) => (
                     <div key={i} className="py-2">
-                      <div className="text-[12px] text-gray-500 dark:text-gray-400">{r.label}</div>
-                      <div className="text-[13px] sm:text-sm dark:text-white break-all">{String(r.value)}</div>
+                      <div className="text-[12px] text-gray-500 dark:text-gray-400">
+                        {r.label}
+                      </div>
+                      <div className="text-[13px] sm:text-sm dark:text-white break-all">
+                        {String(r.value)}
+                      </div>
                       <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
                         API key: <span className="font-mono">{r.apiKey}</span>
                       </div>
@@ -1970,7 +2361,9 @@ export default function CreateWIR() {
                   ))}
                 </div>
 
-                {saveDlgErr && <div className="mt-2 text-sm text-rose-600">{saveDlgErr}</div>}
+                {saveDlgErr && (
+                  <div className="mt-2 text-sm text-rose-600">{saveDlgErr}</div>
+                )}
 
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
                   <button
@@ -1989,9 +2382,15 @@ export default function CreateWIR() {
                         const payload = savePayloadRef.current;
                         const path = savePathRef.current;
                         const method = saveMethodRef.current;
-                        logWir(`saveDraft(confirm) -> ${method} ${path}`, payload);
+                        logWir(
+                          `saveDraft(confirm) -> ${method} ${path}`,
+                          payload
+                        );
 
-                        const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+                        const res =
+                          method === "PATCH"
+                            ? await api.patch(path, payload)
+                            : await api.post(path, payload);
                         logWir("saveDraft(confirm) <- response", res?.data);
 
                         // NEW: upload header docs for this WIR
@@ -1999,24 +2398,34 @@ export default function CreateWIR() {
                           extractWirIdFromResponse(res) ||
                           (method === "PATCH" ? editId || "" : "");
                         if (wirId) {
-                          await uploadHeaderDocs(projectId, wirId, docs);
+                          try {
+                            await uploadHeaderDocs(projectId, wirId, docs);
+                          } catch (e: any) {
+                            console.warn(
+                              "[WIR] documents upload failed (draft still saved):",
+                              e?.response?.data || e?.message || e
+                            );
+                            // OPTIONAL: show a softer message:
+                            // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
+                          }
                         }
 
                         setSaveDlgBusy(false);
                         setSaveDlgOpen(false);
                         backToWirList();
-
                       } catch (e: any) {
                         const err = e?.response?.data || e?.message || e;
                         console.error("[WIR] saveDraft(confirm) error:", err);
-                        setSaveDlgErr(err?.error || err?.message || "Failed to save draft.");
+                        setSaveDlgErr(
+                          err?.error || err?.message || "Failed to save draft."
+                        );
                         setSaveDlgBusy(false);
                       }
                     }}
                     className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${
-                  saveDlgBusy
-                      ? "opacity-60 cursor-not-allowed"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                      saveDlgBusy
+                        ? "opacity-60 cursor-not-allowed"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                     }`}
                     disabled={saveDlgBusy}
                   >
@@ -2034,7 +2443,9 @@ export default function CreateWIR() {
               <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 {/* Header */}
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">Checklist Library</div>
+                  <div className="text-base font-semibold dark:text-white">
+                    Checklist Library
+                  </div>
                   <button
                     onClick={() => setLibOpen(false)}
                     className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
@@ -2065,7 +2476,11 @@ export default function CreateWIR() {
                     onClick={toggleSelectAllVisible}
                     className="text-xs sm:text-sm px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
                     disabled={!libVisible.length}
-                    title={allVisibleSelected ? "Clear all (visible)" : "Select all (visible)"}
+                    title={
+                      allVisibleSelected
+                        ? "Clear all (visible)"
+                        : "Select all (visible)"
+                    }
                   >
                     {allVisibleSelected ? "Clear" : "Select all"}
                   </button>
@@ -2077,7 +2492,9 @@ export default function CreateWIR() {
                 ) : (
                   <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
                     {libVisible.length === 0 ? (
-                      <div className="text-sm text-gray-600 dark:text-gray-400 p-2">No checklists found.</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 p-2">
+                        No checklists found.
+                      </div>
                     ) : (
                       libVisible.map((m) => {
                         const id = getRefId(m);
@@ -2088,7 +2505,9 @@ export default function CreateWIR() {
                         const tol = anyM?.tolerance;
                         const itemsCnt =
                           anyM?.itemsCount ??
-                          (Array.isArray(anyM?.items) ? anyM.items.length : undefined) ??
+                          (Array.isArray(anyM?.items)
+                            ? anyM.items.length
+                            : undefined) ??
                           anyM?.count ??
                           anyM?.totalItems ??
                           anyM?.recordsCount ??
@@ -2116,11 +2535,17 @@ export default function CreateWIR() {
                             />
                             <div className="min-w-0">
                               <div className="text-[13px] sm:text-sm dark:text-white truncate">
-                                {code ? <span className="font-medium">#{code} • </span> : null}
+                                {code ? (
+                                  <span className="font-medium">
+                                    #{code} •{" "}
+                                  </span>
+                                ) : null}
                                 {title}
                               </div>
                               {metaLine ? (
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{metaLine}</div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                  {metaLine}
+                                </div>
                               ) : null}
                             </div>
                           </label>
@@ -2157,7 +2582,9 @@ export default function CreateWIR() {
             <div className="fixed inset-0 z-40 bg-black/40">
               <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">Compliance Checklist</div>
+                  <div className="text-base font-semibold dark:text-white">
+                    Compliance Checklist
+                  </div>
                   <button
                     onClick={() => setViewOpen(false)}
                     className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
@@ -2166,71 +2593,105 @@ export default function CreateWIR() {
                   </button>
                 </div>
 
-            {viewLoading ? (
-              <div className="text-sm">Loading…</div>
-            ) : viewErr ? (
-              <div className="text-sm text-rose-600">{viewErr}</div>
-            ) : combinedItems.length === 0 ? (
-              <div className="text-sm">No checklist items.</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {combinedItems.map((it) => {
-                  const tol = tolPillOf(it);
-                  const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
-                  const req = (it.requirement || "").toString().trim();
-                  const isMandatory = it.required === true || /^mandatory$/i.test(req);
-                  const isOptional = it.required === false || /^optional$/i.test(req);
+                {viewLoading ? (
+                  <div className="text-sm">Loading…</div>
+                ) : viewErr ? (
+                  <div className="text-sm text-rose-600">{viewErr}</div>
+                ) : combinedItems.length === 0 ? (
+                  <div className="text-sm">No checklist items.</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {combinedItems.map((it) => {
+                      const tol = tolPillOf(it);
+                      const codeLine = [it.refCode, it.code]
+                        .filter(Boolean)
+                        .join(" - ");
+                      const req = (it.requirement || "").toString().trim();
+                      const isMandatory =
+                        it.required === true || /^mandatory$/i.test(req);
+                      const isOptional =
+                        it.required === false || /^optional$/i.test(req);
 
-                  return (
-                    <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold dark:text-white">
-                            {it.text || "Untitled"}
-                            {tol ? ` — ${tol}` : ""}
+                      return (
+                        <div
+                          key={it.id}
+                          className="rounded-2xl border dark:border-neutral-800 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold dark:text-white">
+                                {it.text || "Untitled"}
+                                {tol ? ` — ${tol}` : ""}
+                              </div>
+                              {codeLine && (
+                                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                  {codeLine}
+                                </div>
+                              )}
+                            </div>
+
+                            {it.critical ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                Critical
+                              </span>
+                            ) : null}
                           </div>
-                          {codeLine && <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">{codeLine}</div>}
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {isMandatory && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                Mandatory
+                              </span>
+                            )}
+                            {isOptional && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                Optional
+                              </span>
+                            )}
+                            {it.units && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                Unit: {it.units}
+                              </span>
+                            )}
+                            {tol && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                Tolerance: {tol}
+                              </span>
+                            )}
+                          </div>
+
+                          {(it.tags?.length || 0) > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {it.tags!.map((t, i) => (
+                                <span
+                                  key={i}
+                                  className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-
-                        {it.critical ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                            Critical
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {isMandatory && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Mandatory</span>}
-                        {isOptional && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Optional</span>}
-                        {it.units && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Unit: {it.units}</span>}
-                        {tol && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Tolerance: {tol}</span>}
-                      </div>
-
-                      {(it.tags?.length || 0) > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {it.tags!.map((t, i) => (
-                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800">
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
+                {viewErr && (
+                  <div className="mt-2 text-sm text-rose-600">{viewErr}</div>
+                )}
               </div>
-            )}
-            {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
           {/* PATCH: Follow-up Failed Items Modal */}
           {fuOpen && (
             <div className="fixed inset-0 z-40 bg-black/40">
               <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">Follow-up Items</div>
+                  <div className="text-base font-semibold dark:text-white">
+                    Follow-up Items
+                  </div>
                   <button
                     onClick={() => setFuOpen(false)}
                     className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
@@ -2243,31 +2704,56 @@ export default function CreateWIR() {
                   <div className="mt-4 text-sm">Loading…</div>
                 ) : fuItems.length === 0 ? (
                   <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                    No items to display. This follow-up does not have carried failed items.
+                    No items to display. This follow-up does not have carried
+                    failed items.
                   </div>
                 ) : (
                   <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {fuItems.map((it) => {
                         const op = it.tolOp === "+-" ? "±" : it.tolOp;
-                        const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
-                        const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
+                        const tol =
+                          formatTolerance(
+                            op,
+                            it.base,
+                            it.minus,
+                            it.plus,
+                            it.units
+                          ) || null;
+                        const codeLine = [it.refCode, it.code]
+                          .filter(Boolean)
+                          .join(" - ");
 
                         return (
-                          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
+                          <div
+                            key={it.id}
+                            className="rounded-2xl border dark:border-neutral-800 p-3"
+                          >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold dark:text-white">
                                   {it.text || "Untitled"}
                                   {tol ? ` — ${tol}` : ""}
                                 </div>
-                                {codeLine && <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">{codeLine}</div>}
+                                {codeLine && (
+                                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {codeLine}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
                             <div className="mt-2 flex flex-wrap gap-2">
-                              {it.units && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Unit: {it.units}</span>}
-                              {tol && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Tolerance: {tol}</span>}
+                              {it.units && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                  Unit: {it.units}
+                                </span>
+                              )}
+                              {tol && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                  Tolerance: {tol}
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
@@ -2275,7 +2761,9 @@ export default function CreateWIR() {
                     </div>
                   </div>
                 )}
-                {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
+                {fuErr && (
+                  <div className="mt-2 text-sm text-rose-600">{fuErr}</div>
+                )}
               </div>
             </div>
           )}
@@ -2287,14 +2775,18 @@ export default function CreateWIR() {
             role={role}
             projectCaption={
               projectFromState?.code
-                ? `${projectFromState.code} — ${projectFromState.title || `Project: ${projectId}`}`
+                ? `${projectFromState.code} — ${
+                    projectFromState.title || `Project: ${projectId}`
+                  }`
                 : projectFromState?.title || `Project: ${projectId}`
             }
             projectId={projectId}
             wirId={wirIdForModal || ""}
           />
-        </div> {/* closes body grid div */}
-      </section> {/* closes main section */}
+        </div>{" "}
+        {/* closes body grid div */}
+      </section>{" "}
+      {/* closes main section */}
     </div>
   );
 }
