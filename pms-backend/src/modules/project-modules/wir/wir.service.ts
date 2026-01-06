@@ -1033,47 +1033,58 @@ export class WirService {
  * Save uploaded files as header-level WIR documents (not tied to any item/run).
  * Returns: [{ itemId: null, evidenceId, url, fileName, kind }]
  */
-  async createWirDocuments(
-    projectId: string,
-    wirId: string,
-    files: Express.Multer.File[],
-    actor: { userId?: string | null; fullName?: string | null } | undefined,
-    categories: string[] = [],
-    tags: string[] = []
-  ) {
-    const saved = await this.files.saveMany(files, {
-      subdir: `projects/${projectId}/wir/${wirId}`,
-    });
+async createWirDocuments(
+  projectId: string,
+  wirId: string,
+  files: Express.Multer.File[],
+  actor: { userId?: string | null; fullName?: string | null } | undefined,
+  categories: string[] = [],
+  tags: string[] = []
+) {
+  const saved = await this.files.saveMany(files, {
+    subdir: `projects/${projectId}/wir/${wirId}`,
+  });
 
-    const out = [];
+  const out = [];
 
-    for (let i = 0; i < saved.length; i++) {
-      const s = saved[i];
+  for (let i = 0; i < saved.length; i++) {
+    const s = saved[i];
 
-      const category = categories[i] ?? null;
-      const tag = tags[i] ?? null;
-
-      const ev = await this.prisma.wirItemEvidence.create({
-        data: {
-          wirId,
-          kind: s.mimeType?.startsWith("image/") ? "Photo" : "File",
-          url: s.url,
-          thumbUrl: null,
-          fileName: s.fileName,
-          fileSize: s.size,
-          mimeType: s.mimeType,
-          meta: {
-            category,
-            tag,
-          },
-        },
-      });
-
-      out.push(ev);
+    // Guard: skip any saved entry that doesn't have a URL
+    if (!s.url) {
+      // optional: log for debugging
+      // console.warn("[WIR] createWirDocuments: missing URL for saved file", {
+      //   projectId,
+      //   wirId,
+      //   fileName: s.fileName,
+      // });
+      continue;
     }
 
-    return { ok: true, items: out };
+    const category = categories[i] ?? null;
+    const tag = tags[i] ?? null;
+
+    const ev = await this.prisma.wirItemEvidence.create({
+      data: {
+        wirId,
+        kind: s.mimeType?.startsWith("image/") ? "Photo" : "File",
+        url: s.url,              // now narrowed to string
+        thumbUrl: null,
+        fileName: s.fileName,
+        fileSize: s.size,
+        mimeType: s.mimeType,
+        meta: {
+          category,
+          tag,
+        },
+      },
+    });
+
+    out.push(ev);
   }
+
+  return { ok: true, items: out };
+}
 
   // Create a new WIR “version” keeping only failed/NCR items (auto-select if dto.itemIds omitted)
   async rollForward(
@@ -1419,86 +1430,98 @@ export class WirService {
    * Returns: [{ itemId, evidenceId, url, fileName, kind }]
    */
   async createRunnerAttachments(
-    projectId: string,
-    wirId: string,
-    files: Array<Express.Multer.File>,
-    meta: Array<{ idx: number; itemId: string; kind?: 'Photo' | 'Video' | 'File' }>,
-  ) {
-    const wir = await this.prisma.wir.findFirst({
-      where: { wirId, projectId },
-      select: { wirId: true },
-    });
-    if (!wir) throw new NotFoundException('WIR not found for project');
+  projectId: string,
+  wirId: string,
+  files: Array<Express.Multer.File>,
+  meta: Array<{ idx: number; itemId: string; kind?: 'Photo' | 'Video' | 'File' }>,
+) {
+  const wir = await this.prisma.wir.findFirst({
+    where: { wirId, projectId },
+    select: { wirId: true },
+  });
+  if (!wir) throw new NotFoundException('WIR not found for project');
 
-    const metaByIdx = new Map<number, { itemId: string; kind?: 'Photo' | 'Video' | 'File' }>();
-    for (const m of meta || []) {
-      if (typeof m?.idx === 'number' && m?.itemId) metaByIdx.set(m.idx, { itemId: m.itemId, kind: m.kind });
+  const metaByIdx = new Map<number, { itemId: string; kind?: 'Photo' | 'Video' | 'File' }>();
+  for (const m of meta || []) {
+    if (typeof m?.idx === 'number' && m?.itemId) metaByIdx.set(m.idx, { itemId: m.itemId, kind: m.kind });
+  }
+
+  const saved = await this.files.saveMany(files, {
+    subdir: `projects/${projectId}/wir/${wirId}`,
+    makeThumbs: true,
+  });
+
+  const results: Array<{ itemId: string; evidenceId: string; url: string; fileName?: string | null; kind: WirItemEvidenceKind }> = [];
+  const touchedItemIds = new Set<string>();
+
+  await this.prisma.$transaction(async (tx) => {
+    for (let i = 0; i < saved.length; i++) {
+      const s = saved[i];
+
+      // Guard: skip any saved file entry that doesn't have a URL
+      if (!s.url) {
+        // optional debug:
+        // console.warn("[WIR] createRunnerAttachments: missing URL for saved file", {
+        //   projectId,
+        //   wirId,
+        //   fileName: s.fileName,
+        // });
+        continue;
+      }
+
+      const m = metaByIdx.get(i);
+      if (!m?.itemId) continue;
+
+      const exists = await tx.wirItem.findFirst({
+        where: { id: m.itemId, wirId },
+        select: { id: true },
+      });
+      if (!exists) continue;
+
+      const kind: WirItemEvidenceKind =
+        m.kind === 'Video' ? 'Video' :
+          m.kind === 'File' ? 'File' : 'Photo';
+
+      const row = await tx.wirItemEvidence.create({
+        data: {
+          wirId,
+          itemId: m.itemId,
+          kind,
+          url: s.url,                       // now guaranteed string
+          thumbUrl: s.thumbUrl || undefined,
+          fileName: s.fileName || undefined,
+          fileSize: s.size ?? undefined,
+          mimeType: s.mimeType || undefined,
+          capturedAt: new Date(),
+        },
+        select: { id: true, url: true, fileName: true, kind: true, itemId: true },
+      });
+
+      results.push({
+        itemId: row.itemId!,
+        evidenceId: row.id,
+        url: row.url,
+        fileName: row.fileName ?? null,
+        kind: row.kind,
+      });
+
+      touchedItemIds.add(m.itemId);
     }
 
-    const saved = await this.files.saveMany(files, {
-      subdir: `projects/${projectId}/wir/${wirId}`,
-      makeThumbs: true,
-    });
+    // Recompute photoCount for each touched item (exact count from DB)
+    for (const itemId of touchedItemIds) {
+      const photos = await tx.wirItemEvidence.count({
+        where: { wirId, itemId, kind: 'Photo' },
+      });
+      await tx.wirItem.update({
+        where: { id: itemId },
+        data: { photoCount: photos },
+      });
+    }
+  });
 
-    const results: Array<{ itemId: string; evidenceId: string; url: string; fileName?: string | null; kind: WirItemEvidenceKind }> = [];
-    const touchedItemIds = new Set<string>();
-
-    await this.prisma.$transaction(async (tx) => {
-      for (let i = 0; i < saved.length; i++) {
-        const s = saved[i];
-        const m = metaByIdx.get(i);
-        if (!m?.itemId) continue;
-
-        const exists = await tx.wirItem.findFirst({
-          where: { id: m.itemId, wirId },
-          select: { id: true },
-        });
-        if (!exists) continue;
-
-        const kind: WirItemEvidenceKind =
-          m.kind === 'Video' ? 'Video' :
-            m.kind === 'File' ? 'File' : 'Photo';
-
-        const row = await tx.wirItemEvidence.create({
-          data: {
-            wirId,
-            itemId: m.itemId,
-            kind,
-            url: s.url,
-            thumbUrl: s.thumbUrl || undefined,
-            fileName: s.fileName || undefined,
-            fileSize: s.size ?? undefined,
-            mimeType: s.mimeType || undefined,
-            capturedAt: new Date(),
-          },
-          select: { id: true, url: true, fileName: true, kind: true, itemId: true },
-        });
-
-        results.push({
-          itemId: row.itemId!,
-          evidenceId: row.id,
-          url: row.url,
-          fileName: row.fileName ?? null,
-          kind: row.kind,
-        });
-
-        touchedItemIds.add(m.itemId);
-      }
-
-      // Recompute photoCount for each touched item (exact count from DB)
-      for (const itemId of touchedItemIds) {
-        const photos = await tx.wirItemEvidence.count({
-          where: { wirId, itemId, kind: 'Photo' },
-        });
-        await tx.wirItem.update({
-          where: { id: itemId },
-          data: { photoCount: photos },
-        });
-      }
-    });
-
-    return results;
-  }
+  return results;
+}
 
   async deleteRunnerAttachment(
     projectId: string,

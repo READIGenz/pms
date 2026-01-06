@@ -1,5 +1,6 @@
 // pms-frontend/src/views/home/modules/WIR/CreateWIR.tsx
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../api/client";
 import { useAuth } from "../../../../hooks/useAuth";
@@ -55,13 +56,13 @@ type NavState = {
   project?: ProjectState;
 };
 
-function FieldLabel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function FieldLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1 ${className}`}>{children}</div>;
 }
-function Note({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Note({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`text-[12px] text-gray-500 dark:text-gray-400 ${className}`}>{children}</div>;
 }
-function SectionTitle({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function SectionTitle({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`text-sm sm:text-base font-semibold dark:text-white mb-3 ${className}`}>{children}</div>;
 }
 
@@ -364,8 +365,8 @@ function combineDateTimeISO(dateStr?: string | null, timeStr?: string | null) {
 /* ---------------- UI helpers (Docs tiles) ---------------- */
 function fileSummary(files?: File[] | undefined) {
   if (!files?.length) return "";
-  if (files.length === 1) return files[0]!.name;
-  return `${files.length} files selected`;
+  // show all file names (comma-separated)
+  return files.map((f) => f.name).join(", ");
 }
 
 function tolPillOf(it: UiComplianceItem): string | null {
@@ -374,6 +375,34 @@ function tolPillOf(it: UiComplianceItem): string | null {
   const u = (it.units || "").toString().trim();
   const parts = [op, base, u].filter(Boolean);
   return parts.length ? parts.join(" ") : null;
+}
+
+// Header-level docs state (per tile)
+type HeaderDocsState = {
+  drawings?: WirFile[];
+  itp?: WirFile[];
+  other?: WirFile[];
+  photos?: WirFile[];
+  material?: WirFile[];
+  safety?: WirFile[];
+};
+
+function extractWirIdFromResponse(res: any): string | null {
+  if (!res) return null;
+  const d = res.data ?? res;
+
+  const candidates = [
+    d?.data?.wirId,
+    d?.data?.id,
+    d?.wir?.wirId,
+    d?.wirId,
+    d?.id,
+  ];
+
+  for (const c of candidates) {
+    if (c != null && c !== "") return String(c);
+  }
+  return null;
 }
 
 export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
@@ -391,26 +420,25 @@ export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
         const isOptional = it.required === false || /^optional$/i.test(req);
 
         return (
-          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold dark:text-white">
-                  {it.text || "Untitled"}
-                  {tol ? ` — ${tol}` : ""}
-                </div>
-                {codeLine && (
-                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
-                    {codeLine}
-                  </div>
-                )}
+          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold dark:text-white">
+                {it.text || "Untitled"}
+                {tol ? ` — ${tol}` : ""}
               </div>
-
-              {it.critical ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                  Critical
-                </span>
-              ) : null}
+              {codeLine && (
+                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  {codeLine}
+                </div>
+              )}
             </div>
+
+            {it.critical ? (
+              <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                Critical
+              </span>
+            ) : null}
+          </div>
 
             <div className="mt-2 flex flex-wrap gap-2">
               {isMandatory && (
@@ -508,14 +536,7 @@ export default function CreateWIR() {
   const [workInspection, setWorkInspection] = useState<string>(""); // 200 chars
 
   // Section 3:
-  const [docs, setDocs] = useState<{
-    drawings?: WirFile[];
-    itp?: WirFile[];
-    other?: WirFile[];
-    photos?: WirFile[];
-    material?: WirFile[];
-    safety?: WirFile[];
-  }>({});
+  const [docs, setDocs] = useState<HeaderDocsState>({});
 
   // Section 4/5:
   const [refLoading, setRefLoading] = useState<boolean>(false);
@@ -1305,7 +1326,16 @@ export default function CreateWIR() {
         }
       }
 
+      // NEW: upload header docs for this WIR
+      const wirId =
+        extractWirIdFromResponse(res) ||
+        (isPatch ? editId || "" : "");
+      if (wirId) {
+        await uploadHeaderDocs(projectId, wirId, docs);
+      }
+
       backToWirList();
+
     } catch (e: any) {
       const err = e?.response?.data || e?.message || e;
       console.error("[WIR] saveDraft error:", err);
@@ -1315,7 +1345,7 @@ export default function CreateWIR() {
     }
   };
 
-  const submitFinal = async () => {
+    const submitFinal = async () => {
     if (!projectId || submitting || !hasRequiredForSubmit) return;
     setSubmitting(true);
     setSubmitErr(null);
@@ -1350,19 +1380,24 @@ export default function CreateWIR() {
         }
       }
 
+      let res;
       if (isEdit && editId) {
-        await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
+        res = await api.patch(`/projects/${projectId}/wir/${editId}`, payload);
       } else {
-        await api.post(`/projects/${projectId}/wir`, payload);
+        res = await api.post(`/projects/${projectId}/wir`, payload);
       }
-      const wirId = isEdit ? editId : payload?.wirId || null;
-      if (!isEdit && !wirId) {
-        // fetch created WIR to get ID if needed
-        // but normally backend returns ID, adjust if your API returns differently.
+
+      // Upload header docs for this WIR
+      const wirId =
+        extractWirIdFromResponse(res) ||
+        (isEdit ? editId || "" : "");
+
+      if (wirId) {
+        await uploadHeaderDocs(projectId, wirId, docs);
       }
-      await uploadHeaderDocs(projectId, wirIdForModal || wirId, docs);
 
       backToWirList();
+
     } catch (e: any) {
       setSubmitErr(e?.response?.data?.error || e?.message || "Failed to submit WIR.");
     } finally {
@@ -1387,15 +1422,17 @@ export default function CreateWIR() {
       logWir("autoSaveDraft <- response", res?.data);
 
       const newId =
-        String(res?.data?.data?.wirId ?? res?.data?.wir?.wirId ?? res?.data?.wirId ?? res?.data?.id ?? "") ||
+        extractWirIdFromResponse(res) ||
         wirIdForModal;
 
       if (newId) {
         setWirIdForModal(newId);
+        // NEW: upload header docs for this WIR
         await uploadHeaderDocs(projectId, newId, docs);
       }
 
       setDispatchOpen(true);
+
     } catch (e: any) {
       const err = e?.response?.data || e?.message || e;
       console.error("[WIR] autoSaveDraft error:", err);
@@ -1496,6 +1533,7 @@ export default function CreateWIR() {
                     ref={activitySelectRef}
                     className="w-full px-3 py-2 rounded-full border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
                     value={activityId}
+
                     onChange={(e) => {
                       if (isFollowupMode) return;
                       setActivityId(e.target.value);
@@ -1672,54 +1710,54 @@ export default function CreateWIR() {
                           >
                             Upload: <span className="font-medium">{tile.hint}</span>
                           </div>
-                          <div className="mt-2 space-y-1">
-                            {has ? (
-                              files!.map((f, idx) => (
+                          {/* Summary line (count) */}
+                          <div
+                            className="mt-2 text-[11px] text-gray-500 dark:text-gray-400"
+                            title={has ? fileSummary(files) : "Tap to choose files"}
+                          >
+                            {has ? `${files!.length} file${files!.length === 1 ? "" : "s"} selected` : "Tap to choose files"}
+                          </div>
+
+                          {/* Per-file rows with remove option */}
+                          {has && (
+                            <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
+                              {files!.map((f, idx) => (
                                 <div
                                   key={idx}
-                                  className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200 
-               break-all border-b border-gray-200 dark:border-neutral-700 pb-0.5 last:border-none"
+                                  className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200
+                   bg-gray-50/80 dark:bg-neutral-800/60 rounded-full px-2 py-1"
                                 >
-                                  <div className="flex-1 min-w-0">
-                                    <span className="font-medium text-gray-900 dark:text-gray-100">{f.name}</span>
-                                    {f.tag && (
-                                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-neutral-700 text-gray-800 dark:text-gray-300 uppercase">
-                                        {f.tag}
-                                      </span>
-                                    )}
-                                  </div>
+                                  <span className="truncate" title={f.name}>
+                                    {f.name}
+                                  </span>
 
-                                  {/* --- DELETE BUTTON --- */}
                                   <button
                                     type="button"
-                                    className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border 
-                 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 
-                 dark:hover:bg-red-900/20"
                                     onClick={(e) => {
                                       e.preventDefault();
-                                      e.stopPropagation();
+                                      e.stopPropagation(); // avoid reopening file dialog when deleting
 
-                                      setDocs(prev => {
-                                        const list = prev[tile.key] ?? [];
+                                      setDocs((prev) => {
+                                        const current = (prev as any)[tile.key] as File[] | undefined;
+                                        if (!current) return prev;
+
+                                        const next = current.filter((_, i) => i !== idx);
                                         return {
                                           ...prev,
-                                          [tile.key]: list.filter((_, i) => i !== idx)
+                                          [tile.key]: next.length ? next : undefined,
                                         };
                                       });
-
                                     }}
+                                    className="ml-1 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-gray-300
+                     text-gray-600 hover:bg-gray-200
+                     dark:border-neutral-600 dark:text-gray-200 dark:hover:bg-neutral-700"
                                   >
                                     ✕
                                   </button>
                                 </div>
-                              ))
-
-                            ) : (
-                              <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                Tap to choose files
-                              </div>
-                            )}
-                          </div>
+                              ))}
+                            </div>
+                          )}
 
                         </div>
                       </div>
@@ -1742,461 +1780,473 @@ export default function CreateWIR() {
                       multiple
                       accept={tile.accept}
                       onChange={(e) => {
-                        const picked = e.target.files ? Array.from(e.target.files) : [];
+  const picked = e.target.files ? Array.from(e.target.files) : [];
+  if (!picked.length) return;
 
-                        const wrapped = picked.map((file) => {
-                          // DO NOT CLONE. DO NOT SLICE. USE ORIGINAL BROWSER FILE.
-                          return Object.assign(file, {
-                            existing: false,
-                            category: tile.key,
-                            tag: {
-                              drawings: "dwg",
-                              itp: "itp",
-                              photos: "pic",
-                              material: "mat",
-                              safety: "sft",
-                              other: "doc",
-                            }[tile.key],
-                          });
-                        });
+  // Wrap into WirFile with category/tag + existing flag
+  const enhanced = picked.map((file) =>
+    Object.assign(file, {
+      existing: false,
+      category: tile.key,
+      tag: {
+        drawings: "dwg",
+        itp: "itp",
+        photos: "pic",
+        material: "mat",
+        safety: "sft",
+        other: "doc",
+      }[tile.key],
+    } as Partial<WirFile>)
+  ) as WirFile[];
 
-                        setDocs((prev) => ({
-                          ...prev,
-                          [tile.key]: [...(prev[tile.key] || []), ...wrapped],
-                        }));
-                      }}
+  setDocs((prev) => {
+    const existing = (prev as any)[tile.key] as WirFile[] | undefined;
+    const base: WirFile[] = existing ? [...existing] : [];
+
+    // simple de-dup by name+size+lastModified
+    for (const f of enhanced) {
+      if (!base.some((g) => g.name === f.name && g.size === f.size && g.lastModified === f.lastModified)) {
+        base.push(f);
+      }
+    }
+
+    return { ...prev, [tile.key]: base };
+  });
+}}
+
 
                     />
                   </label>
                 );
               })}
-            </div>
+              <Note className="mt-2">
+                Selected documents and photos will be uploaded when you save or submit this WIR.
+              </Note>
 
-            <Note className="mt-2">Uploading to server can be wired later; this records user selection in state now.</Note>
-          </div>
-
-          {/* Section 4 — Checklist Library */}
-          <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-            <SectionTitle>Checklist Library</SectionTitle>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="text-[13px] sm:text-sm dark:text-white">
-                Selected: <b>{combinedSelectedCount}</b> checklists
-                {combinedItemsCount ? (
-                  <>
-                    {" "}
-                    · <b>{combinedItemsCount}</b> items
-                  </>
-                ) : null}
-                {isFollowupMode && (
-                  <span className="ml-2 text-[12px] text-emerald-700 dark:text-emerald-300">
-                    (Follow-up: library is disabled)
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => !isFollowupMode && setLibOpen(true)}
-                disabled={isFollowupMode}
-                title={isFollowupMode ? "Disabled in follow-up: items already carried over" : "Add from Library"}
-                className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800
-                  ${isFollowupMode ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
-              >
-                {isFollowupMode ? "Add from Library (disabled)" : "Add from Library"}
-              </button>
-            </div>
-            {refErr && <div className="mt-2 text-sm text-rose-600">{refErr}</div>}
-          </div>
-
-          {/* Section 5 — Compliance Checklist */}
-          <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5 mb-24 sm:mb-0">
-            <SectionTitle>{isFollowupMode ? "Follow-up Items (Failed from previous)" : "Compliance Checklist"}</SectionTitle>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
-                {isFollowupMode
-                  ? "View the carried failed items that will be included in this follow-up."
-                  : "View the combined list of items from your selected checklists."}
-              </div>
-
-              <div className="flex gap-2">
-                {hasCarriedFailed && (
+              {/* Section 4 — Checklist Library */}
+              <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
+                <SectionTitle>Checklist Library</SectionTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="text-[13px] sm:text-sm dark:text-white">
+                    Selected: <b>{combinedSelectedCount}</b> checklists
+                    {combinedItemsCount ? (
+                      <>
+                        {" "}
+                        · <b>{combinedItemsCount}</b> items
+                      </>
+                    ) : null}
+                    {isFollowupMode && (
+                      <span className="ml-2 text-[12px] text-emerald-700 dark:text-emerald-300">
+                        (Follow-up: library is disabled)
+                      </span>
+                    )}
+                  </div>
                   <button
-                    onClick={openViewFailed}
-                    className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    onClick={() => !isFollowupMode && setLibOpen(true)}
+                    disabled={isFollowupMode}
+                    title={isFollowupMode ? "Disabled in follow-up: items already carried over" : "Add from Library"}
+                    className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800
+                  ${isFollowupMode ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
                   >
-                    View Failed Items
+                    {isFollowupMode ? "Add from Library (disabled)" : "Add from Library"}
                   </button>
-                )}
-
-                <button
-                  onClick={openViewCompliance}
-                  disabled={!selectedRefIds.length || isFollowupMode}
-                  className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${!isFollowupMode && selectedRefIds.length
-                    ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                    : "opacity-60 cursor-not-allowed"
-                    }`}
-                  title={isFollowupMode ? "Disabled in follow-up mode" : ""}
-                >
-                  View Combined Items
-                </button>
+                </div>
+                {refErr && <div className="mt-2 text-sm text-rose-600">{refErr}</div>}
               </div>
-            </div>
 
-            {!isFollowupMode && viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
-          </div>
-        </div>
-      </section>
+              {/* Section 5 — Compliance Checklist */}
+              <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5 mb-24 sm:mb-0">
+                <SectionTitle>{isFollowupMode ? "Follow-up Items (Failed from previous)" : "Compliance Checklist"}</SectionTitle>
 
-      {/* Sticky Action Bar (mobile-first, pill-shaped buttons, no box) */}
-      <div className="sticky bottom-0 left-0 right-0 z-20 -mx-4 sm:mx-0">
-        <div className="px-4 sm:px-0 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-end bg-transparent">
-          {submitErr && <div className="text-sm text-rose-600 sm:mr-auto w-full sm:w-auto">{submitErr}</div>}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
+                    {isFollowupMode
+                      ? "View the carried failed items that will be included in this follow-up."
+                      : "View the combined list of items from your selected checklists."}
+                  </div>
 
-          {/* Save Draft – outline pill */}
-          <button
-            onClick={() => {
-              const isPatch = isEdit && !!editId;
-              const payload = buildDraftPayload(isPatch);
-              if (isPatch) delete payload.plannedAt;
+                  <div className="flex gap-2">
+                    {hasCarriedFailed && (
+                      <button
+                        onClick={openViewFailed}
+                        className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      >
+                        View Failed Items
+                      </button>
+                    )}
 
-              const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
-              const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
-
-              savePayloadRef.current = payload;
-              savePathRef.current = path;
-              saveMethodRef.current = method;
-
-              setSaveDlgErr(null);
-              setSaveDlgRows(buildPreviewRows(payload));
-              setSaveDlgOpen(true);
-            }}
-            disabled={!roleCanCreate || submitting}
-            className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border dark:border-neutral-800
-              ${!roleCanCreate || submitting ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
-          >
-            Save Draft
-          </button>
-
-          {/* Submit – solid pill */}
-          <button
-            onClick={saveDraftBeforeDispatch}
-            disabled={!roleCanCreate || submitting || !hasRequiredForSubmit}
-            className={`w-full sm:w-auto text-sm px-6 py-2 rounded-full border
-              ${!roleCanCreate || submitting || !hasRequiredForSubmit
-                ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-              }`}
-            title="Discipline, Activity, Date/Time, and at least one Checklist are required"
-          >
-            Submit
-          </button>
-        </div>
-      </div>
-
-      {/* Save Draft – Confirm Dialog */}
-      {saveDlgOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40">
-          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-semibold dark:text-white">Review Draft Save</div>
-              <button
-                onClick={() => !saveDlgBusy && setSaveDlgOpen(false)}
-                className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
-                disabled={saveDlgBusy}
-              >
-                Close
-              </button>
-            </div>
-            <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">This is exactly what will be saved to the WIR draft.</div>
-
-            <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y">
-              {saveDlgRows.map((r, i) => (
-                <div key={i} className="py-2">
-                  <div className="text-[12px] text-gray-500 dark:text-gray-400">{r.label}</div>
-                  <div className="text-[13px] sm:text-sm dark:text-white break-all">{String(r.value)}</div>
-                  <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
-                    API key: <span className="font-mono">{r.apiKey}</span>
+                    <button
+                      onClick={openViewCompliance}
+                      disabled={!selectedRefIds.length || isFollowupMode}
+                      className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${!isFollowupMode && selectedRefIds.length
+                        ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                        : "opacity-60 cursor-not-allowed"
+                        }`}
+                      title={isFollowupMode ? "Disabled in follow-up mode" : ""}
+                    >
+                      View Combined Items
+                    </button>
                   </div>
                 </div>
-              ))}
+
+                {!isFollowupMode && viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+              </div>
             </div>
+          </div>
 
-            {saveDlgErr && <div className="mt-2 text-sm text-rose-600">{saveDlgErr}</div>}
+          {/* Sticky Action Bar (mobile-first, pill-shaped buttons, no box) */}
+          <div className="sticky bottom-0 left-0 right-0 z-20 -mx-4 sm:mx-0">
+            <div className="px-4 sm:px-0 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-end bg-transparent">
+              {submitErr && <div className="text-sm text-rose-600 sm:mr-auto w-full sm:w-auto">{submitErr}</div>}
 
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+              {/* Save Draft – outline pill */}
               <button
-                onClick={() => setSaveDlgOpen(false)}
-                className="w-full sm:w-auto text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
-                disabled={saveDlgBusy}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (saveDlgBusy) return;
-                  setSaveDlgBusy(true);
+                onClick={() => {
+                  const isPatch = isEdit && !!editId;
+                  const payload = buildDraftPayload(isPatch);
+                  if (isPatch) delete payload.plannedAt;
+
+                  const path = isPatch ? `/projects/${projectId}/wir/${editId}` : `/projects/${projectId}/wir`;
+                  const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
+
+                  savePayloadRef.current = payload;
+                  savePathRef.current = path;
+                  saveMethodRef.current = method;
+
                   setSaveDlgErr(null);
-                  try {
-                    const payload = savePayloadRef.current;
-                    const path = savePathRef.current;
-                    const method = saveMethodRef.current;
-                    logWir(`saveDraft(confirm) -> ${method} ${path}`, payload);
-                    const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
-                    // ---- Upload docs for Draft ----
-                    const wirId =
-                      String(res?.data?.data?.wirId ??
-                        res?.data?.wir?.wirId ??
-                        res?.data?.wirId ??
-                        res?.data?.id ?? "");
-
-                    if (wirId) {
-                      await uploadHeaderDocs(projectId, wirId, docs);
-                    }
-
-                    logWir("saveDraft(confirm) <- response", res?.data);
-                    setSaveDlgBusy(false);
-                    setSaveDlgOpen(false);
-                    backToWirList();
-                  } catch (e: any) {
-                    const err = e?.response?.data || e?.message || e;
-                    console.error("[WIR] saveDraft(confirm) error:", err);
-                    setSaveDlgErr(err?.error || err?.message || "Failed to save draft.");
-                    setSaveDlgBusy(false);
-                  }
+                  setSaveDlgRows(buildPreviewRows(payload));
+                  setSaveDlgOpen(true);
                 }}
-                className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${saveDlgBusy
-                  ? "opacity-60 cursor-not-allowed"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                disabled={!roleCanCreate || submitting}
+                className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border dark:border-neutral-800
+              ${!roleCanCreate || submitting ? "opacity-60 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
+              >
+                Save Draft
+              </button>
+
+              {/* Submit – solid pill */}
+              <button
+                onClick={saveDraftBeforeDispatch}
+                disabled={!roleCanCreate || submitting || !hasRequiredForSubmit}
+                className={`w-full sm:w-auto text-sm px-6 py-2 rounded-full border
+              ${!roleCanCreate || submitting || !hasRequiredForSubmit
+                    ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
                   }`}
-                disabled={saveDlgBusy}
+                title="Discipline, Activity, Date/Time, and at least one Checklist are required"
               >
-                {saveDlgBusy ? "Saving…" : "Confirm & Save"}
+                Submit
               </button>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ---------- Modals ---------- */}
-      {/* Add from Library Modal */}
-      {libOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40">
-          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div className="text-base font-semibold dark:text-white">Checklist Library</div>
-              <button
-                onClick={() => setLibOpen(false)}
-                className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
-              >
-                Close
-              </button>
-            </div>
-            <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
-              {discipline ? (
-                <>
-                  Filtered by discipline <b>{discipline}</b>
-                </>
-              ) : (
-                "All disciplines"
-              )}
-            </div>
+          {/* Save Draft – Confirm Dialog */}
+          {saveDlgOpen && (
+            <div className="fixed inset-0 z-50 bg-black/40">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold dark:text-white">Review Draft Save</div>
+                  <button
+                    onClick={() => !saveDlgBusy && setSaveDlgOpen(false)}
+                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
+                    disabled={saveDlgBusy}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">This is exactly what will be saved to the WIR draft.</div>
 
-            {/* Search + bulk toggle */}
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                value={libSearch}
-                onChange={(e) => setLibSearch(e.target.value)}
-                placeholder="Search by code or title…"
-                className="flex-1 text-[15px] sm:text-sm border rounded-full px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              />
-              <button
-                type="button"
-                onClick={toggleSelectAllVisible}
-                className="text-xs sm:text-sm px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
-                disabled={!libVisible.length}
-                title={allVisibleSelected ? "Clear all (visible)" : "Select all (visible)"}
-              >
-                {allVisibleSelected ? "Clear" : "Select all"}
-              </button>
-            </div>
-
-            {/* List */}
-            {refLoading ? (
-              <div className="mt-4 text-sm">Loading…</div>
-            ) : (
-              <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
-                {libVisible.length === 0 ? (
-                  <div className="text-sm text-gray-600 dark:text-gray-400 p-2">No checklists found.</div>
-                ) : (
-                  libVisible.map((m) => {
-                    const id = getRefId(m);
-                    const code = getRefCode(m);
-                    const title = getRefTitle(m);
-                    const checked = selectedRefIds.includes(id);
-                    const anyM = m as any;
-                    const tol = anyM?.tolerance;
-                    const itemsCnt =
-                      anyM?.itemsCount ??
-                      (Array.isArray(anyM?.items) ? anyM.items.length : undefined) ??
-                      anyM?.count ??
-                      anyM?.totalItems ??
-                      anyM?.recordsCount ??
-                      null;
-
-                    const metaLine = [
-                      anyM?.version ? `v${anyM.version}` : null,
-                      anyM?.discipline ?? anyM?.category ?? null,
-                      tol != null ? `Tol: ${formatTolerance(tol)}` : null,
-                      itemsCnt ? `${itemsCnt} items` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
-
-                    return (
-                      <label
-                        key={id}
-                        className="flex items-start gap-3 p-3 rounded-2xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
-                          checked={checked}
-                          onChange={() => toggleSelectChecklist(id)}
-                        />
-                        <div className="min-w-0">
-                          <div className="text-[13px] sm:text-sm dark:text-white truncate">
-                            {code ? <span className="font-medium">#{code} • </span> : null}
-                            {title}
-                          </div>
-                          {metaLine ? (
-                            <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{metaLine}</div>
-                          ) : null}
-                        </div>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
-              <div className="text-gray-700 dark:text-gray-300">
-                Selected <b>{combinedSelectedCount}</b>
-                {combinedItemsCount ? (
-                  <>
-                    {" "}
-                    · Items <b>{combinedItemsCount}</b>
-                  </>
-                ) : null}
-              </div>
-              <button
-                onClick={() => setLibOpen(false)}
-                className="w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Compliance View Modal */}
-      {viewOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40">
-          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-semibold dark:text-white">Compliance Checklist</div>
-              <button
-                onClick={() => setViewOpen(false)}
-                className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
-              >
-                Close
-              </button>
-            </div>
-
-            {viewLoading ? (
-              <div className="text-sm">Loading…</div>
-            ) : viewErr ? (
-              <div className="text-sm text-rose-600">{viewErr}</div>
-            ) : (
-              <ComplianceItemsGrid items={combinedItems} />
-            )}
-            {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
-
-            {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
-          </div>
-        </div>
-      )}
-
-      {/* PATCH: Follow-up Failed Items Modal */}
-      {fuOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40">
-          <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-semibold dark:text-white">Follow-up Items</div>
-              <button
-                onClick={() => setFuOpen(false)}
-                className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
-              >
-                Close
-              </button>
-            </div>
-
-            {fuLoading ? (
-              <div className="mt-4 text-sm">Loading…</div>
-            ) : fuItems.length === 0 ? (
-              <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                No items to display. This follow-up does not have carried failed items.
-              </div>
-            ) : (
-              <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {fuItems.map((it) => {
-                    const op = it.tolOp === "+-" ? "±" : it.tolOp;
-                    const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
-                    const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
-
-                    return (
-                      <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold dark:text-white">
-                              {it.text || "Untitled"}
-                              {tol ? ` — ${tol}` : ""}
-                            </div>
-                            {codeLine && <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">{codeLine}</div>}
-                          </div>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {it.units && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Unit: {it.units}</span>}
-                          {tol && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Tolerance: {tol}</span>}
-                        </div>
+                <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y">
+                  {saveDlgRows.map((r, i) => (
+                    <div key={i} className="py-2">
+                      <div className="text-[12px] text-gray-500 dark:text-gray-400">{r.label}</div>
+                      <div className="text-[13px] sm:text-sm dark:text-white break-all">{String(r.value)}</div>
+                      <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                        API key: <span className="font-mono">{r.apiKey}</span>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
+                </div>
+
+                {saveDlgErr && <div className="mt-2 text-sm text-rose-600">{saveDlgErr}</div>}
+
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+                  <button
+                    onClick={() => setSaveDlgOpen(false)}
+                    className="w-full sm:w-auto text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
+                    disabled={saveDlgBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (saveDlgBusy) return;
+                      setSaveDlgBusy(true);
+                      setSaveDlgErr(null);
+                      try {
+                        const payload = savePayloadRef.current;
+                        const path = savePathRef.current;
+                        const method = saveMethodRef.current;
+                        logWir(`saveDraft(confirm) -> ${method} ${path}`, payload);
+
+                        const res = method === "PATCH" ? await api.patch(path, payload) : await api.post(path, payload);
+                        logWir("saveDraft(confirm) <- response", res?.data);
+
+                        // NEW: upload header docs for this WIR
+                        const wirId =
+                          extractWirIdFromResponse(res) ||
+                          (method === "PATCH" ? editId || "" : "");
+                        if (wirId) {
+                          await uploadHeaderDocs(projectId, wirId, docs);
+                        }
+
+                        setSaveDlgBusy(false);
+                        setSaveDlgOpen(false);
+                        backToWirList();
+
+                      } catch (e: any) {
+                        const err = e?.response?.data || e?.message || e;
+                        console.error("[WIR] saveDraft(confirm) error:", err);
+                        setSaveDlgErr(err?.error || err?.message || "Failed to save draft.");
+                        setSaveDlgBusy(false);
+                      }
+                    }}
+                    className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${saveDlgBusy
+                      ? "opacity-60 cursor-not-allowed"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
+                      }`}
+                    disabled={saveDlgBusy}
+                  >
+                    {saveDlgBusy ? "Saving…" : "Confirm & Save"}
+                  </button>
                 </div>
               </div>
-            )}
-            {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      <DispatchWIRModal
-        open={dispatchOpen}
-        onClose={() => setDispatchOpen(false)}
-        creatorName={creatorName}
-        role={role}
-        projectCaption={
-          projectFromState?.code
-            ? `${projectFromState.code} — ${projectFromState.title || `Project: ${projectId}`}`
-            : projectFromState?.title || `Project: ${projectId}`
-        }
-        projectId={projectId}
-        wirId={wirIdForModal || ""}
-      />
+          {/* ---------- Modals ---------- */}
+          {/* Add from Library Modal */}
+          {libOpen && (
+            <div className="fixed inset-0 z-40 bg-black/40">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold dark:text-white">Checklist Library</div>
+                  <button
+                    onClick={() => setLibOpen(false)}
+                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
+                  {discipline ? (
+                    <>
+                      Filtered by discipline <b>{discipline}</b>
+                    </>
+                  ) : (
+                    "All disciplines"
+                  )}
+                </div>
+
+                {/* Search + bulk toggle */}
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    value={libSearch}
+                    onChange={(e) => setLibSearch(e.target.value)}
+                    placeholder="Search by code or title…"
+                    className="flex-1 text-[15px] sm:text-sm border rounded-full px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllVisible}
+                    className="text-xs sm:text-sm px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
+                    disabled={!libVisible.length}
+                    title={allVisibleSelected ? "Clear all (visible)" : "Select all (visible)"}
+                  >
+                    {allVisibleSelected ? "Clear" : "Select all"}
+                  </button>
+                </div>
+
+                {/* List */}
+                {refLoading ? (
+                  <div className="mt-4 text-sm">Loading…</div>
+                ) : (
+                  <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
+                    {libVisible.length === 0 ? (
+                      <div className="text-sm text-gray-600 dark:text-gray-400 p-2">No checklists found.</div>
+                    ) : (
+                      libVisible.map((m) => {
+                        const id = getRefId(m);
+                        const code = getRefCode(m);
+                        const title = getRefTitle(m);
+                        const checked = selectedRefIds.includes(id);
+                        const anyM = m as any;
+                        const tol = anyM?.tolerance;
+                        const itemsCnt =
+                          anyM?.itemsCount ??
+                          (Array.isArray(anyM?.items) ? anyM.items.length : undefined) ??
+                          anyM?.count ??
+                          anyM?.totalItems ??
+                          anyM?.recordsCount ??
+                          null;
+
+                        const metaLine = [
+                          anyM?.version ? `v${anyM.version}` : null,
+                          anyM?.discipline ?? anyM?.category ?? null,
+                          tol != null ? `Tol: ${formatTolerance(tol)}` : null,
+                          itemsCnt ? `${itemsCnt} items` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ");
+
+                        return (
+                          <label
+                            key={id}
+                            className="flex items-start gap-3 p-3 rounded-2xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
+                              checked={checked}
+                              onChange={() => toggleSelectChecklist(id)}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-[13px] sm:text-sm dark:text-white truncate">
+                                {code ? <span className="font-medium">#{code} • </span> : null}
+                                {title}
+                              </div>
+                              {metaLine ? (
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{metaLine}</div>
+                              ) : null}
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                  <div className="text-gray-700 dark:text-gray-300">
+                    Selected <b>{combinedSelectedCount}</b>
+                    {combinedItemsCount ? (
+                      <>
+                        {" "}
+                        · Items <b>{combinedItemsCount}</b>
+                      </>
+                    ) : null}
+                  </div>
+                  <button
+                    onClick={() => setLibOpen(false)}
+                    className="w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Compliance View Modal */}
+          {viewOpen && (
+            <div className="fixed inset-0 z-40 bg-black/40">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold dark:text-white">Compliance Checklist</div>
+                  <button
+                    onClick={() => setViewOpen(false)}
+                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {viewLoading ? (
+                  <div className="text-sm">Loading…</div>
+                ) : viewErr ? (
+                  <div className="text-sm text-rose-600">{viewErr}</div>
+                ) : (
+                  <ComplianceItemsGrid items={combinedItems} />
+                )}
+                {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+
+                {viewErr && <div className="mt-2 text-sm text-rose-600">{viewErr}</div>}
+              </div>
+            </div>
+          )}
+
+          {/* PATCH: Follow-up Failed Items Modal */}
+          {fuOpen && (
+            <div className="fixed inset-0 z-40 bg-black/40">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold dark:text-white">Follow-up Items</div>
+                  <button
+                    onClick={() => setFuOpen(false)}
+                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {fuLoading ? (
+                  <div className="mt-4 text-sm">Loading…</div>
+                ) : fuItems.length === 0 ? (
+                  <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                    No items to display. This follow-up does not have carried failed items.
+                  </div>
+                ) : (
+                  <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {fuItems.map((it) => {
+                        const op = it.tolOp === "+-" ? "±" : it.tolOp;
+                        const tol = formatTolerance(op, it.base, it.minus, it.plus, it.units) || null;
+                        const codeLine = [it.refCode, it.code].filter(Boolean).join(" - ");
+
+                        return (
+                          <div key={it.id} className="rounded-2xl border dark:border-neutral-800 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold dark:text-white">
+                                  {it.text || "Untitled"}
+                                  {tol ? ` — ${tol}` : ""}
+                                </div>
+                                {codeLine && <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">{codeLine}</div>}
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {it.units && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Unit: {it.units}</span>}
+                              {tol && <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">Tolerance: {tol}</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {fuErr && <div className="mt-2 text-sm text-rose-600">{fuErr}</div>}
+              </div>
+            </div>
+          )}
+
+          <DispatchWIRModal
+            open={dispatchOpen}
+            onClose={() => setDispatchOpen(false)}
+            creatorName={creatorName}
+            role={role}
+            projectCaption={
+              projectFromState?.code
+                ? `${projectFromState.code} — ${projectFromState.title || `Project: ${projectId}`}`
+                : projectFromState?.title || `Project: ${projectId}`
+            }
+            projectId={projectId}
+            wirId={wirIdForModal || ""}
+          />
+        </div> {/* closes body grid div */}
+      </section> {/* closes main section */}
     </div>
   );
 }

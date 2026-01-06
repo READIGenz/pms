@@ -213,98 +213,11 @@ function fmt(iso?: string) {
   }
 }
 
-<<<<<<< Updated upstream
-=======
-function Kpi({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-300">
-        {label}
-      </div>
-      <div className="mt-0.5 text-xl font-extrabold text-slate-900 dark:text-white tabular-nums">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function IconBtn({
-  title,
-  onClick,
-  variant,
-}: {
-  title: string;
-  onClick: () => void;
-  variant: "view" | "edit";
-}) {
-  const base =
-    "inline-flex h-8 w-8 items-center justify-center rounded-full transition";
-  const tone =
-    variant === "view"
-      ? "text-[#23A192] hover:bg-[#23A192]/10 dark:hover:bg-[#23A192]/15"
-      : "text-[#00379C] hover:bg-[#00379C]/10 dark:text-[#FCC020] dark:hover:bg-[#FCC020]/15";
-
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      className={`${base} ${tone}`}
-      onClick={onClick}
-    >
-      {variant === "view" ? (
-        <svg
-          viewBox="0 0 24 24"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-          <circle cx="12" cy="12" r="2.5" />
-        </svg>
-      ) : (
-        <svg
-          viewBox="0 0 24 24"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-        </svg>
-      )}
-    </button>
-  );
-}
-
->>>>>>> Stashed changes
 /* ========================= Component ========================= */
 export default function MaterialLib() {
   const location = useLocation();
   const nav = useNavigate();
 
-<<<<<<< Updated upstream
-=======
-  // Shared Admin header title/subtitle (like your other themed pages)
-  useEffect(() => {
-    document.title = "Trinity PMS — Material Library";
-    (window as any).__ADMIN_SUBTITLE__ =
-      "Reference materials for activities, inspections, and submissions.";
-    return () => {
-      if ((window as any).__ADMIN_SUBTITLE__)
-        (window as any).__ADMIN_SUBTITLE__ = "";
-    };
-  }, []);
-
->>>>>>> Stashed changes
   /* ---- Admin gate ---- */
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -590,7 +503,6 @@ export default function MaterialLib() {
 
   /* ========================= UI ========================= */
   return (
-<<<<<<< Updated upstream
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-yellow-50 dark:from-neutral-900 dark:to-neutral-950 px-4 sm:px-6 lg:px-10 py-8 rounded-2xl">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
@@ -604,24 +516,6 @@ export default function MaterialLib() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
-=======
-    <div className="min-h-screen px-0 py-0">
-      <div className="mx-auto w-full max-w-none px-0">
-        {/* Error */}
-        {err && (
-          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-            {err}
-          </div>
-        )}
-
-        {/* Top row: count left, actions right */}
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
->>>>>>> Stashed changes
             <button
               className="h-9 rounded-full border border-slate-200 bg-white px-4 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => {
@@ -661,7 +555,6 @@ export default function MaterialLib() {
         )}
 
         {/* KPIs */}
-<<<<<<< Updated upstream
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 p-4">
             <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -753,114 +646,6 @@ export default function MaterialLib() {
                   setDiscipline("");
                   setCategory("");
                   setStatus("");
-=======
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Kpi
-            label="Active"
-            value={statsLoading ? "…" : stats.byStatus.Active}
-          />
-          <Kpi
-            label="Draft"
-            value={statsLoading ? "…" : stats.byStatus.Draft}
-          />
-          <Kpi
-            label="Inactive"
-            value={statsLoading ? "…" : stats.byStatus.Inactive}
-          />
-          <Kpi
-            label="Archived"
-            value={statsLoading ? "…" : stats.byStatus.Archived}
-          />
-        </div>
-
-        {/* Filters (no box / no "Find" heading) */}
-        <div className="mb-4">
-          {/* Row 1 */}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-[100px] shrink-0">
-              <SelectStrict
-                label="Discipline"
-                value={discipline}
-                onChange={(v) => {
-                  setDiscipline(v as Discipline | "");
-                  setPage(1);
-                }}
-                options={["", ...DISCIPLINES].map((d) => ({
-                  value: d as any,
-                  label: d || "All",
-                }))}
-              />
-            </div>
-
-            <div className="w-[130px] shrink-0">
-              <SelectStrict
-                label="Category"
-                value={category}
-                onChange={(v) => {
-                  setCategory(v);
-                  setPage(1);
-                }}
-                options={["", ...CATEGORIES].map((c) => ({
-                  value: c as any,
-                  label: c || "All",
-                }))}
-              />
-            </div>
-
-            <div className="w-[100px] shrink-0">
-              <SelectStrict
-                label="Status"
-                value={status || ""}
-                onChange={(v) => {
-                  setStatus((v || "") as any);
-                  setPage(1);
-                }}
-                options={["", ...STATUS_OPTIONS].map((s) => ({
-                  value: s as any,
-                  label: s || "All",
-                }))}
-              />
-            </div>
-
-            <button
-              className={`${btnOutline} shrink-0`}
-              onClick={() => {
-                setQ("");
-                setDiscipline("");
-                setCategory("");
-                setStatus("");
-                setPage(1);
-              }}
-              type="button"
-            >
-              Clear
-            </button>
-          </div>
-
-          {/* Row 2 */}
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="w-full sm:max-w-[520px]">
-              <Input
-                label="Search"
-                value={q}
-                onChange={(v) => {
-                  setQ(v);
-                  setPage(1);
-                }}
-                placeholder="id, code, name, standard, manufacturer…"
-              />
-            </div>
-
-            <label className="block w-[100px] shrink-0">
-              <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                Page size
-              </span>
-              <select
-                className="h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition focus:ring-2 focus:ring-[#00379C]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(parseInt(e.target.value, 10));
->>>>>>> Stashed changes
                   setPage(1);
                 }}
               >
@@ -1086,112 +871,6 @@ export default function MaterialLib() {
                       No materials found.
                     </td>
                   </tr>
-<<<<<<< Updated upstream
-=======
-                ) : (
-                  sortedRows.map((r) => (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-neutral-800/40"
-                    >
-                      {/* Actions (NOT sticky) */}
-                      <td className="px-3 py-2">
-                        {/* View */}
-                        <button
-                          type="button"
-                          aria-label="View"
-                          title="View"
-                          onClick={() => openView(r.id)}
-                          className="
-    inline-flex h-8 w-8 items-center justify-center rounded-full
-    text-[#23A192] hover:bg-[#23A192]/10
-    dark:hover:bg-[#23A192]/15
-  "
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={1.7}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                            <circle cx="12" cy="12" r="2.5" />
-                          </svg>
-                        </button>
-
-                        {/* Edit */}
-                        <button
-                          type="button"
-                          aria-label="Edit"
-                          title="Edit"
-                          onClick={() => openEdit(r.id)}
-                          className="
-    inline-flex h-8 w-8 items-center justify-center rounded-full
-    text-[#00379C] hover:bg-[#00379C]/10
-    dark:text-[#FCC020] dark:hover:bg-[#FCC020]/10
-  "
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
-                            <path d="M14.5 5.5l4 4" />
-                          </svg>
-                        </button>
-                      </td>
-
-                      {/* Material */}
-                      <td className="w-[300px] max-w-[300px] px-3 py-2">
-                        <div className="font-semibold text-slate-900 dark:text-slate-50 line-clamp-2 break-words">
-                          {r.code ? `${r.code} • ${r.name}` : r.name}
-                        </div>
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {`${r.discipline || "—"} • ${r.category || "—"}`}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {r.manufacturer || "—"}
-                        {r.model ? ` • ${r.model}` : ""}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {asBullets(r.standards, ", ")}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {r.fireRating || "—"}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {asBullets(r.keyProps)}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-100">
-                        {`v${(r as any).versionLabel ?? r.version ?? 1}`}
-                      </td>
-
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
-                        {fmt(r.updatedAt)}
-                      </td>
-
-                      <td className="px-3 py-2">
-                        <StatusPill value={r.status} />
-                      </td>
-                    </tr>
-                  ))
->>>>>>> Stashed changes
                 )}
               </tbody>
             </table>
@@ -1257,13 +936,9 @@ export default function MaterialLib() {
                           : viewItem?.name || "—"}
                       </h3>
                       {viewItem?.status ? (
-<<<<<<< Updated upstream
                         <span className="text-xs">
                           <StatusPill value={viewItem.status} />
                         </span>
-=======
-                        <StatusPill value={viewItem.status} />
->>>>>>> Stashed changes
                       ) : null}
                     </div>
                   </div>
@@ -1315,14 +990,9 @@ export default function MaterialLib() {
                           Standards
                         </div>
                         <div className="dark:text-white">
-<<<<<<< Updated upstream
                           {viewItem.standards && viewItem.standards.length
                             ? viewItem.standards.join(", ")
                             : "—"}
-=======
-                          viewItem.standards && viewItem.standards.length ?
-                          viewItem.standards.join(", ") : "—"
->>>>>>> Stashed changes
                         </div>
                       </div>
                       <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
