@@ -553,7 +553,7 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-neutral-950">
       {/* Top accent line (same system palette) */}
-      <div className="h-1 w-full bg-gradient-to-r from-[#00379C] via-[#23A192] to-[#FCC020]" />
+      <div className="h-1 w-full bg-gradient-to-r from-[#FCC020] via-[#23A192] to-[#FCC020]" />
       {/* Soft slanted background accents */}
       <div className="login-bg" aria-hidden="true" />
 
