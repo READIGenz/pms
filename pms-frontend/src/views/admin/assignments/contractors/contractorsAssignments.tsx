@@ -2,6 +2,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
+import {
+  CARD,
+  PILL_INPUT,
+  PILL_SELECT,
+  PILL_DATE,
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  statusBadgeClass,
+  ThinScrollbarStyle,
+} from "../_ui/assignmentsUi";
 
 // ---------- Types ----------
 type ProjectLite = { projectId: string; title: string };
@@ -133,43 +143,114 @@ function contractorCompanyId(u: UserLite): string | null {
   return (m?.company?.companyId as string) || null;
 }
 
-// ---------- UI atoms (UI-only) ----------
-const TileHeader = ({
+// ---------- UI atoms (aligned to Client Assignments look) ----------
+const SectionKicker = ({
   title,
   subtitle,
 }: {
   title: string;
   subtitle?: string;
 }) => (
-  <div className="mb-3">
-    <div className="text-sm font-semibold dark:text-white">{title}</div>
+  <div className="mb-4">
+    <div className="flex items-center gap-3">
+      <span className="inline-block h-5 w-1.5 rounded-full bg-[#FCC020]" />
+      <div className="text-[11px] sm:text-sm font-extrabold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
+        {title}
+      </div>
+    </div>
     {subtitle ? (
-      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        {subtitle}
+      </div>
     ) : null}
   </div>
 );
 
-const TILE_SHELL =
-  "bg-white dark:bg-neutral-900 rounded-2xl shadow-sm " +
-  "border border-[#c9ded3] dark:border-neutral-800 p-4 mb-4";
+const TableShell = ({ children }: { children: React.ReactNode }) => (
+  <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white dark:bg-neutral-950 dark:border-white/10">
+    {children}
+  </div>
+);
 
-const SOFT_SELECT =
-  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 pr-8 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60 appearance-none";
+const StickyThead = ({ children }: { children: React.ReactNode }) => (
+  <thead className="bg-slate-50 dark:bg-white/5 sticky top-0 z-10">
+    {children}
+  </thead>
+);
 
-const SOFT_INPUT =
-  "h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 " +
-  "bg-white dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white placeholder:text-gray-400 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent";
+/**
+ * ICONS — match Client Assignment page:
+ * - MoveUp: plain teal arrow (no circular button)
+ * - View: plain green eye (no circular button)
+ * - Edit: plain blue pen (no circular button)
+ */
+const ICON_BASE =
+  "inline-flex items-center justify-center p-1 rounded-md bg-transparent " +
+  "hover:bg-transparent focus:outline-none focus:ring-0 active:scale-[0.98] transition";
 
-const SOFT_DATE =
-  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60";
+const ICON_MOVE = `${ICON_BASE} text-teal-600 hover:text-teal-700`;
+const ICON_VIEW = `${ICON_BASE} text-emerald-600 hover:text-emerald-700`;
+const ICON_EDIT =
+  `${ICON_BASE} text-blue-700 hover:text-blue-800 ` +
+  "disabled:opacity-40 disabled:cursor-not-allowed";
+
+const OUTLINE_PILL =
+  "inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 py-1 text-xs font-medium " +
+  "text-slate-700 dark:text-slate-200";
+
+function MoveUpIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 19V5" />
+      <path d="M6.5 10.5 12 5l5.5 5.5" />
+    </svg>
+  );
+}
+
+function EyeIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+      <circle cx="12" cy="12" r="3.25" />
+    </svg>
+  );
+}
+
+function PenIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
+      <path d="M14.5 5.5l4 4" />
+    </svg>
+  );
+}
 
 export default function ContractorsAssignments() {
   const nav = useNavigate();
@@ -192,6 +273,44 @@ export default function ContractorsAssignments() {
 
   const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
   const [assignLoading, setAssignLoading] = useState(false);
+
+  // Table styles (MATCH Client Assignments)
+  const TABLE_SCROLL = `overflow-auto max-h-[55vh] thin-scrollbar`;
+
+  const TH =
+    "text-left px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
+    "text-[11px] font-extrabold tracking-[0.16em] uppercase text-slate-600 dark:text-slate-300";
+
+  const TD =
+    "px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap text-sm text-slate-800 dark:text-slate-100";
+
+  const TR =
+    "odd:bg-white even:bg-slate-50/40 dark:odd:bg-neutral-950 dark:even:bg-white/5";
+
+  const PILL =
+    "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold leading-none " +
+    "border shadow-sm";
+
+  function pillClass(v: string) {
+    const s = (v || "").toLowerCase();
+
+    // defaults
+    let cls =
+      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/10 dark:text-slate-200 dark:border-white/10";
+
+    if (s === "active" || s === "valid") {
+      cls =
+        "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/30";
+    } else if (s === "inactive" || s === "expired") {
+      cls =
+        "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-200 dark:border-rose-500/30";
+    } else if (s.includes("yet")) {
+      cls =
+        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30";
+    }
+
+    return `${PILL} ${cls}`;
+  }
 
   // Load projects
   useEffect(() => {
@@ -237,7 +356,6 @@ export default function ContractorsAssignments() {
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
 
-  // Match client page: Sort By default Name + separate arrow button
   const [sortKey, setSortKey] = useState<
     | "code"
     | "name"
@@ -253,7 +371,7 @@ export default function ContractorsAssignments() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10); // shared with assignments table
+  const [pageSize, setPageSize] = useState(10);
 
   const companyOptions = useMemo<string[]>(() => {
     const set = new Set<string>();
@@ -843,33 +961,40 @@ export default function ContractorsAssignments() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">
+      {/* Page Heading */}
+      <div className="mb-4">
+        <div className="text-xl font-extrabold text-slate-900 dark:text-white">
           Contractor Assignments
-        </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles & Options · <b>Browse Contractors</b> · Contractor
-          Assignments
-        </p>
-        {err && (
-          <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>
-        )}
+        </div>
+        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Assign contractors to projects and manage validity.
+        </div>
+        <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
+
+      {err && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+          {err}
+        </div>
+      )}
 
       {/* Tile 1 — Projects */}
       <section
-        className={TILE_SHELL}
+        className={`${CARD} mb-4`}
         aria-label="Tile: Projects"
         data-tile-name="Projects"
       >
-        <TileHeader title="Projects" subtitle="Choose the project to assign." />
-        <div className="max-w-xl mt-2">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+        <SectionKicker
+          title="Projects"
+          subtitle="Choose the project to assign."
+        />
+        <div className="max-w-xl">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
             Project
           </label>
           <div className="relative">
             <select
-              className={SOFT_SELECT}
+              className={PILL_SELECT}
               value={selectedProjectId}
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
@@ -891,7 +1016,8 @@ export default function ContractorsAssignments() {
                 </>
               )}
             </select>
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
               ▼
             </span>
           </div>
@@ -900,51 +1026,55 @@ export default function ContractorsAssignments() {
 
       {/* Tile 2 — Roles & Options (Contractor) */}
       <section
-        className={TILE_SHELL}
+        className={`${CARD} mb-5`}
         aria-label="Tile: Roles & Options"
         data-tile-name="Roles & Options"
       >
-        <TileHeader
+        <SectionKicker
           title="Roles & Options"
           subtitle="Pick from moved contractors & set validity."
         />
 
-        {/* IMPORTANT: stacked layout (Validity below moved list) */}
-        <div className="mt-3 space-y-4">
+        <div className="space-y-5">
           {/* Subtile: moved list */}
           <div className="space-y-3" aria-label="Subtile: Moved Contractors">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
-              Moved Contractors (select with checkbox)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                Moved Contractors (select with checkbox)
+              </label>
 
-            <div
-              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
-              style={{ maxHeight: 300 }}
-            >
+              <div className="text-xs text-slate-500 dark:text-slate-300">
+                {selectedIds.size}/{movedList.length} selected
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/40 dark:bg-white/5 overflow-auto">
               {movedIds.size === 0 ? (
-                <div className="p-3 text-sm text-gray-600 dark:text-gray-300">
+                <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                   <b>Move Contractors</b> from list below to assign roles.
                 </div>
               ) : (
-                <ul className="divide-y dark:divide-neutral-800">
+                <ul className="divide-y divide-slate-200 dark:divide-white/10">
                   {movedList.map((u: UserLite) => {
                     const checked = selectedIds.has(u.userId);
                     return (
                       <li
                         key={u.userId}
-                        className="flex items-center justify-between gap-3 px-3 py-2"
+                        className="flex items-center justify-between gap-3 px-4 py-3"
                       >
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleChecked(u.userId)}
+                            className="h-4 w-4 rounded-md border-slate-300 dark:border-white/20
+             accent-[#00379C] focus:ring-2 focus:ring-[#00379C]/30 focus:ring-offset-0"
                           />
                           <div className="flex flex-col">
-                            <div className="font-medium dark:text-white">
+                            <div className="font-semibold text-slate-900 dark:text-white">
                               {displayName(u) || "(No name)"}
                             </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <div className="text-xs text-slate-500 dark:text-slate-300">
                               {u.code || ""}
                               {u.code ? " · " : ""}
                               {u.email || ""}
@@ -953,7 +1083,8 @@ export default function ContractorsAssignments() {
                             </div>
                           </div>
                         </label>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-neutral-700">
+
+                        <span className={OUTLINE_PILL}>
                           {u.userStatus || "—"}
                         </span>
                       </li>
@@ -964,9 +1095,9 @@ export default function ContractorsAssignments() {
             </div>
 
             {movedList.length > 0 && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() =>
                     setSelectedIds(new Set(movedList.map((m) => m.userId)))
                   }
@@ -974,7 +1105,7 @@ export default function ContractorsAssignments() {
                   Select All
                 </button>
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() => setSelectedIds(new Set())}
                 >
                   Clear
@@ -985,30 +1116,30 @@ export default function ContractorsAssignments() {
 
           {/* Subtile: Validity */}
           <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
               Validity
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
                   Valid From
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
                   Valid To
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE}
                   value={validTo}
                   min={validFrom || todayLocalISO()}
                   onChange={(e) => setValidTo(e.target.value)}
@@ -1016,9 +1147,9 @@ export default function ContractorsAssignments() {
               </div>
             </div>
 
-            <div className="mt-2 flex items-center justify-end gap-2">
+            <div className="mt-1 flex items-center justify-end gap-2">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                className={BTN_SECONDARY}
                 onClick={() => {
                   setValidFrom("");
                   setValidTo("");
@@ -1032,13 +1163,11 @@ export default function ContractorsAssignments() {
               >
                 Cancel
               </button>
+
               <button
-                className={
-                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
-                  (canSubmit
-                    ? "bg-emerald-600 hover:bg-emerald-700"
-                    : "bg-emerald-600/50 cursor-not-allowed")
-                }
+                className={`${BTN_PRIMARY} ${
+                  !canSubmit ? "opacity-50 cursor-not-allowed" : ""
+                }`}
                 onClick={onAssign}
                 disabled={!canSubmit}
                 title={
@@ -1056,25 +1185,25 @@ export default function ContractorsAssignments() {
 
       {/* Tile 3 — Browse Contractors */}
       <section
-        className={TILE_SHELL}
+        className={`${CARD} mb-5`}
         aria-label="Tile: Browse Contractors"
         data-tile-name="Browse Contractors"
       >
-        <TileHeader
+        <SectionKicker
           title="Browse Contractors"
-          subtitle="Search and filter; sort columns; paginate. Use the up arrow to move contractors to Tile 2."
+          subtitle="Search, filter, sort and move contractors into the selection."
         />
 
         {/* === CONTROLS === */}
-        <div className="mb-3">
+        <div className="mb-4">
           {/* Line 1 */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                 Search
               </label>
               <input
-                className={SOFT_INPUT}
+                className={PILL_INPUT}
                 placeholder="Code, name, company, project, phone, email…"
                 value={q}
                 onChange={(e) => {
@@ -1085,12 +1214,12 @@ export default function ContractorsAssignments() {
             </div>
 
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                 Status
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as any);
@@ -1101,19 +1230,19 @@ export default function ContractorsAssignments() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                   ▼
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                 State
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={stateFilter}
                   onChange={(e) => {
                     setStateFilter(e.target.value);
@@ -1128,19 +1257,19 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                   ▼
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                 District
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={districtFilter}
                   onChange={(e) => {
                     setDistrictFilter(e.target.value);
@@ -1158,19 +1287,19 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                   ▼
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                 Company
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={companyFilter}
                   onChange={(e) => {
                     setCompanyFilter(e.target.value);
@@ -1184,7 +1313,7 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                   ▼
                 </span>
               </div>
@@ -1193,14 +1322,14 @@ export default function ContractorsAssignments() {
 
           {/* Line 2 */}
           <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div className="flex items-end gap-2">
+            <div className="flex flex-wrap items-end gap-2">
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
                   Sort By
                 </label>
                 <div className="relative">
                   <select
-                    className={SOFT_SELECT}
+                    className={PILL_SELECT}
                     value={sortKey}
                     onChange={(e) => {
                       setSortKey(e.target.value as any);
@@ -1218,40 +1347,46 @@ export default function ContractorsAssignments() {
                     <option value="status">Status</option>
                     <option value="updated">Updated</option>
                   </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                     ▼
                   </span>
                 </div>
               </div>
 
               <button
-                className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                className="h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center"
                 onClick={() =>
                   setSortDir((d) => (d === "asc" ? "desc" : "asc"))
                 }
                 title="Toggle sort direction"
                 aria-label="Toggle sort direction"
+                type="button"
               >
-                {sortDir === "asc" ? "▲" : "▼"}
+                <span className="text-[12px] leading-none">
+                  {sortDir === "asc" ? "▲" : "▼"}
+                </span>
               </button>
 
               <button
-                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                className={`${BTN_SECONDARY} ${
+                  !hasActiveFilters ? "opacity-50 cursor-not-allowed" : ""
+                }`}
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
                 title="Clear all filters"
+                type="button"
               >
                 Clear
               </button>
             </div>
 
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block text-left md:text-right">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block text-left md:text-right">
                 Rows per page
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value));
@@ -1265,7 +1400,7 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
                   ▼
                 </span>
               </div>
@@ -1273,28 +1408,29 @@ export default function ContractorsAssignments() {
           </div>
         </div>
 
-        {/* Table shell */}
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
+        {/* Table */}
+        <TableShell>
+          <div className={TABLE_SCROLL}>
             {usersErr && (
-              <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
+              <div className="p-3 text-sm text-red-700 border-b border-slate-200 dark:border-white/10">
                 {usersErr}
               </div>
             )}
+
             {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                 Loading contractors…
               </div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                 No contractors match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full text-xs">
+                <StickyThead>
                   <tr>
+                    <th className={TH}>Action</th>
                     {[
-                      { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
                       { key: "company", label: "Company" },
@@ -1306,18 +1442,13 @@ export default function ContractorsAssignments() {
                       { key: "status", label: "Status" },
                       { key: "updated", label: "Updated" },
                     ].map((h) => {
-                      const sortable = h.key !== "action";
                       const active = sortKey === (h.key as any);
                       return (
                         <th
                           key={h.key}
-                          className={
-                            "text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
-                            (sortable ? "cursor-pointer" : "")
-                          }
-                          title={sortable ? `Sort by ${h.label}` : undefined}
+                          className={`${TH} cursor-pointer`}
+                          title={`Sort by ${h.label}`}
                           onClick={() => {
-                            if (!sortable) return;
                             if (sortKey !== (h.key as any)) {
                               setSortKey(h.key as any);
                               setSortDir("asc");
@@ -1329,89 +1460,58 @@ export default function ContractorsAssignments() {
                         >
                           <span className="inline-flex items-center gap-1">
                             {h.label}
-                            {sortable && (
-                              <span className="text-xs opacity-70">
-                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                              </span>
-                            )}
+                            <span className="text-[10px] opacity-70">
+                              {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                            </span>
                           </span>
                         </th>
                       );
                     })}
                   </tr>
-                </thead>
+                </StickyThead>
+
                 <tbody>
                   {rowsPaged.map((r) => (
-                    <tr
-                      key={r._id}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
-                    >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                    <tr key={r._id} className={TR}>
+                      <td className={TD}>
                         <button
                           type="button"
                           aria-label="Move contractor"
                           title="Move to selection"
                           onClick={() => onMoveToTile2(r._raw!)}
-                          className="
-    inline-flex items-center justify-center
-    w-8 h-8 rounded-full
-    border border-slate-200
-    bg-white text-slate-700
-    hover:bg-slate-50
-    dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800
-  "
+                          className={ICON_MOVE}
                         >
-                          {/* thin arrow icon (instead of filled triangle) */}
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M12 19V5" />
-                            <path d="M6.5 10.5L12 5l5.5 5.5" />
-                          </svg>
+                          <MoveUpIcon />
                         </button>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.code}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.name}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
+                      <td className={TD}>{r.code}</td>
+                      <td className={TD}>{r.name}</td>
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
                         <div className="truncate max-w-[260px]">
                           {r.company}
                         </div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
                         <div className="truncate max-w-[360px]">
                           {r.projects}
                         </div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.mobile}
+
+                      <td className={TD}>{r.mobile}</td>
+                      <td className={TD}>{r.email}</td>
+                      <td className={TD}>{r.state}</td>
+                      <td className={TD}>{r.zone}</td>
+
+                      <td className={TD}>
+                        <span className={pillClass(r.status || "—")}>
+                          {r.status || "—"}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.email}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.state}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.zone}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status}
-                      </td>
-                      <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
-                        title={fmtLocalDateTime(r.updated)}
-                      >
+
+                      <td className={TD} title={fmtLocalDateTime(r.updated)}>
                         {fmtLocalDateTime(r.updated)}
                       </td>
                     </tr>
@@ -1422,113 +1522,94 @@ export default function ContractorsAssignments() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
-              <b>{rowsPaged.length}</b> of <b>{total}</b> contractors
-              {stateFilter ? (
-                <>
-                  {" "}
-                  · State: <b>{stateFilter}</b>
-                </>
-              ) : null}
-              {districtFilter ? (
-                <>
-                  {" "}
-                  · District: <b>{districtFilter}</b>
-                </>
-              ) : null}
-              {statusFilter !== "all" ? (
-                <>
-                  {" "}
-                  · Status: <b>{statusFilter}</b>
-                </>
-              ) : null}
-              {companyFilter ? (
-                <>
-                  {" "}
-                  · Company: <b>{companyFilter}</b>
-                </>
-              ) : null}
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+            <div className="text-slate-500 dark:text-slate-300">
+              Page <b className="text-slate-800 dark:text-white">{pageSafe}</b>{" "}
+              of <b className="text-slate-800 dark:text-white">{totalPages}</b>{" "}
+              · Showing{" "}
+              <b className="text-slate-800 dark:text-white">
+                {rowsPaged.length}
+              </b>{" "}
+              of <b className="text-slate-800 dark:text-white">{total}</b>{" "}
+              contractors
             </div>
             <div className="flex items-center gap-1">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
-                title="First"
               >
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
-                title="Previous"
               >
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
-                title="Next"
               >
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
-                title="Last"
               >
                 Last »
               </button>
             </div>
           </div>
-        </div>
+        </TableShell>
       </section>
 
       {/* Tile 4 — Contractor Assignments */}
       <section
-        className={TILE_SHELL.replace("mb-4", "")}
+        className={`${CARD}`}
         aria-label="Tile: Contractor Assignments"
         data-tile-name="Contractor Assignments"
       >
-        <TileHeader
+        <SectionKicker
           title="Contractor Assignments"
           subtitle="All contractors who have been assigned to projects."
         />
 
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
-            {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+        <TableShell>
+          <div className={TABLE_SCROLL}>
+            {assignedRowsPaged.length === 0 ? (
+              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
                 No contractor assignments found.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full text-xs">
+                <StickyThead>
                   <tr>
-                    <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">
-                      Action
-                    </th>
+                    <th className={TH}>Action</th>
                     {[
-                      { key: "userName", label: "Name" },
+                      { key: "userName", label: "Contractor" },
                       { key: "company", label: "Company" },
-                      { key: "projects", label: "Projects" },
+                      { key: "projects", label: "Project" },
                       { key: "status", label: "Status" },
                       { key: "validFrom", label: "Valid From" },
                       { key: "validTo", label: "Valid To" },
-                      { key: "updated", label: "Last Updated" },
+                      { key: "__validity", label: "Validity", noSort: true },
+                      { key: "updated", label: "Updated" },
                     ].map((h) => {
+                      const sortable = !(h as any).noSort;
                       const active = aSortKey === (h.key as any);
                       return (
                         <th
                           key={h.key}
-                          className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none cursor-pointer"
-                          title={`Sort by ${h.label}`}
+                          className={`${TH} ${
+                            sortable ? "cursor-pointer" : ""
+                          }`}
+                          title={sortable ? `Sort by ${h.label}` : h.label}
                           onClick={() => {
+                            if (!sortable) return;
                             if (aSortKey !== (h.key as any)) {
                               setASortKey(h.key as any);
                               setASortDir("asc");
@@ -1537,96 +1618,93 @@ export default function ContractorsAssignments() {
                                 d === "asc" ? "desc" : "asc"
                               );
                             }
+                            setAPage(1);
                           }}
                         >
                           <span className="inline-flex items-center gap-1">
                             {h.label}
-                            <span className="text-xs opacity-70">
-                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
-                            </span>
+                            {sortable && (
+                              <span className="text-[10px] opacity-70">
+                                {active
+                                  ? aSortDir === "asc"
+                                    ? "▲"
+                                    : "▼"
+                                  : "↕"}
+                              </span>
+                            )}
                           </span>
                         </th>
                       );
                     })}
                   </tr>
-                </thead>
+                </StickyThead>
 
                 <tbody>
-                  {assignedRowsPaged.map((r, i) => (
+                  {assignedRowsPaged.map((r) => (
                     <tr
-                      key={`${r.userId}-${r.projectId}-${i}`}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
+                      key={`${r.userId}-${r.projectId}-${r.membershipId || ""}`}
+                      className={TR}
                     >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className={TD}>
+                        <div className="flex items-center gap-3">
                           <button
                             type="button"
-                            aria-label="View assignment"
+                            className={ICON_VIEW}
                             title="View"
+                            aria-label="View assignment"
                             onClick={() => openView(r)}
-                            className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                           >
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth={1.6}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                              <circle cx="12" cy="12" r="2.5" />
-                            </svg>
+                            <EyeIcon />
                           </button>
 
                           <button
                             type="button"
+                            className={ICON_EDIT}
+                            title="Edit validity"
                             aria-label="Edit assignment"
-                            title="Edit"
                             onClick={() => openEdit(r)}
                             disabled={!r.membershipId}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40 disabled:opacity-50"
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.7"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
-                              <path d="M14.5 5.5l4 4" />
-                            </svg>
+                            <PenIcon />
                           </button>
                         </div>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.userName}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.company || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects || "—"}
+                      <td className={TD}>{r.userName}</td>
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
+                        <div className="truncate max-w-[260px]">
+                          {r.company || "—"}
                         </div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status || "—"}
+
+                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
+                        <div className="truncate max-w-[360px]">
+                          {r.projectTitle}
+                        </div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className={TD}>
+                        <span className={pillClass(r.status || "—")}>
+                          {r.status || "—"}
+                        </span>
+                      </td>
+
+                      <td className={TD}>
                         {fmtLocalDateOnly(r.validFrom) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      <td className={TD}>
                         {fmtLocalDateOnly(r.validTo) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {fmtLocalDateTime(r.updated) || "—"}
+
+                      <td className={TD}>
+                        <span className={pillClass(r.validity || "—")}>
+                          {r.validity || "—"}
+                        </span>
+                      </td>
+
+                      <td className={TD} title={fmtLocalDateTime(r.updated)}>
+                        {fmtLocalDateTime(r.updated)}
                       </td>
                     </tr>
                   ))}
@@ -1635,121 +1713,99 @@ export default function ContractorsAssignments() {
             )}
           </div>
 
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
-              <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> contractor
+          {/* Pagination */}
+          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+            <div className="text-slate-500 dark:text-slate-300">
+              Page <b className="text-slate-800 dark:text-white">{aPageSafe}</b>{" "}
+              of <b className="text-slate-800 dark:text-white">{aTotalPages}</b>{" "}
+              · Showing{" "}
+              <b className="text-slate-800 dark:text-white">
+                {assignedRowsPaged.length}
+              </b>{" "}
+              of <b className="text-slate-800 dark:text-white">{aTotal}</b>{" "}
               assignments
             </div>
+
             <div className="flex items-center gap-1">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
-                title="First"
               >
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
-                title="Previous"
               >
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
-                title="Next"
               >
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
-                title="Last"
               >
                 Last »
               </button>
             </div>
           </div>
-        </div>
+        </TableShell>
       </section>
 
       {/* ===== View Modal ===== */}
       {viewOpen && viewRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/40"
             onClick={() => setViewOpen(false)}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">
+          <div className="relative bg-white dark:bg-neutral-950 rounded-2xl shadow-lg border border-slate-200 dark:border-white/10 w-full max-w-md p-5">
+            <div className="text-lg font-bold text-slate-900 dark:text-white mb-1">
               Contractor Assignment
             </div>
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
+            <div className="text-xs text-slate-500 dark:text-slate-300 mb-4">
               {viewRow.userName} · {viewRow.projectTitle}
             </div>
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
-              <table className="min-w-full text-sm">
+
+            <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+              <table className="min-w-full text-xs">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Contractor
-                    </td>
-                    <td className="px-3 py-2">{viewRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{viewRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{viewRow.status || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid From
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validFrom) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid To
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validTo) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Validity
-                    </td>
-                    <td className="px-3 py-2">{viewRow.validity || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Updated
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateTime(viewRow.updated) || "—"}
-                    </td>
-                  </tr>
+                  {[
+                    ["Contractor", viewRow.userName || "—"],
+                    ["Project", viewRow.projectTitle || "—"],
+                    ["Status", viewRow.status || "—"],
+                    ["Valid From", fmtLocalDateOnly(viewRow.validFrom) || "—"],
+                    ["Valid To", fmtLocalDateOnly(viewRow.validTo) || "—"],
+                    ["Validity", viewRow.validity || "—"],
+                    ["Last Updated", fmtLocalDateTime(viewRow.updated) || "—"],
+                  ].map(([k, v]) => (
+                    <tr
+                      key={k}
+                      className="odd:bg-slate-50/40 dark:odd:bg-white/5"
+                    >
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-800 dark:text-slate-100">
+                        {v}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+
             <div className="mt-2 flex justify-end">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                className={BTN_PRIMARY}
                 onClick={() => setViewOpen(false)}
               >
                 OK
@@ -1763,18 +1819,19 @@ export default function ContractorsAssignments() {
       {editOpen && editRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/40"
             onClick={() => {
               if (!deleting) setEditOpen(false);
             }}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
+
+          <div className="relative bg-white dark:bg-neutral-950 rounded-2xl shadow-lg border border-slate-200 dark:border-white/10 w-full max-w-md p-5">
             {deleting && (
-              <div className="absolute inset-0 rounded-2xl bg-white/40 dark:bg:black/30 backdrop-blur-[1px] cursor-wait" />
+              <div className="absolute inset-0 rounded-2xl bg-white/50 dark:bg-black/30 backdrop-blur-[1px] cursor-wait" />
             )}
 
             <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">
+              <div className="text-lg font-bold text-slate-900 dark:text-white">
                 Edit Validity
               </div>
               <button
@@ -1791,43 +1848,42 @@ export default function ContractorsAssignments() {
               </button>
             </div>
 
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
+            <div className="text-xs text-slate-500 dark:text-slate-300 mb-4">
               {editRow.userName} · {editRow.projectTitle}
             </div>
 
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
-              <table className="min-w-full text-sm">
+            <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+              <table className="min-w-full text-xs">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Contractor
-                    </td>
-                    <td className="px-3 py-2">{editRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{editRow.status || "—"}</td>
-                  </tr>
+                  {[
+                    ["Contractor", editRow.userName || "—"],
+                    ["Project", editRow.projectTitle || "—"],
+                    ["Status", editRow.status || "—"],
+                  ].map(([k, v]) => (
+                    <tr
+                      key={k}
+                      className="odd:bg-slate-100 dark:odd:bg-white/10"
+                    >
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-800 dark:text-slate-100">
+                        {v}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
                   Valid From
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE}
                   value={editFrom}
                   min={todayLocalISO()}
                   onChange={(e) => {
@@ -1838,13 +1894,14 @@ export default function ContractorsAssignments() {
                   disabled={deleting}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
                   Valid To
                 </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE}
                   value={editTo}
                   min={
                     editFrom && editFrom > todayLocalISO()
@@ -1859,14 +1916,19 @@ export default function ContractorsAssignments() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={() => setEditOpen(false)}
                 disabled={deleting}
               >
                 Cancel
               </button>
+
               <button
-                className="h-9 px-4 rounded-full text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                className={`${BTN_PRIMARY} ${
+                  !editRow?.membershipId || deleting
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) {
@@ -1946,6 +2008,19 @@ export default function ContractorsAssignments() {
           </div>
         </div>
       )}
+      <style>
+        {`
+    .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+    .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .thin-scrollbar::-webkit-scrollbar-thumb {
+      background-color: rgba(148, 163, 184, 0.7);
+      border-radius: 999px;
+    }
+    .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(100, 116, 139, 0.9);
+    }
+  `}
+      </style>
     </div>
   );
 }
