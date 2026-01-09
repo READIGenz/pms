@@ -30,7 +30,7 @@ export default function HomeLayout() {
           <div className="flex items-center justify-between gap-4">
             {/* Brand */}
             <div className="flex items-center gap-4 min-w-0">
-              <div className="h-14 w-14 rounded-full bg-white dark:bg-neutral-950 border border-slate-200/80 dark:border-white/10 shadow-sm grid place-items-center overflow-hidden">
+              <div className="h-14 w-14 rounded-xl bg-white dark:bg-neutral-950 border border-slate-200/80 dark:border-white/10 shadow-sm grid place-items-center overflow-hidden">
                 <img
                   src={avaLogo}
                   alt="Trinity PMS"
