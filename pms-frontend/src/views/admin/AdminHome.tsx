@@ -113,7 +113,7 @@ export default function AdminHome() {
         <div className="mx-auto max-w-6xl flex items-center justify-between">
           {/* Brand */}
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-sm bg-white border border-slate-200 shadow-sm grid place-items-center overflow-hidden dark:bg-neutral-950 dark:border-white/10">
+            <div className="h-12 w-12 rounded-xl bg-white border border-slate-200 shadow-sm grid place-items-center overflow-hidden dark:bg-neutral-950 dark:border-white/10">
               <img
                 src={avaLogo}
                 alt="Trinity PMS"
