@@ -86,6 +86,17 @@ const fmtTime12 = (t?: string | null) => {
 const shortCode = (code?: string | null) =>
   code ? String(code).trim().split(/\s+/)[0] : "";
 
+/** Thread key used to group versions (safe even when code includes "v2" in subtitle) */
+const wirThreadKey = (w: { code?: string | null; wirId: string }) =>
+  shortCode(w.code) || (w.code || "").toString().trim() || w.wirId;
+
+/** Robust version numeric (prefers w.version, falls back to parsing "... v2" in code) */
+const wirVersionNum = (w: { version?: number | null; code?: string | null }) => {
+  if (typeof w.version === "number" && isFinite(w.version)) return w.version;
+  const m = /\bv(\d+)\b/i.exec((w.code || "").toString());
+  return m ? parseInt(m[1]!, 10) : Number.NEGATIVE_INFINITY;
+};
+
 type WirStatusCanonical =
   | "Draft"
   | "Submitted"
@@ -131,15 +142,22 @@ function StatusBadge({ value }: { value?: string | null }) {
 
   // style classes per canonical status
   const styleMap: Record<WirStatusCanonical, string> = {
-    Draft: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/40 dark:text-slate-200 dark:border-slate-700",
-    Submitted: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800",
-    InspectorRecommended: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800",
+    Draft:
+      "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/40 dark:text-slate-200 dark:border-slate-700",
+    Submitted:
+      "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800",
+    InspectorRecommended:
+      "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800",
     HODApproved:
       "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-    HODRejected: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800",
-    OnHold: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800",
-    Closed: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
-    Unknown: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/20 dark:text-slate-200 dark:border-slate-700",
+    HODRejected:
+      "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800",
+    OnHold:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800",
+    Closed:
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
+    Unknown:
+      "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/20 dark:text-slate-200 dark:border-slate-700",
   };
 
   // human-facing labels per canonical status
@@ -147,7 +165,6 @@ function StatusBadge({ value }: { value?: string | null }) {
     Draft: "Draft",
     Submitted: "Submitted",
     InspectorRecommended: "Inspector Recommended",
-    // 👇 change only this label
     HODApproved: "HODAccepted",
     HODRejected: "HOD Rejected",
     OnHold: "On Hold",
@@ -219,10 +236,10 @@ type WirLite = {
   rescheduleReason?: string | null;
 
   inspectorRecommendation?:
-  | "APPROVE"
-  | "APPROVE_WITH_COMMENTS"
-  | "REJECT"
-  | null;
+    | "APPROVE"
+    | "APPROVE_WITH_COMMENTS"
+    | "REJECT"
+    | null;
   hodOutcome?: "ACCEPT" | "REJECT" | null;
 };
 
@@ -235,6 +252,13 @@ type ProjectState = {
 type NavState = {
   role?: string;
   project?: ProjectState;
+};
+
+/** Threaded view: show latest, older hidden in dropdown */
+type WirThread = {
+  key: string; // base code key
+  latest: WirLite;
+  older: WirLite[];
 };
 
 /* -------- minimal WIR config shape for list pills -------- */
@@ -330,33 +354,27 @@ export default function WIR() {
 
   const role = normalizeRole(
     (user as any)?.role ??
-    (claims as any)?.role ??
-    (claims as any)?.userRole ??
-    (claims as any)?.roleName ??
-    (loc.state as NavState | undefined)?.role ??
-    ""
+      (claims as any)?.role ??
+      (claims as any)?.userRole ??
+      (claims as any)?.roleName ??
+      (loc.state as NavState | undefined)?.role ??
+      ""
   );
   const projectId =
-    params.projectId ||
-    (loc.state as NavState | undefined)?.project?.projectId ||
-    "";
+    params.projectId || (loc.state as NavState | undefined)?.project?.projectId || "";
   const projectFromState = (loc.state as NavState | undefined)?.project;
 
   // current user id (stringify for stable comparisons)
   const currentUserId = String(
     (user as any)?.id ??
-    (claims as any)?.userId ??
-    (claims as any)?.sub ??
-    (claims as any)?.id ??
-    ""
+      (claims as any)?.userId ??
+      (claims as any)?.sub ??
+      (claims as any)?.id ??
+      ""
   );
 
   // Member-safe role & matrix (server authoritative when ready)
-  const {
-    status: memStatus,
-    role: srvRole,
-    can,
-  } = useProjectMembership(projectId);
+  const { status: memStatus, role: srvRole, can } = useProjectMembership(projectId);
 
   // Prefer server role when available; fallback to derived token/state role
   const effectiveRole = (srvRole || role) as string;
@@ -422,12 +440,15 @@ export default function WIR() {
   // track which row we are preflighting to show a tiny spinner/disable
   const [preflightId, setPreflightId] = useState<string | null>(null);
   const [permReady, setPermReady] = useState(false);
-  const [permMatrix, setPermMatrix] = useState<EffectivePermissions | null>(
-    null
-  );
+  const [permMatrix, setPermMatrix] = useState<EffectivePermissions | null>(null);
 
   // project WIR config state for list pills
   const [wirCfg, setWirCfg] = useState<WirListCfg>(null);
+
+  // ✅ Thread dropdown state (older versions hidden by default)
+  const [expandedThreads, setExpandedThreads] = useState<Record<string, boolean>>(
+    {}
+  );
 
   const bicNameMap = useBicNameMap(list);
 
@@ -436,9 +457,7 @@ export default function WIR() {
     (user as any)?.fullName ||
     (user as any)?.name ||
     (user as any)?.displayName ||
-    [(user as any)?.firstName, (user as any)?.lastName]
-      .filter(Boolean)
-      .join(" ") ||
+    [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") ||
     (claims as any)?.fullName ||
     (claims as any)?.name ||
     (claims as any)?.displayName ||
@@ -483,9 +502,7 @@ export default function WIR() {
       const { data } = await api.get(url);
       logWir("list:<- raw", data);
 
-      const rows: any[] = Array.isArray(data)
-        ? data
-        : data?.list || data?.wirs || [];
+      const rows: any[] = Array.isArray(data) ? data : data?.list || data?.wirs || [];
       logWir("list:normalized rows[]", {
         count: rows.length,
         sample: rows.slice(0, 3),
@@ -497,8 +514,7 @@ export default function WIR() {
         title: r.title ?? r.name ?? null,
         status: r.status ?? r.wirStatus ?? null,
         discipline: r.discipline ?? r.disciplineName ?? r.trade ?? null,
-        itemsCount:
-          r.itemsCount ?? (Array.isArray(r.items) ? r.items.length : null),
+        itemsCount: r.itemsCount ?? (Array.isArray(r.items) ? r.items.length : null),
         createdAt: r.createdAt ?? r.created_on ?? r.createdAtUtc ?? null,
         updatedAt: r.updatedAt ?? r.updated_on ?? r.updatedAtUtc ?? null,
         lastActivity: r.lastActivity ?? r.latestActivityAt ?? null,
@@ -577,15 +593,14 @@ export default function WIR() {
     fetchList();
   }, [fetchList]);
 
-  /* -------- map {code -> max version} to detect follow-up existence -------- */
+  /* -------- map {baseCode -> max version} to detect follow-up existence -------- */
   const maxVersionByCode = useMemo(() => {
     const m = new Map<string, number>();
     for (const w of list) {
-      const code = (w.code || "").toString().trim();
-      if (!code) continue;
-      const v = typeof w.version === "number" ? w.version : -Infinity;
-      const prev = m.get(code);
-      if (prev == null || v > prev) m.set(code, v);
+      const key = wirThreadKey(w);
+      const v = wirVersionNum(w);
+      const prev = m.get(key);
+      if (prev == null || v > prev) m.set(key, v);
     }
     return m;
   }, [list]);
@@ -602,8 +617,7 @@ export default function WIR() {
       setWirCfg({
         transmissionType:
           (ex.transmissionType as "Public" | "Private" | "UserSet") ?? "Public",
-        redirectAllowed:
-          typeof ex.redirectAllowed === "boolean" ? ex.redirectAllowed : true,
+        redirectAllowed: typeof ex.redirectAllowed === "boolean" ? ex.redirectAllowed : true,
         exportPdfAllowed: !!ex.exportPdfAllowed,
       });
       dbg("wirCfg", { projectId, cfg: ex });
@@ -623,13 +637,10 @@ export default function WIR() {
     const st = canonicalWirStatus(w.status);
     const ir = (w.inspectorRecommendation || "").toString().toUpperCase();
 
-    if (sf === "submitted")
-      return st === "Submitted" || st === "InspectorRecommended";
+    if (sf === "submitted") return st === "Submitted" || st === "InspectorRecommended";
 
     if (sf === "rejected")
-      return (
-        st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT"
-      );
+      return st === "HODRejected" || (w.hodOutcome || "").toUpperCase() === "REJECT";
 
     if (sf === "approved") {
       if (st !== "HODApproved" && st !== "Closed") return false;
@@ -650,24 +661,21 @@ export default function WIR() {
     return d === df;
   }, []);
 
-  const matchesRange = useCallback(
-    (w: WirLite, fromYmd: string, toYmd: string) => {
-      if (!fromYmd && !toYmd) return true;
-      const when = wirWhen(w);
-      if (!when) return false;
+  const matchesRange = useCallback((w: WirLite, fromYmd: string, toYmd: string) => {
+    if (!fromYmd && !toYmd) return true;
+    const when = wirWhen(w);
+    if (!when) return false;
 
-      if (fromYmd) {
-        const from = startOfDay(new Date(fromYmd));
-        if (when.getTime() < from.getTime()) return false;
-      }
-      if (toYmd) {
-        const to = endOfDay(new Date(toYmd));
-        if (when.getTime() > to.getTime()) return false;
-      }
-      return true;
-    },
-    []
-  );
+    if (fromYmd) {
+      const from = startOfDay(new Date(fromYmd));
+      if (when.getTime() < from.getTime()) return false;
+    }
+    if (toYmd) {
+      const to = endOfDay(new Date(toYmd));
+      if (when.getTime() > to.getTime()) return false;
+    }
+    return true;
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -675,11 +683,11 @@ export default function WIR() {
     // 1) Search
     let out = q
       ? list.filter((w) => {
-        const hay = [w.code, w.title, w.status].map((v) =>
-          (v || "").toString().toLowerCase()
-        );
-        return hay.some((s) => s.includes(q));
-      })
+          const hay = [w.code, w.title, w.status].map((v) =>
+            (v || "").toString().toLowerCase()
+          );
+          return hay.some((s) => s.includes(q));
+        })
       : list;
 
     // 2) Hide Drafts not created by me (master logic)
@@ -711,16 +719,16 @@ export default function WIR() {
       });
     }
 
-    // 5) Sort + keep versions stacked within same code
+    // 5) Sort: keep stable but no longer needed for indentation; still useful for thread ordering
     out.sort((a, b) => {
-      const aa = (shortCode(a.code) || "").toLowerCase();
-      const bb = (shortCode(b.code) || "").toLowerCase();
+      const aa = (wirThreadKey(a) || "").toLowerCase();
+      const bb = (wirThreadKey(b) || "").toLowerCase();
 
       if (aa < bb) return sortDir === "asc" ? -1 : 1;
       if (aa > bb) return sortDir === "asc" ? 1 : -1;
 
-      const va = typeof a.version === "number" ? a.version : -Infinity;
-      const vb = typeof b.version === "number" ? b.version : -Infinity;
+      const va = wirVersionNum(a);
+      const vb = wirVersionNum(b);
       if (va !== vb) return vb - va;
 
       const at = (a.title || "").toLowerCase();
@@ -749,6 +757,74 @@ export default function WIR() {
     matchesRange,
   ]);
 
+  /** Build threads: one visible card (latest) + dropdown older versions */
+  const threads = useMemo<WirThread[]>(() => {
+    const map = new Map<string, WirThread>();
+
+    for (const w of filtered) {
+      const key = wirThreadKey(w);
+      const v = wirVersionNum(w);
+
+      const ex = map.get(key);
+      if (!ex) {
+        map.set(key, { key, latest: w, older: [] });
+        continue;
+      }
+
+      const lv = wirVersionNum(ex.latest);
+      if (v > lv) {
+        ex.older.push(ex.latest);
+        ex.latest = w;
+      } else {
+        ex.older.push(w);
+      }
+    }
+
+    for (const t of map.values()) {
+      t.older.sort((a, b) => {
+        const dv = wirVersionNum(b) - wirVersionNum(a);
+        if (dv !== 0) return dv;
+        const da = safeParseDate(a.createdAt)?.getTime() ?? 0;
+        const db = safeParseDate(b.createdAt)?.getTime() ?? 0;
+        return db - da;
+      });
+    }
+
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => {
+      const aa = (a.key || "").toLowerCase();
+      const bb = (b.key || "").toLowerCase();
+      if (aa < bb) return sortDir === "asc" ? -1 : 1;
+      if (aa > bb) return sortDir === "asc" ? 1 : -1;
+
+      const at = (a.latest.title || "").toLowerCase();
+      const bt = (b.latest.title || "").toLowerCase();
+      if (at < bt) return sortDir === "asc" ? -1 : 1;
+      if (at > bt) return sortDir === "asc" ? 1 : -1;
+
+      const da = safeParseDate(a.latest.createdAt)?.getTime() ?? 0;
+      const db = safeParseDate(b.latest.createdAt)?.getTime() ?? 0;
+      return db - da;
+    });
+
+    return arr;
+  }, [filtered, sortDir]);
+
+  // If highlight is on an older version, auto-expand that thread so scroll works
+  useEffect(() => {
+    if (!highlightId) return;
+    const hit = threads.find(
+      (t) =>
+        t.latest.wirId === highlightId || t.older.some((x) => x.wirId === highlightId)
+    );
+    if (!hit) return;
+
+    setExpandedThreads((prev) => {
+      if (prev[hit.key]) return prev;
+      return { ...prev, [hit.key]: true };
+    });
+  }, [highlightId, threads]);
+
   const pretty = (s: string) =>
     (s || "")
       .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -768,11 +844,12 @@ export default function WIR() {
 
   const grouped = useMemo(() => {
     if (groupBy === "none") {
-      return [{ key: "all", label: "All", items: filtered }];
+      return [{ key: "all", label: "All", items: threads }];
     }
 
-    const map = new Map<string, WirLite[]>();
-    for (const w of filtered) {
+    const map = new Map<string, WirThread[]>();
+    for (const t of threads) {
+      const w = t.latest;
       const keyRaw =
         groupBy === "status"
           ? (canonicalWirStatus(w.status) as string)
@@ -780,7 +857,7 @@ export default function WIR() {
 
       const key = keyRaw && keyRaw.trim() ? keyRaw : "unspecified";
       const arr = map.get(key) || [];
-      arr.push(w);
+      arr.push(t);
       map.set(key, arr);
     }
 
@@ -811,7 +888,7 @@ export default function WIR() {
     });
 
     return arr;
-  }, [filtered, groupBy]);
+  }, [threads, groupBy]);
 
   useEffect(() => {
     if (!highlightId || !hlEl) return;
@@ -822,21 +899,23 @@ export default function WIR() {
       window.history.replaceState({}, "", url.toString());
     }, 60);
     return () => clearTimeout(t);
-  }, [highlightId, hlEl, filtered]);
+  }, [highlightId, hlEl]);
 
   const kpis = useMemo(() => {
-    const total = filtered.length;
+    const total = threads.length;
     let submitted = 0,
       approved = 0,
       rejected = 0;
-    for (const w of filtered) {
+
+    for (const t of threads) {
+      const w = t.latest;
       const st = canonicalWirStatus(w.status);
       if (st === "Submitted" || st === "InspectorRecommended") submitted++;
       if (st === "HODApproved" || st === "Closed") approved++;
       if (st === "HODRejected") rejected++;
     }
     return { total, submitted, approved, rejected };
-  }, [filtered]);
+  }, [threads]);
 
   const backToMyProjects = () => navigate("/home/my-projects");
 
@@ -933,6 +1012,7 @@ export default function WIR() {
       },
     });
   };
+
   const applyFilterSheet = () => {
     setFStatus(dStatus);
     setFDisc(dDisc);
@@ -946,6 +1026,10 @@ export default function WIR() {
     setDDisc("all");
     setDFrom("");
     setDTo("");
+  };
+
+  const toggleThread = (key: string) => {
+    setExpandedThreads((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (
@@ -998,34 +1082,21 @@ export default function WIR() {
       {/* KPI strip */}
       <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI label="Total" value={loading ? "—" : kpis.total} />
-        <KPI
-          label="Submitted"
-          value={loading ? "—" : kpis.submitted}
-          tone="warn"
-        />
+        <KPI label="Submitted" value={loading ? "—" : kpis.submitted} tone="warn" />
         <KPI
           label="Approved/Closed"
           value={loading ? "—" : kpis.approved}
           tone="info"
         />
-        <KPI
-          label="Rejected"
-          value={loading ? "—" : kpis.rejected}
-          tone="alert"
-        />
+        <KPI label="Rejected" value={loading ? "—" : kpis.rejected} tone="alert" />
       </div>
 
-      {/* ✅ Search + Sort + Filter row (ABOVE quick tabs) */}
+      {/* ✅ Search + Sort + Filter row */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="w-full sm:max-w-md">
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M10 4a6 6 0 014.472 9.938l3.795 3.795-1.414 1.414-3.795-3.795A6 6 0 1110 4zm0 2a4 4 0 100 8 4 4 0 000-8z"
                   className="fill-current"
@@ -1053,7 +1124,6 @@ export default function WIR() {
                        dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
             title="Sort"
           >
-            {/* ✅ sort icon like MyProjects (↑↓) */}
             <svg
               width="16"
               height="16"
@@ -1104,7 +1174,8 @@ export default function WIR() {
           </button>
         </div>
       </div>
-      {/* Group row (like MyProjects) */}
+
+      {/* Group row */}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <span className="text-gray-500 dark:text-gray-400">Group</span>
 
@@ -1132,7 +1203,7 @@ export default function WIR() {
         })}
       </div>
 
-      {/* ✅ Quick tabs (All / Today / Upcoming) */}
+      {/* Quick tabs */}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <span className="text-gray-500 dark:text-gray-400">Quick</span>
         {[
@@ -1168,17 +1239,15 @@ export default function WIR() {
       {err && !loading && (
         <div className="mt-4 text-sm text-red-700 dark:text-red-400">{err}</div>
       )}
-      {!loading && !err && filtered.length === 0 && (
+      {!loading && !err && threads.length === 0 && (
         <div className="mt-6 text-sm text-gray-600 dark:text-gray-400">
           No WIRs found for this project.
         </div>
       )}
 
+      {/* ✅ Cards (Latest visible + dropdown for older versions) */}
       <div className="mt-6 space-y-6">
         {grouped.map((g) => {
-          let lastBaseCode = "";
-          let stackDepth = 0;
-
           return (
             <div key={g.key} className="space-y-4">
               {groupBy !== "none" && (
@@ -1190,19 +1259,8 @@ export default function WIR() {
                 </div>
               )}
 
-              {g.items.map((w) => {
-                // IMPORTANT: keep the stacking logic working per-group:
-                const baseCodeKey = shortCode(w.code) || w.code || w.wirId;
-                if (baseCodeKey === lastBaseCode) stackDepth += 1;
-                else {
-                  stackDepth = 0;
-                  lastBaseCode = baseCodeKey;
-                }
-                const isStackedSibling = stackDepth > 0;
-                const stackClasses = isStackedSibling
-                  ? "relative z-[5] mt-[-10px] ml-4"
-                  : "relative z-[10]";
-
+              {g.items.map((thread) => {
+                const w = thread.latest;
                 const busy = preflightId === w.wirId;
                 const isHL = highlightId && w.wirId === highlightId;
 
@@ -1218,8 +1276,7 @@ export default function WIR() {
                   ? new Date(forDateRaw).toLocaleDateString()
                   : "—";
 
-                const forTimeRaw =
-                  w.forTime ?? any?.for_time ?? any?.forTime ?? null;
+                const forTimeRaw = w.forTime ?? any?.for_time ?? any?.forTime ?? null;
                 const forTimeDisp = fmtTime12(forTimeRaw);
 
                 const itemsDisp =
@@ -1228,22 +1285,27 @@ export default function WIR() {
                     : (any?.itemsCount ?? any?.items_count ?? "—");
 
                 const isRescheduled = !!(w.rescheduleForDate || w.rescheduleForTime);
-                const reschedTimeRaw =
-                  w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
+                const reschedTimeRaw = w.rescheduleForTime ?? any?.reschedule_for_time ?? null;
                 const reschedTimeDisp = fmtTime12(reschedTimeRaw);
 
                 const reschedTip = isRescheduled
-                  ? `Rescheduled → ${w.rescheduleForDate
-                    ? new Date(w.rescheduleForDate).toLocaleDateString()
-                    : "—"
-                  } • ${reschedTimeDisp || "—"}${w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
-                  }`
+                  ? `Rescheduled → ${
+                      w.rescheduleForDate
+                        ? new Date(w.rescheduleForDate).toLocaleDateString()
+                        : "—"
+                    } • ${reschedTimeDisp || "—"}${
+                      w.rescheduleReason ? `\nReason: ${w.rescheduleReason}` : ""
+                    }`
                   : "";
 
                 const titleLine = [
                   shortCode(w.code) || "WIR",
                   w.title ? w.title : null,
-                  typeof w.version === "number" ? `v${w.version}` : null,
+                  isFinite(wirVersionNum(w)) && wirVersionNum(w) !== Number.NEGATIVE_INFINITY
+                    ? `v${wirVersionNum(w)}`
+                    : typeof w.version === "number"
+                      ? `v${w.version}`
+                      : null,
                 ]
                   .filter(Boolean)
                   .join(" — ");
@@ -1266,10 +1328,11 @@ export default function WIR() {
                 const isClosedPill =
                   (w.inspectorRecommendation || "").toUpperCase() === "APPROVE" &&
                   (w.hodOutcome || "").toUpperCase() === "ACCEPT";
+
+                const baseKey = thread.key;
                 const hasChild =
-                  w.code &&
-                  typeof w.version === "number" &&
-                  (maxVersionByCode.get(w.code) ?? -Infinity) > w.version;
+                  (maxVersionByCode.get(baseKey) ?? Number.NEGATIVE_INFINITY) >
+                    wirVersionNum(w) || thread.older.length > 0;
 
                 const discKey = canonicalDisc(w.discipline ?? any?.discipline ?? null);
                 const discLabel =
@@ -1281,91 +1344,238 @@ export default function WIR() {
                         ? "MEP"
                         : "Unknown";
 
+                const expanded = !!expandedThreads[thread.key];
+
                 return (
-                  <button
-                    key={w.wirId}
-                    ref={isHL ? setHlEl : undefined}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => !busy && openWirDetail(w)}
-                    className={
-                      stackClasses +
-                      " group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition " +
-                      "hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500/30 " +
-                      "disabled:opacity-60 disabled:cursor-not-allowed " +
-                      "dark:bg-neutral-900 dark:border-neutral-800"
-                    }
-                    title={reschedTip || undefined}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate">
-                          {titleLine}
+                  <div key={thread.key} className="space-y-2">
+                    {/* Latest card */}
+                    <button
+                      ref={isHL ? setHlEl : undefined}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => !busy && openWirDetail(w)}
+                      className={
+                        "relative w-full text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition " +
+                        "hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500/30 " +
+                        "disabled:opacity-60 disabled:cursor-not-allowed " +
+                        "dark:bg-neutral-900 dark:border-neutral-800"
+                      }
+                      title={reschedTip || undefined}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate">
+                            {titleLine}
+                          </div>
+                          <div className="mt-1 text-[12px] sm:text-sm text-gray-600 dark:text-gray-300">
+                            {subtitleLine || "—"}
+                          </div>
                         </div>
-                        <div className="mt-1 text-[12px] sm:text-sm text-gray-600 dark:text-gray-300">
-                          {subtitleLine || "—"}
+
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          {isClosedPill ? (
+                            <span className="text-[11px] rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 dark:bg-emerald-900/20 dark:border-emerald-800/40 dark:text-emerald-200">
+                              Closed
+                            </span>
+                          ) : (
+                            <>
+                              <StatusBadge value={st} />
+
+                              {isAwdC && (
+                                <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
+                                  AWC
+                                </span>
+                              )}
+                              {hasChild && (
+                                <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
+                                  Has Follow-up
+                                </span>
+                              )}
+                              {isRescheduled && (
+                                <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
+                                  Rescheduled
+                                </span>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-end gap-1">
-                        {isClosedPill ? (
-                          // When Closed pill is active -> show ONLY this
-                          <span className="text-[11px] rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 dark:bg-emerald-900/20 dark:border-emerald-800/40 dark:text-emerald-200">
-                            Closed
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                          Discipline: {discLabel}
+                        </span>
+                        {forDateDisp !== "—" && (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                            {forDateDisp}
+                            {forTimeDisp ? ` • ${forTimeDisp}` : ""}
                           </span>
-                        ) : (
-                          <>
-                            <StatusBadge value={st} />
-
-                            {isAwdC && (
-                              <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
-                                AWC
-                              </span>
-                            )}
-                            {hasChild && (
-                              <span className="text-[11px] rounded-full bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200">
-                                Has Follow-up
-                              </span>
-                            )}
-                            {isRescheduled && (
-                              <span className="text-[11px] rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 dark:bg-indigo-900/20 dark:border-indigo-800/40 dark:text-indigo-200">
-                                Rescheduled
-                              </span>
-                            )}
-                          </>
+                        )}
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                          Items: {itemsDisp}
+                        </span>
+                        {bicName && (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
+                            BIC: {bicName}
+                          </span>
                         )}
                       </div>
 
-                    </div>
+                      <div
+                        className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
+                                  group-hover:border-emerald-500 group-hover:text-emerald-700
+                                  dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
+                      >
+                        {busy ? "Opening…" : "Open"}
+                      </div>
+                    </button>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                        Discipline: {discLabel}
-                      </span>
-                      {forDateDisp !== "—" && (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                          {forDateDisp}
-                          {forTimeDisp ? ` • ${forTimeDisp}` : ""}
-                        </span>
-                      )}
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                        Items: {itemsDisp}
-                      </span>
-                      {bicName && (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-gray-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-200">
-                          BIC: {bicName}
-                        </span>
-                      )}
-                    </div>
+                    {/* Version history dropdown (no indentation) */}
+                    {thread.older.length > 0 && (
+                      <div className="px-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleThread(thread.key)}
+                          aria-expanded={expanded}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm
+                                     hover:bg-slate-50 hover:border-slate-300
+                                     dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            className={
+                              "transition-transform " + (expanded ? "rotate-180" : "")
+                            }
+                          >
+                            <path
+                              d="M7 10l5 5 5-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span>Version history ({thread.older.length})</span>
+                        </button>
 
-                    <div
-                      className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm
-                                group-hover:border-emerald-500 group-hover:text-emerald-700
-                                dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-100"
-                    >
-                      {busy ? "Opening…" : "Open"}
-                    </div>
-                  </button>
+                        {expanded && (
+                          <div className="mt-2 space-y-2 pl-4 sm:pl-5">
+                            {thread.older.map((ow) => {
+                              const oBusy = preflightId === ow.wirId;
+                              const oIsHL = highlightId && ow.wirId === highlightId;
+
+                              const oAny = ow as any;
+                              const oBicName = pickBicName(ow, bicNameMap);
+
+                              const oForDateRaw =
+                                ow.forDate ??
+                                oAny?.for_date ??
+                                oAny?.forDate ??
+                                (oAny?.plannedAt ? String(oAny.plannedAt) : null);
+                              const oForDateDisp = oForDateRaw
+                                ? new Date(oForDateRaw).toLocaleDateString()
+                                : "—";
+
+                              const oForTimeRaw =
+                                ow.forTime ?? oAny?.for_time ?? oAny?.forTime ?? null;
+                              const oForTimeDisp = fmtTime12(oForTimeRaw);
+
+                              const oItemsDisp =
+                                typeof (ow as any).itemsCount === "number"
+                                  ? (ow as any).itemsCount
+                                  : (oAny?.itemsCount ?? oAny?.items_count ?? "—");
+
+                              const oTitle = [
+                                shortCode(ow.code) || "WIR",
+                                ow.title ? ow.title : null,
+                                isFinite(wirVersionNum(ow)) &&
+                                wirVersionNum(ow) !== Number.NEGATIVE_INFINITY
+                                  ? `v${wirVersionNum(ow)}`
+                                  : typeof ow.version === "number"
+                                    ? `v${ow.version}`
+                                    : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" — ");
+
+                              const oSubtitle = [
+                                ow.code ? ow.code : null,
+                                `Items: ${oItemsDisp}`,
+                                oForDateDisp !== "—" || oForTimeDisp
+                                  ? `${oForDateDisp}${
+                                      oForTimeDisp ? ` • ${oForTimeDisp}` : ""
+                                    }`
+                                  : null,
+                                oBicName ? `BIC: ${oBicName}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" • ");
+
+                              const oSt = canonicalWirStatus(ow.status);
+                              const oIsAwdC =
+                                (ow.inspectorRecommendation || "").toUpperCase() ===
+                                "APPROVE_WITH_COMMENTS";
+                              const oIsClosedPill =
+                                (ow.inspectorRecommendation || "").toUpperCase() ===
+                                  "APPROVE" &&
+                                (ow.hodOutcome || "").toUpperCase() === "ACCEPT";
+
+                              return (
+                                <button
+                                  key={ow.wirId}
+                                  ref={oIsHL ? setHlEl : undefined}
+                                  type="button"
+                                  disabled={oBusy}
+                                  onClick={() => !oBusy && openWirDetail(ow)}
+                                  className="w-full text-left rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 transition
+                                             hover:bg-slate-50 hover:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20
+                                             disabled:opacity-60 disabled:cursor-not-allowed
+                                             dark:bg-neutral-950/30 dark:border-neutral-800 dark:hover:bg-neutral-950/40"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                        {oTitle}
+                                      </div>
+                                      <div className="mt-0.5 text-[12px] text-gray-600 dark:text-gray-300">
+                                        {oSubtitle || "—"}
+                                      </div>
+                                    </div>
+
+                                    <div className="shrink-0 flex flex-col items-end gap-1">
+                                      {oIsClosedPill ? (
+                                        <span className="text-[11px] rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 dark:bg-emerald-900/20 dark:border-emerald-800/40 dark:text-emerald-200">
+                                          Closed
+                                        </span>
+                                      ) : (
+                                        <>
+                                          <StatusBadge value={oSt} />
+                                          {oIsAwdC && (
+                                            <span className="text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 dark:bg-amber-900/20 dark:border-amber-800/40 dark:text-amber-200">
+                                              AWC
+                                            </span>
+                                          )}
+                                        </>
+                                      )}
+
+                                      <span className="mt-1 inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-700
+                                                       dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100">
+                                        {oBusy ? "Opening…" : "Open"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -1373,37 +1583,28 @@ export default function WIR() {
         })}
       </div>
 
-      {/* ✅ Filter bottom sheet (UI like screenshot) */}
+      {/* ✅ Filter bottom sheet (unchanged) */}
       {showFilter && (
         <div className="fixed inset-0 z-40">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40"
             onClick={() => setShowFilter(false)}
             aria-hidden="true"
           />
 
-          {/* Sheet */}
           <div className="absolute inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4">
             <div className="w-full sm:max-w-lg bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xl max-h-[88vh] overflow-hidden flex flex-col">
-              {/* drag handle */}
               <div className="pt-3 pb-1 flex justify-center">
                 <div className="h-1 w-12 rounded-full bg-slate-200 dark:bg-neutral-700" />
               </div>
 
-              {/* Header */}
               <div className="px-5 sm:px-6 pt-3 pb-2">
                 <div className="text-lg font-semibold text-gray-900 dark:text-white">
                   Filters
                 </div>
               </div>
 
-              {/* Body (scrollable) */}
               <div className="px-5 sm:px-6 pb-4 overflow-auto">
-                {/* helper for pill */}
-                {(() => null)()}
-
-                {/* Status */}
                 <div className="mt-4">
                   <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     Status
@@ -1413,10 +1614,7 @@ export default function WIR() {
                       { id: "all", label: "All" },
                       { id: "submitted", label: "Submitted" },
                       { id: "approved", label: "Approved" },
-                      {
-                        id: "approved_with_comments",
-                        label: "Approved with Comments",
-                      },
+                      { id: "approved_with_comments", label: "Approved with Comments" },
                       { id: "rejected", label: "Rejected" },
                     ].map((opt) => {
                       const active = dStatus === (opt.id as StatusFilter);
@@ -1439,7 +1637,6 @@ export default function WIR() {
                   </div>
                 </div>
 
-                {/* Discipline */}
                 <div className="mt-5">
                   <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     Discipline
@@ -1471,7 +1668,6 @@ export default function WIR() {
                   </div>
                 </div>
 
-                {/* Schedule (From/To) */}
                 <div className="mt-5">
                   <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     Schedule
@@ -1504,11 +1700,9 @@ export default function WIR() {
                   </div>
                 </div>
 
-                {/* space so content doesn't hide behind footer buttons */}
                 <div className="h-24" />
               </div>
 
-              {/* Footer buttons (fixed) */}
               <div className="px-5 sm:px-6 pb-5 pt-3 border-t border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
                 <div className="grid grid-cols-2 gap-4">
                   <button
