@@ -621,12 +621,15 @@ export default function Projects() {
   const btnAccent =
     "inline-flex items-center justify-center h-8 rounded-full bg-[#23A192] px-3 text-[11px] font-semibold text-white " +
     "shadow-sm hover:brightness-110 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#23A192]/30";
+  const btnGold =
+    "inline-flex items-center justify-center h-8 rounded-full bg-[#FCC020] px-4 text-[11px] font-semibold text-slate-900 " +
+    "shadow-sm hover:brightness-105 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FCC020]/40";
 
   /* ========================= Render ========================= */
   return (
     <div className="w-full">
       <div className="w-full">
-        {/* Controls (same 3:2 layout as Users; no surrounding box) */}
+        {/* Controls (unchanged) */}
         <div className="mb-4">
           {refsErr && (
             <div className="mb-2 text-xs text-amber-700 dark:text-amber-400">
@@ -634,9 +637,7 @@ export default function Projects() {
             </div>
           )}
 
-          {/* Row 1: filters (3/5) + pageSize + buttons (2/5) */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            {/* LEFT (3/5): filters */}
             <div className="flex flex-wrap items-center gap-2 lg:basis-3/5 lg:pr-3">
               <select
                 className={`${controlBase} ${controlBorder} ${controlFocus} w-[7.25rem]`}
@@ -777,13 +778,11 @@ export default function Projects() {
                 Clear
               </button>
 
-              {/* keep unused refs hooks, unchanged */}
               {stateOptions.length > 0 ? null : null}
               {districtsRef.length > 0 ? null : null}
               {companiesRef.length > 0 ? null : null}
             </div>
 
-            {/* RIGHT (2/5): page size + actions */}
             <div className="flex items-center gap-2 lg:basis-2/5 lg:pl-3 lg:justify-end lg:flex-nowrap lg:items-start">
               <select
                 className={`${controlBase} ${controlBorder} ${controlFocus}`}
@@ -823,7 +822,6 @@ export default function Projects() {
             </div>
           </div>
 
-          {/* Row 2: search left, export right (same as Users) */}
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="sm:w-[360px]">
               <input
@@ -849,7 +847,7 @@ export default function Projects() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table (unchanged) */}
         <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm border border-slate-200 dark:border-white/10 overflow-hidden">
           {err && (
             <div className="p-4 text-rose-700 dark:text-rose-300 text-sm border-b border-slate-200 dark:border-white/10">
@@ -1013,7 +1011,6 @@ export default function Projects() {
             )}
           </div>
 
-          {/* Pagination footer */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-3 py-3 text-sm border-t border-slate-200 dark:border-white/10">
             <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
@@ -1057,7 +1054,7 @@ export default function Projects() {
           </div>
         </div>
 
-        {/* -------- Modal (opens when route is /admin/projects/:id) -------- */}
+        {/* -------- Modal (UI UPDATED ONLY) -------- */}
         {modalFlat && (
           <div className="fixed inset-0 z-40">
             <div
@@ -1066,42 +1063,40 @@ export default function Projects() {
               aria-hidden="true"
             />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-6xl rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10">
+              <div className="w-full max-w-2xl max-h-[85vh] rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden flex flex-col">
+                {/* Header (fixed) */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/10">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white truncate">
+                      <h3 className="text-lg font-extrabold text-slate-900 dark:text-white truncate">
                         {modalFlat.title || "Untitled Project"}
                       </h3>
+
                       {modalFlat.code && (
-                        <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10">
+                        <span className="text-xs font-mono px-2 py-0.5 rounded-full border border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200">
                           {modalFlat.code}
                         </span>
                       )}
+
                       <Badge kind="status" value={modalFlat.status} />
                       <Badge kind="health" value={modalFlat.health} />
                     </div>
+
+                    {/* little gold underline like Companies modal */}
+                    <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
                   </div>
+
                   <button className={btnOutline} onClick={closeModal}>
                     Close
                   </button>
                 </div>
 
-                <div className="p-4 text-sm">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {/* Body (scrolls) */}
+                <div className="flex-1 overflow-auto thin-scrollbar p-5">
+                  <div className="space-y-4">
                     {VIEW_COLS.map((section) => (
-                      <div
-                        key={section.title}
-                        className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4 shadow-sm"
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="inline-block h-4 w-1 rounded-full bg-[#FCC020]" />
-                          <div className="text-xs font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
-                            {section.title}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <SectionCard key={section.title} title={section.title}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-14 gap-y-5">
                           {section.rows.map(({ key, label, span }) => {
                             let raw: any = (modalFlat as any)[key];
                             if (raw == null) {
@@ -1116,6 +1111,7 @@ export default function Projects() {
                               )
                                 raw = (modalFlat as any).district;
                             }
+
                             return (
                               <div
                                 key={key}
@@ -1126,13 +1122,22 @@ export default function Projects() {
                             );
                           })}
                         </div>
-                      </div>
+                      </SectionCard>
                     ))}
                   </div>
                 </div>
 
-                <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 text-right">
-                  <button className={btnPrimary} onClick={closeModal}>
+                {/* Footer (fixed) */}
+                <div className="px-5 py-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-end">
+                  <button
+                    className={[
+                      "inline-flex items-center justify-center h-8 rounded-full px-4 text-[11px] font-semibold",
+                      "bg-[#FCC020] text-slate-900 shadow-sm hover:brightness-105 active:scale-[0.98]",
+                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FCC020]/40",
+                      "dark:focus:ring-offset-neutral-950",
+                    ].join(" ")}
+                    onClick={closeModal}
+                  >
                     Done
                   </button>
                 </div>
@@ -1140,6 +1145,7 @@ export default function Projects() {
             </div>
           </div>
         )}
+
         {/* -------- /Modal -------- */}
 
         <style>{`
@@ -1154,7 +1160,6 @@ export default function Projects() {
   .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
   .thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.55) transparent; }
 
-/* hide scrollbar arrow buttons (Chromium/Edge/Chrome on Windows) */
 .thin-scrollbar::-webkit-scrollbar-button,
 .thin-scrollbar::-webkit-scrollbar-button:single-button,
 .thin-scrollbar::-webkit-scrollbar-button:horizontal:decrement,
@@ -1170,7 +1175,6 @@ export default function Projects() {
 .thin-scrollbar::-webkit-scrollbar-corner {
   background: transparent !important;
 }
-
 `}</style>
       </div>
     </div>
@@ -1178,10 +1182,30 @@ export default function Projects() {
 }
 
 /* ========================= Small components ========================= */
+function SectionBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="inline-block h-4 w-1 rounded-full bg-[#FCC020]" />
+        <div className="text-[12px] font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+          {title}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col">
-      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </div>
       <div className="mt-0.5 font-medium text-slate-900 dark:text-white break-words">
@@ -1228,5 +1252,26 @@ function Badge({ kind, value }: { kind: "status" | "health"; value?: string }) {
     <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>
       {v}
     </span>
+  );
+}
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-5">
+      <div className="flex items-center gap-3 mb-4">
+        {/* gold dash like Companies modal */}
+        <span className="inline-block h-1.5 w-5 rounded-full bg-[#FCC020]" />
+        <div className="text-xs font-extrabold uppercase tracking-widest text-[#00379C] dark:text-[#FCC020]">
+          {title}
+        </div>
+      </div>
+      {children}
+    </div>
   );
 }
