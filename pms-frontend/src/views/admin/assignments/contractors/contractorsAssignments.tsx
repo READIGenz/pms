@@ -1,22 +1,12 @@
 // src/views/admin/assignments/contractors/contractorsAssignments.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../api/client";
-import {
-  CARD,
-  PILL_INPUT,
-  PILL_SELECT,
-  PILL_DATE,
-  BTN_PRIMARY,
-  BTN_SECONDARY,
-  statusBadgeClass,
-  ThinScrollbarStyle,
-} from "../_ui/assignmentsUi";
 
 // ---------- Types ----------
 type ProjectLite = { projectId: string; title: string };
 type MembershipLite = {
-  id?: string | null;
+  id?: string | null; // membership id for edit
   role?: string | null;
   project?: { projectId?: string; title?: string } | null;
   company?: { companyId?: string; name?: string } | null;
@@ -45,16 +35,17 @@ type UserLite = {
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
-// ---------- Local date helpers ----------
+// ---------- Local date helpers (no UTC conversions) ----------
 function formatLocalYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${y}-${m}-${day}`; // local YYYY-MM-DD
 }
 function todayLocalISO() {
   return formatLocalYMD(new Date());
 }
+/** Add days to a local YYYY-MM-DD and return local YYYY-MM-DD */
 function addDaysISO(dateISO: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
   const [y, m, d] = dateISO.split("-").map(Number);
@@ -63,27 +54,53 @@ function addDaysISO(dateISO: string, days: number) {
   dt.setDate(dt.getDate() + days);
   return formatLocalYMD(dt);
 }
+/** Render any input as local date-time string (for display only) */
 function fmtLocalDateTime(v: any) {
   if (!v) return "";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v ?? "") : d.toLocaleString();
 }
+/** Normalize any input to local YYYY-MM-DD (for date-only UI) */
 function fmtLocalDateOnly(v: any) {
   if (!v) return "";
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v; // already date-only
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
 }
 
+// robustly read membership dates regardless of API key shape -> always local YYYY-MM-DD
+function pickMembershipDate(m: any, primary: "validFrom" | "validTo"): string {
+  if (!m) return "";
+  const candidates = [
+    primary, // validFrom / validTo
+    `${primary}Date`, // validFromDate / validToDate
+    primary === "validFrom" ? "from" : "to",
+    primary === "validFrom" ? "startDate" : "endDate",
+    primary === "validFrom" ? "start" : "end",
+    `${primary}_date`,
+    `${primary}At`,
+    `${primary}_at`,
+  ];
+  for (const key of candidates) {
+    if (m[key] != null && m[key] !== "") return fmtLocalDateOnly(m[key]);
+  }
+  return "";
+}
+
 // ---------- Small utils ----------
 function displayName(u: UserLite) {
-  return [u.firstName, u.middleName, u.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
 }
 function phoneDisplay(u: UserLite) {
-  return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+  const cc = String(u.countryCode ?? "").trim().replace(/^\+/, "");
+  const ph = String(u.phone ?? "").trim();
+  if (cc && ph) return `+${cc}${ph}`;
+  if (ph) return ph;
+  return "";
+}
+function isContractorUser(u: UserLite): boolean {
+  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  return mem.some((m) => String(m?.role || "").toLowerCase() === "contractor");
 }
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
@@ -98,24 +115,25 @@ function projectsLabel(u: UserLite): string {
 function companiesLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   const set = new Set(
-    mem.map((m) => m?.company?.name).filter(Boolean) as string[]
+    mem
+      .filter((m) => String(m?.role || "").toLowerCase() === "contractor")
+      .map((m) => m?.company?.name)
+      .filter(Boolean) as string[]
   );
   return Array.from(set).join(", ");
 }
-function isRoleUser(u: UserLite, role: string): boolean {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  return mem.some(
-    (m) => String(m?.role || "").toLowerCase() === role.toLowerCase()
+function contractorCompanyId(u: UserLite): string | null {
+  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  const m = mems.find(
+    (m) =>
+      String(m?.role || "").toLowerCase() === "contractor" &&
+      (m?.company?.companyId || "")
   );
+  return (m?.company?.companyId as string) || null;
 }
-function alreadyAssignedToSelectedProject(
-  u: UserLite,
-  projectId: string
-): boolean {
+function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boolean {
   if (!projectId) return false;
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
+  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   return mems.some(
     (m) =>
       String(m?.role || "").toLowerCase() === "contractor" &&
@@ -131,186 +149,123 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   if (to && today > to) return "Expired";
   return "Valid";
 }
-function contractorCompanyId(u: UserLite): string | null {
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
-  const m = mems.find(
-    (m) =>
-      String(m?.role || "").toLowerCase() === "contractor" &&
-      m?.company?.companyId
-  );
-  return (m?.company?.companyId as string) || null;
-}
 
-// ---------- UI atoms (aligned to Client Assignments look) ----------
-const SectionKicker = ({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle?: string;
-}) => (
+// ---------- CompanyEdit-style Section header ----------
+const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
   <div className="mb-4">
     <div className="flex items-center gap-3">
-      <span className="inline-block h-5 w-1.5 rounded-full bg-[#FCC020]" />
+      <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
       <div className="text-[11px] sm:text-sm font-extrabold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
         {title}
       </div>
     </div>
     {subtitle ? (
-      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-        {subtitle}
-      </div>
+      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{subtitle}</div>
     ) : null}
   </div>
 );
 
-const TableShell = ({ children }: { children: React.ReactNode }) => (
-  <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white dark:bg-neutral-950 dark:border-white/10">
-    {children}
-  </div>
-);
+// --- UI helper: status pill color (same as Companies/Users table) ---
+function statusBadgeClass(status?: string | null) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active")
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  if (s === "inactive" || s === "disabled")
+    return "bg-slate-100 text-slate-800 dark:bg-neutral-800/70 dark:text-slate-200 border-slate-200/60 dark:border-white/10";
+  if (s === "blocked" || s === "suspended")
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/25 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (s === "deleted")
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/25 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/25 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+}
 
-const StickyThead = ({ children }: { children: React.ReactNode }) => (
-  <thead className="bg-slate-50 dark:bg-white/5 sticky top-0 z-10">
-    {children}
-  </thead>
-);
+function ValidityBadge({ value }: { value: string }) {
+  const v = (value || "").toLowerCase();
+  let cls =
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/5 dark:text-slate-200 dark:border-white/10";
 
-/**
- * ICONS — match Client Assignment page:
- * - MoveUp: plain teal arrow (no circular button)
- * - View: plain green eye (no circular button)
- * - Edit: plain blue pen (no circular button)
- */
-const ICON_BASE =
-  "inline-flex items-center justify-center p-1 rounded-md bg-transparent " +
-  "hover:bg-transparent focus:outline-none focus:ring-0 active:scale-[0.98] transition";
+  if (v === "valid") {
+    cls =
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-900/40";
+  } else if (v === "yet to start") {
+    cls =
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-900/40";
+  } else if (v === "expired") {
+    cls =
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-900/40";
+  }
 
-const ICON_MOVE = `${ICON_BASE} text-teal-600 hover:text-teal-700`;
-const ICON_VIEW = `${ICON_BASE} text-emerald-600 hover:text-emerald-700`;
-const ICON_EDIT =
-  `${ICON_BASE} text-blue-700 hover:text-blue-800 ` +
-  "disabled:opacity-40 disabled:cursor-not-allowed";
-
-const OUTLINE_PILL =
-  "inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 " +
-  "bg-white dark:bg-neutral-950 px-3 py-1 text-xs font-medium " +
-  "text-slate-700 dark:text-slate-200";
-
-function MoveUpIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <span
+      className={
+        "inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium " + cls
+      }
     >
-      <path d="M12 19V5" />
-      <path d="M6.5 10.5 12 5l5.5 5.5" />
-    </svg>
+      {value || "—"}
+    </span>
   );
 }
 
-function EyeIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
-      <circle cx="12" cy="12" r="3.25" />
-    </svg>
-  );
-}
+// ===== UI constants (CompanyEdit look) =====
+const CARD =
+  "bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm p-5";
 
-function PenIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
-      <path d="M14.5 5.5l4 4" />
-    </svg>
-  );
-}
+// Smaller pills (more compact + cleaner)
+const PILL_INPUT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent";
+
+const PILL_SELECT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 pr-9 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent appearance-none";
+
+const PILL_DATE = PILL_INPUT;
+
+// Buttons EXACT same sizing as CompanyEdit/UserEdit pages
+const btnSmBase =
+  "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_SECONDARY =
+  `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+  "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+const BTN_PRIMARY = `${btnSmBase} bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35`;
+const ICON_BTN =
+  "inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 hover:bg-slate-50 dark:hover:bg-white/5";
+
+// Companies-table style tiny controls (used for pagination)
+const ctl =
+  "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+const ctlLight =
+  "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+  "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
 export default function ContractorsAssignments() {
   const nav = useNavigate();
 
-  // --- Auth gate ---
+  // --- Auth gate only ---
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) nav("/login", { replace: true });
   }, [nav]);
 
+  // Common state
   const [err, setErr] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
-  // Tile 2 (role assignment)
-  const [picked, setPicked] = useState<UserLite[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Tile 2 (contractor assignment)
+  const [contractors, setContractors] = useState<UserLite[]>([]);
+  const [selectedContractorIds, setSelectedContractorIds] = useState<Set<string>>(new Set());
   const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
   const [validTo, setValidTo] = useState<string>("");
 
-  const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
+  const [movedContractorIds, setMovedContractorIds] = useState<Set<string>>(new Set());
   const [assignLoading, setAssignLoading] = useState(false);
-
-  // Table styles (MATCH Client Assignments)
-  const TABLE_SCROLL = `overflow-auto max-h-[55vh] thin-scrollbar`;
-
-  const TH =
-    "text-left px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
-    "text-[11px] font-extrabold tracking-[0.16em] uppercase text-slate-600 dark:text-slate-300";
-
-  const TD =
-    "px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap text-sm text-slate-800 dark:text-slate-100";
-
-  const TR =
-    "odd:bg-white even:bg-slate-50/40 dark:odd:bg-neutral-950 dark:even:bg-white/5";
-
-  const PILL =
-    "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold leading-none " +
-    "border shadow-sm";
-
-  function pillClass(v: string) {
-    const s = (v || "").toLowerCase();
-
-    // defaults
-    let cls =
-      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/10 dark:text-slate-200 dark:border-white/10";
-
-    if (s === "active" || s === "valid") {
-      cls =
-        "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/30";
-    } else if (s === "inactive" || s === "expired") {
-      cls =
-        "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-200 dark:border-rose-500/30";
-    } else if (s.includes("yet")) {
-      cls =
-        "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30";
-    }
-
-    return `${PILL} ${cls}`;
-  }
 
   // Load projects
   useEffect(() => {
@@ -330,9 +285,7 @@ export default function ContractorsAssignments() {
         setProjects(minimal);
       } catch (e: any) {
         if (!alive) return;
-        setErr(
-          e?.response?.data?.error || e?.message || "Failed to load projects."
-        );
+        setErr(e?.response?.data?.error || e?.message || "Failed to load projects.");
       }
     })();
     return () => {
@@ -340,21 +293,19 @@ export default function ContractorsAssignments() {
     };
   }, []);
 
-  // Tile 3 (browse role users)
+  // Tile 3 (browse contractors) data + refs
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
 
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
-  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "Active" | "Inactive"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive">("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
+  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   const [sortKey, setSortKey] = useState<
     | "code"
@@ -369,46 +320,8 @@ export default function ContractorsAssignments() {
     | "updated"
   >("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
-  const companyOptions = useMemo<string[]>(() => {
-    const set = new Set<string>();
-    for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
-      for (const m of mems) {
-        if (String(m?.role || "").toLowerCase() !== "contractor") continue;
-        const name = (m?.company?.name || "").trim();
-        if (name) set.add(name);
-      }
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [allUsers]);
-
-  const hasActiveFilters =
-    q.trim() !== "" ||
-    statusFilter !== "all" ||
-    stateFilter !== "" ||
-    districtFilter !== "" ||
-    companyFilter !== "";
-
-  const clearFilters = () => {
-    setQ("");
-    setStatusFilter("all");
-    setStateFilter("");
-    setDistrictFilter("");
-    setCompanyFilter("");
-    setPage(1);
-  };
-
-  useEffect(() => {
-    if (companyFilter && !companyOptions.includes(companyFilter)) {
-      setCompanyFilter("");
-    }
-  }, [companyOptions, companyFilter]);
 
   useEffect(() => {
     let alive = true;
@@ -416,19 +329,13 @@ export default function ContractorsAssignments() {
       try {
         setUsersLoading(true);
         setUsersErr(null);
-        const { data } = await api.get("/admin/users", {
-          params: { includeMemberships: "1" },
-        });
-        const list = (
-          Array.isArray(data) ? data : data?.users ?? []
-        ) as UserLite[];
+        const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+        const list = (Array.isArray(data) ? data : data?.users ?? []) as UserLite[];
         if (!alive) return;
         setAllUsers(list);
       } catch (e: any) {
         if (!alive) return;
-        setUsersErr(
-          e?.response?.data?.error || e?.message || "Failed to load users."
-        );
+        setUsersErr(e?.response?.data?.error || e?.message || "Failed to load users.");
       } finally {
         if (alive) setUsersLoading(false);
       }
@@ -443,9 +350,7 @@ export default function ContractorsAssignments() {
     (async () => {
       try {
         const { data } = await api.get("/admin/states");
-        const s = (
-          Array.isArray(data) ? data : data?.states ?? []
-        ) as StateRef[];
+        const s = (Array.isArray(data) ? data : data?.states ?? []) as StateRef[];
         if (!alive) return;
         setStatesRef(s);
       } catch {
@@ -468,9 +373,7 @@ export default function ContractorsAssignments() {
         const st = statesRef.find((s) => s.name === stateFilter);
         const params = st?.stateId ? { stateId: st.stateId } : undefined;
         const { data } = await api.get("/admin/districts", { params });
-        const d = (
-          Array.isArray(data) ? data : data?.districts ?? []
-        ) as DistrictRef[];
+        const d = (Array.isArray(data) ? data : data?.districts ?? []) as DistrictRef[];
         if (!alive) return;
         setDistrictsRef(d);
       } catch {
@@ -481,6 +384,23 @@ export default function ContractorsAssignments() {
       alive = false;
     };
   }, [stateFilter, statesRef]);
+
+  const companyOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const u of allUsers) {
+      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+      for (const m of mems) {
+        if (String(m?.role || "").toLowerCase() !== "contractor") continue;
+        const name = (m?.company?.name || "").trim();
+        if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allUsers]);
+
+  useEffect(() => {
+    if (companyFilter && !companyOptions.includes(companyFilter)) setCompanyFilter("");
+  }, [companyOptions, companyFilter]);
 
   type Row = {
     action: string;
@@ -493,19 +413,19 @@ export default function ContractorsAssignments() {
     state: string;
     zone: string;
     status: string;
-    updated: string;
+    updated: string; // raw from API
     _id: string;
     _raw?: UserLite;
   };
 
-  const rowsAll = useMemo<Row[]>(() => {
-    const moved = movedIds;
+  const contractorRows = useMemo<Row[]>(() => {
+    const moved = movedContractorIds;
 
-    const onlyRole = allUsers
-      .filter((u) => isRoleUser(u, "Contractor"))
+    const onlyContractors = allUsers
+      .filter(isContractorUser)
       .filter((u) => !moved.has(u.userId));
 
-    const filtered = onlyRole.filter((u) => {
+    const filtered = onlyContractors.filter((u) => {
       if (statusFilter !== "all") {
         if (String(u.userStatus || "") !== statusFilter) return false;
       }
@@ -518,16 +438,11 @@ export default function ContractorsAssignments() {
         if (dName.trim() !== districtFilter.trim()) return false;
       }
       if (companyFilter) {
-        const mems = Array.isArray(u.userRoleMemberships)
-          ? u.userRoleMemberships
-          : [];
-        const companyNames = new Set(
-          mems
-            .filter((m) => String(m?.role || "").toLowerCase() === "contractor")
-            .map((m) => (m?.company?.name || "").trim())
-            .filter(Boolean) as string[]
-        );
-        if (!companyNames.has(companyFilter.trim())) return false;
+        const names = companiesLabel(u)
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (!names.includes(companyFilter.trim())) return false;
       }
       return true;
     });
@@ -574,8 +489,8 @@ export default function ContractorsAssignments() {
     const dir = sortDir;
     const cmp = (a: any, b: any) => {
       if (a === b) return 0;
-      if (a == null) return -1;
-      if (b == null) return 1;
+      if (a === null || a === undefined) return -1;
+      if (b === null || b === undefined) return 1;
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
@@ -595,20 +510,20 @@ export default function ContractorsAssignments() {
     statusFilter,
     stateFilter,
     districtFilter,
+    companyFilter,
     q,
     sortKey,
     sortDir,
-    movedIds,
-    companyFilter,
+    movedContractorIds,
   ]);
 
-  const total = rowsAll.length;
+  const total = contractorRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageSafe = Math.min(Math.max(1, page), totalPages);
   const rowsPaged = useMemo<Row[]>(() => {
     const start = (pageSafe - 1) * pageSize;
-    return rowsAll.slice(start, start + pageSize);
-  }, [rowsAll, pageSafe, pageSize]);
+    return contractorRows.slice(start, start + pageSize);
+  }, [contractorRows, pageSafe, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -617,7 +532,7 @@ export default function ContractorsAssignments() {
   // Submit (assign)
   const canSubmit =
     selectedProjectId &&
-    selectedIds.size > 0 &&
+    selectedContractorIds.size > 0 &&
     validFrom &&
     validTo &&
     !assignLoading;
@@ -625,12 +540,12 @@ export default function ContractorsAssignments() {
   const onAssign = async () => {
     const project = projects.find((p) => p.projectId === selectedProjectId);
     const projectTitle = project?.title || "(Unknown Project)";
-    const selected = picked.filter((u) => selectedIds.has(u.userId));
+
+    const selected = contractors.filter((u) => selectedContractorIds.has(u.userId));
     const names = selected.map(displayName).filter(Boolean);
 
-    const dupes = selected.filter((u) =>
-      alreadyAssignedToSelectedProject(u, selectedProjectId)
-    );
+    // duplicate guard
+    const dupes = selected.filter((u) => alreadyAssignedToSelectedProject(u, selectedProjectId));
     if (dupes.length > 0) {
       const lines = dupes.map((u) => {
         const name = displayName(u) || "(No name)";
@@ -640,13 +555,14 @@ export default function ContractorsAssignments() {
       return;
     }
 
-    const ok = window.confirm(
+    const summary =
       `Please Confirm your assignment:\n\n` +
-        `Project: ${projectTitle}\n` +
-        `Contractors: ${names.length ? names.join(", ") : "—"}\n` +
-        `Validity: From ${validFrom} To ${validTo}\n\n` +
-        `Press OK to assign, or Cancel to go back.`
-    );
+      `Project: ${projectTitle}\n` +
+      `Contractors: ${names.length ? names.join(", ") : "—"}\n` +
+      `Validity: From ${validFrom} To ${validTo}\n\n` +
+      `Press OK to assign, or Cancel to go back.`;
+
+    const ok = window.confirm(summary);
     if (!ok) return;
 
     const items = selected.map((u) => ({
@@ -655,8 +571,8 @@ export default function ContractorsAssignments() {
       scopeType: "Project",
       projectId: selectedProjectId,
       companyId: contractorCompanyId(u),
-      validFrom,
-      validTo,
+      validFrom, // local YYYY-MM-DD
+      validTo, // local YYYY-MM-DD
       isDefault: false,
     }));
 
@@ -664,17 +580,16 @@ export default function ContractorsAssignments() {
       setAssignLoading(true);
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(
-        `Assigned ${
-          data?.created ?? items.length
-        } contractor(s) to "${projectTitle}".`
-      );
 
-      setSelectedIds(new Set());
-      setMovedIds(new Set());
+      alert(`Assigned ${data?.created ?? items.length} contractor(s) to "${projectTitle}".`);
+
+      // Reset Tile 2
+      setSelectedContractorIds(new Set());
+      setMovedContractorIds(new Set());
       setValidFrom("");
       setValidTo("");
 
+      // Refresh users list
       try {
         const { data: fresh } = await api.get("/admin/users", {
           params: { includeMemberships: "1" },
@@ -682,9 +597,7 @@ export default function ContractorsAssignments() {
         setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
       } catch {}
 
-      const el = document.querySelector(
-        '[data-tile-name="Browse Contractors"]'
-      );
+      const el = document.querySelector('[data-tile-name="Browse Contractors"]');
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e: any) {
       const msg =
@@ -699,27 +612,25 @@ export default function ContractorsAssignments() {
     }
   };
 
-  // Move from Tile 3 to Tile 2
+  // Move user from Tile 3 to Tile 2
   const onMoveToTile2 = (user: UserLite) => {
     if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
       const projectTitle =
-        projects.find((p) => p.projectId === selectedProjectId)?.title ||
-        "(Selected Project)";
+        projects.find((p) => p.projectId === selectedProjectId)?.title || "(Selected Project)";
       const name = displayName(user) || "(No name)";
       alert(
         `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the Contractor Assignments.`
       );
       return;
     }
-    setPicked((prev) =>
-      prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]
-    );
-    setMovedIds((prev) => {
+
+    setContractors((prev) => (prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]));
+    setMovedContractorIds((prev) => {
       const next = new Set(prev);
       next.add(user.userId);
       return next;
     });
-    setSelectedIds((prev) => {
+    setSelectedContractorIds((prev) => {
       const next = new Set(prev);
       next.add(user.userId);
       return next;
@@ -729,13 +640,13 @@ export default function ContractorsAssignments() {
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const movedList = useMemo<UserLite[]>(() => {
-    if (movedIds.size === 0) return [];
-    return picked.filter((u) => movedIds.has(u.userId));
-  }, [picked, movedIds]);
+  const movedContractorsList = useMemo<UserLite[]>(() => {
+    if (movedContractorIds.size === 0) return [];
+    return contractors.filter((u) => movedContractorIds.has(u.userId));
+  }, [contractors, movedContractorIds]);
 
-  const toggleChecked = (id: string) => {
-    setSelectedIds((prev) => {
+  const toggleContractorChecked = (id: string) => {
+    setSelectedContractorIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -747,37 +658,59 @@ export default function ContractorsAssignments() {
     if (validFrom && validTo && validTo <= validFrom) setValidTo("");
   }, [validFrom, validTo]);
 
-  // ---- Tile 4 data: flatten Contractor assignments
+  const onCancelTile2 = () => {
+    setValidFrom("");
+    setValidTo("");
+    setSelectedContractorIds(new Set());
+    setMovedContractorIds(new Set());
+    const el = document.querySelector('[data-tile-name="Browse Contractors"]');
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const hasActiveFilters =
+    q.trim() !== "" ||
+    statusFilter !== "all" ||
+    stateFilter !== "" ||
+    districtFilter !== "" ||
+    companyFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    setCompanyFilter("");
+    setPage(1);
+  };
+
+  // ---- Tile 4 data: flatten "Contractor" memberships with a project
   type AssignmentRow = {
     userId: string;
     userName: string;
     projectId: string;
     projectTitle: string;
     company: string;
-    projects: string;
     status: string;
-    validFrom: string;
-    validTo: string;
+    validFrom: string; // local YYYY-MM-DD
+    validTo: string; // local YYYY-MM-DD
     validity: string;
-    updated: string;
+    updated: string; // raw
     membershipId?: string | null;
     _user?: UserLite;
     _mem?: MembershipLite;
   };
 
-  const assignedRows = useMemo<AssignmentRow[]>(() => {
+  const assignedContractorRows = useMemo<AssignmentRow[]>(() => {
     const rows: AssignmentRow[] = [];
     for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
+      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
       for (const m of mems) {
         if (String(m?.role || "").toLowerCase() !== "contractor") continue;
         const pj = m?.project;
         if (!pj?.projectId || !pj?.title) continue;
 
-        const vf = fmtLocalDateOnly(m.validFrom);
-        const vt = fmtLocalDateOnly(m.validTo);
+        const vf = pickMembershipDate(m, "validFrom");
+        const vt = pickMembershipDate(m, "validTo");
 
         rows.push({
           userId: u.userId,
@@ -785,7 +718,6 @@ export default function ContractorsAssignments() {
           projectId: pj.projectId,
           projectTitle: pj.title,
           company: m?.company?.name || "",
-          projects: pj.title,
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
@@ -800,19 +732,14 @@ export default function ContractorsAssignments() {
     return rows;
   }, [allUsers]);
 
+  // ===== Tile 4 sort state + sorted rows =====
   const [aSortKey, setASortKey] = useState<
-    | "userName"
-    | "company"
-    | "projects"
-    | "status"
-    | "validFrom"
-    | "validTo"
-    | "updated"
+    "userName" | "company" | "projectTitle" | "status" | "validFrom" | "validTo" | "validity" | "updated"
   >("updated");
   const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
 
   const assignedSortedRows = useMemo<AssignmentRow[]>(() => {
-    const rows = [...assignedRows];
+    const rows = [...assignedContractorRows];
     const key = aSortKey;
     const dir = aSortDir;
     const cmp = (a: any, b: any) => {
@@ -832,15 +759,14 @@ export default function ContractorsAssignments() {
       return dir === "asc" ? delta : -delta;
     });
     return rows;
-  }, [assignedRows, aSortKey, aSortDir]);
+  }, [assignedContractorRows, aSortKey, aSortDir]);
 
-  // ===== Assignments pagination (shares same pageSize) =====
+  // ===== Tile 4 pagination =====
   const [aPage, setAPage] = useState(1);
   const aPageSize = pageSize;
   const aTotal = assignedSortedRows.length;
   const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
   const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
-
   const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
     const start = (aPageSafe - 1) * aPageSize;
     return assignedSortedRows.slice(start, start + aPageSize);
@@ -853,6 +779,7 @@ export default function ContractorsAssignments() {
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
+
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState<AssignmentRow | null>(null);
   const [editFrom, setEditFrom] = useState<string>("");
@@ -866,8 +793,8 @@ export default function ContractorsAssignments() {
     setViewRow(row);
     setViewOpen(true);
   };
+
   const openEdit = (row: AssignmentRow) => {
-    setDeleting(false);
     setEditRow(row);
 
     const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
@@ -909,58 +836,100 @@ export default function ContractorsAssignments() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editOpen, deleting]);
 
+  // ---- Helpers for refreshing and robust membership resolution (for delete) ----
+  const refetchUsers = async (): Promise<UserLite[]> => {
+    const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+    const list = Array.isArray(data) ? data : data?.users ?? [];
+    setAllUsers(list);
+    return list as UserLite[];
+  };
+
+  const normalizeId = (v: any) => String(v ?? "").trim();
+
+  /** Try to find the freshest membership id for (userId, projectId) */
+  const findCurrentMembershipId = async (userId: string, projectId: string) => {
+    const pickBest = (mems: any[]) => {
+      const candidates = mems
+        .filter((mem) => String(mem?.role || "").toLowerCase() === "contractor")
+        .filter((mem) => normalizeId(mem?.project?.projectId) === normalizeId(projectId));
+
+      if (candidates.length === 0) return null;
+
+      candidates.sort((a, b) => {
+        const au = Date.parse(a?.updatedAt ?? "") || 0;
+        const bu = Date.parse(b?.updatedAt ?? "") || 0;
+        if (au !== bu) return bu - au;
+        const af = Date.parse(pickMembershipDate(a, "validFrom")) || 0;
+        const bf = Date.parse(pickMembershipDate(b, "validFrom")) || 0;
+        if (af !== bf) return bf - af;
+        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
+      });
+
+      const best = candidates[0];
+      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as string | null;
+    };
+
+    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
+
+    let id = match(allUsers.find((u) => u.userId === userId));
+    if (id) return id;
+
+    const users = await refetchUsers();
+    id = match(users.find((u) => u.userId === userId));
+    return id ?? null;
+  };
+
   const onHardDeleteFromEdit = async () => {
-    if (!editRow?.membershipId) {
-      alert("Cannot remove: missing membership id.");
+    if (!editRow) return;
+
+    const resolvedId =
+      editRow.membershipId || (await findCurrentMembershipId(editRow.userId, editRow.projectId));
+
+    if (!resolvedId) {
+      await refetchUsers();
+      setEditOpen(false);
+      setEditRow(null);
+      setPendingEditAlert("Assignment already removed.");
       return;
     }
 
-    const confirm = window.confirm(
-      [
-        "This will permanently remove this Contractor assignment from the project.",
-        "",
-        `Contractor: ${editRow.userName}`,
-        `Project:    ${editRow.projectTitle}`,
-        "",
-        "Are you sure you want to proceed?",
-      ].join("\n")
-    );
-    if (!confirm) return;
+    const msg =
+      `Remove assignment?\n\n` +
+      `Contractor: ${editRow.userName}\n` +
+      `Project: ${editRow.projectTitle}\n\n` +
+      `This will permanently delete the assignment.`;
+
+    if (!window.confirm(msg)) return;
 
     try {
       setDeleting(true);
-
-      await api.delete(`/admin/assignments/${editRow.membershipId}`);
-
-      const successMsg = [
-        "Removed Contractor assignment",
-        "",
-        `Project:    ${editRow.projectTitle}`,
-        `Contractor: ${editRow.userName}`,
-      ].join("\n");
-
-      const { data: fresh } = await api.get("/admin/users", {
-        params: { includeMemberships: "1" },
-      });
-      setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
-
+      await api.delete(`/admin/assignments/${encodeURIComponent(resolvedId)}`);
+      await refetchUsers();
       setEditOpen(false);
       setEditRow(null);
-      setPendingEditAlert(successMsg);
+      setPendingEditAlert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Failed to remove assignment.";
-      alert(msg);
+      const status = e?.response?.status;
+      if (status === 404) {
+        await refetchUsers();
+        setEditOpen(false);
+        setEditRow(null);
+        setPendingEditAlert("Assignment already removed.");
+      } else {
+        const errMsg =
+          e?.response?.data?.message ||
+          e?.response?.data?.error ||
+          e?.message ||
+          "Unassign failed.";
+        alert(errMsg);
+      }
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       {/* Page Heading */}
       <div className="mb-4">
         <div className="text-xl font-extrabold text-slate-900 dark:text-white">
@@ -978,20 +947,15 @@ export default function ContractorsAssignments() {
         </div>
       )}
 
-      {/* Tile 1 — Projects */}
-      <section
-        className={`${CARD} mb-4`}
-        aria-label="Tile: Projects"
-        data-tile-name="Projects"
-      >
-        <SectionKicker
-          title="Projects"
-          subtitle="Choose the project to assign."
-        />
+      {/* Section 1 — Projects */}
+      <section className={CARD + " mb-4"} aria-label="Projects" data-tile-name="Projects">
+        <SectionHeader title="Projects" subtitle="Choose the project to assign contractors to." />
+
         <div className="max-w-xl">
           <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
             Project
           </label>
+
           <div className="relative">
             <select
               className={PILL_SELECT}
@@ -1003,88 +967,75 @@ export default function ContractorsAssignments() {
               }}
               title="Select project"
             >
-              {projects.length === 0 ? (
-                <option value="">Loading…</option>
-              ) : (
-                <>
-                  <option value="">Select a project…</option>
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.title}
-                    </option>
-                  ))}
-                </>
-              )}
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
             </select>
 
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
               ▼
             </span>
           </div>
         </div>
       </section>
 
-      {/* Tile 2 — Roles & Options (Contractor) */}
-      <section
-        className={`${CARD} mb-5`}
-        aria-label="Tile: Roles & Options"
-        data-tile-name="Roles & Options"
-      >
-        <SectionKicker
-          title="Roles & Options"
-          subtitle="Pick from moved contractors & set validity."
-        />
+      {/* Section 2 — Roles & Options */}
+      <section className={CARD + " mb-4"} aria-label="Roles & Options" data-tile-name="Roles & Options">
+        <SectionHeader title="Roles & Options" subtitle="Pick from moved contractors and set validity." />
 
-        <div className="space-y-5">
-          {/* Subtile: moved list */}
-          <div className="space-y-3" aria-label="Subtile: Moved Contractors">
+        <div className="mt-2 space-y-5">
+          {/* Moved contractors */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                Moved Contractors (select with checkbox)
-              </label>
-
-              <div className="text-xs text-slate-500 dark:text-slate-300">
-                {selectedIds.size}/{movedList.length} selected
+              <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
+                Moved Contractors
               </div>
+
+              {movedContractorsList.length > 0 && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {selectedContractorIds.size}/{movedContractorsList.length} selected
+                </div>
+              )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/40 dark:bg-white/5 overflow-auto">
-              {movedIds.size === 0 ? (
-                <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
-                  <b>Move Contractors</b> from list below to assign roles.
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 overflow-auto bg-slate-50/60 dark:bg-white/5">
+              {movedContractorIds.size === 0 ? (
+                <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                  <b>Move contractors</b> from the list below to assign them for the selected project.
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-200 dark:divide-white/10">
-                  {movedList.map((u: UserLite) => {
-                    const checked = selectedIds.has(u.userId);
+                  {movedContractorsList.map((u) => {
+                    const checked = selectedContractorIds.has(u.userId);
                     return (
-                      <li
-                        key={u.userId}
-                        className="flex items-center justify-between gap-3 px-4 py-3"
-                      >
+                      <li key={u.userId} className="px-3 py-2 flex items-center justify-between gap-3">
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 dark:border-white/20 accent-[#00379C]"
                             checked={checked}
-                            onChange={() => toggleChecked(u.userId)}
-                            className="h-4 w-4 rounded-md border-slate-300 dark:border-white/20
-             accent-[#00379C] focus:ring-2 focus:ring-[#00379C]/30 focus:ring-offset-0"
+                            onChange={() => toggleContractorChecked(u.userId)}
                           />
                           <div className="flex flex-col">
-                            <div className="font-semibold text-slate-900 dark:text-white">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
                               {displayName(u) || "(No name)"}
                             </div>
-                            <div className="text-xs text-slate-500 dark:text-slate-300">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                               {u.code || ""}
                               {u.code ? " · " : ""}
                               {u.email || ""}
                               {u.email ? " · " : ""}
                               {phoneDisplay(u)}
+                              {(u.email || u.code || phoneDisplay(u)) ? " · " : ""}
+                              {companiesLabel(u)}
                             </div>
                           </div>
                         </label>
 
-                        <span className={OUTLINE_PILL}>
+                        <span className="inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-neutral-950">
                           {u.userStatus || "—"}
                         </span>
                       </li>
@@ -1094,87 +1045,71 @@ export default function ContractorsAssignments() {
               )}
             </div>
 
-            {movedList.length > 0 && (
+            {movedContractorsList.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 <button
                   className={BTN_SECONDARY}
-                  onClick={() =>
-                    setSelectedIds(new Set(movedList.map((m) => m.userId)))
-                  }
+                  onClick={() => setSelectedContractorIds(new Set(movedContractorsList.map((m) => m.userId)))}
                 >
                   Select All
                 </button>
-                <button
-                  className={BTN_SECONDARY}
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear
+                <button className={BTN_SECONDARY} onClick={() => setSelectedContractorIds(new Set())}>
+                  Clear Selection
                 </button>
               </div>
             )}
           </div>
 
-          {/* Subtile: Validity */}
-          <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+          {/* Validity */}
+          <div className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
               Validity
-            </label>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  Valid From
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid From</div>
                 <input
                   type="date"
-                  className={PILL_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  Valid To
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid To</div>
                 <input
                   type="date"
-                  className={PILL_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validTo}
-                  min={validFrom || todayLocalISO()}
+                  min={validFrom || todayLocalISO() || undefined}
                   onChange={(e) => setValidTo(e.target.value)}
+                  title={validFrom ? `Choose a date on/after ${validFrom}` : "Choose end date"}
                 />
+                {validFrom && !validTo && (
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Choose a date on or after <b>{validFrom}</b>.
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="mt-1 flex items-center justify-end gap-2">
               <button
                 className={BTN_SECONDARY}
-                onClick={() => {
-                  setValidFrom("");
-                  setValidTo("");
-                  setSelectedIds(new Set());
-                  setMovedIds(new Set());
-                  const el = document.querySelector(
-                    '[data-tile-name="Browse Contractors"]'
-                  );
-                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
+                onClick={onCancelTile2}
+                title="Clear dates and move contractors back to Browse Contractors"
               >
                 Cancel
               </button>
 
               <button
-                className={`${BTN_PRIMARY} ${
-                  !canSubmit ? "opacity-50 cursor-not-allowed" : ""
-                }`}
+                className={BTN_PRIMARY}
                 onClick={onAssign}
                 disabled={!canSubmit}
-                title={
-                  canSubmit
-                    ? "Assign selected contractors to project"
-                    : "Select all required fields"
-                }
+                title={canSubmit ? "Assign selected contractors to project" : "Select project, contractors and validity dates"}
               >
                 {assignLoading ? "Assigning…" : "Assign"}
               </button>
@@ -1183,23 +1118,19 @@ export default function ContractorsAssignments() {
         </div>
       </section>
 
-      {/* Tile 3 — Browse Contractors */}
-      <section
-        className={`${CARD} mb-5`}
-        aria-label="Tile: Browse Contractors"
-        data-tile-name="Browse Contractors"
-      >
-        <SectionKicker
+      {/* Section 3 — Browse Contractors */}
+      <section className={CARD + " mb-4"} aria-label="Browse Contractors" data-tile-name="Browse Contractors">
+        <SectionHeader
           title="Browse Contractors"
           subtitle="Search, filter, sort and move contractors into the selection."
         />
 
-        {/* === CONTROLS === */}
-        <div className="mb-4">
-          {/* Line 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+        {/* Controls */}
+        <div className="mb-4 space-y-3">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-5">
+            {/* Search */}
+            <div className="lg:col-span-2">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Search
               </label>
               <input
@@ -1213,8 +1144,9 @@ export default function ContractorsAssignments() {
               />
             </div>
 
+            {/* Status */}
             <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Status
               </label>
               <div className="relative">
@@ -1230,14 +1162,15 @@ export default function ContractorsAssignments() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* State */}
             <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 State
               </label>
               <div className="relative">
@@ -1257,14 +1190,15 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* District */}
             <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 District
               </label>
               <div className="relative">
@@ -1276,9 +1210,7 @@ export default function ContractorsAssignments() {
                     setPage(1);
                   }}
                   disabled={!stateFilter}
-                  title={
-                    stateFilter ? "Filter by district" : "Select a state first"
-                  }
+                  title={stateFilter ? "Filter by district" : "Select a state first"}
                 >
                   <option value="">All Districts</option>
                   {districtsRef.map((d) => (
@@ -1287,14 +1219,15 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* Company */}
             <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Company
               </label>
               <div className="relative">
@@ -1313,323 +1246,171 @@ export default function ContractorsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Line 2 */}
-          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          {/* Bottom controls */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-wrap items-end gap-2">
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block">
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                   Sort By
                 </label>
-                <div className="relative">
-                  <select
-                    className={PILL_SELECT}
-                    value={sortKey}
-                    onChange={(e) => {
-                      setSortKey(e.target.value as any);
-                      setPage(1);
-                    }}
+
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <select
+                      className={PILL_SELECT}
+                      value={sortKey}
+                      onChange={(e) => {
+                        setSortKey(e.target.value as any);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="code">Code</option>
+                      <option value="name">Name</option>
+                      <option value="company">Company</option>
+                      <option value="projects">Projects</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="email">Email</option>
+                      <option value="state">State</option>
+                      <option value="zone">Zone</option>
+                      <option value="status">Status</option>
+                      <option value="updated">Updated</option>
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                      ▼
+                    </span>
+                  </div>
+
+                  <button
+                    className={ICON_BTN}
+                    onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                    title="Toggle sort direction"
                   >
-                    <option value="name">Name</option>
-                    <option value="code">Code</option>
-                    <option value="company">Company</option>
-                    <option value="projects">Projects</option>
-                    <option value="mobile">Mobile</option>
-                    <option value="email">Email</option>
-                    <option value="state">State</option>
-                    <option value="zone">Zone</option>
-                    <option value="status">Status</option>
-                    <option value="updated">Updated</option>
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
-                    ▼
-                  </span>
+                    <span className="text-[12px]">{sortDir === "asc" ? "▲" : "▼"}</span>
+                  </button>
                 </div>
               </div>
 
               <button
-                className="h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center"
-                onClick={() =>
-                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-                }
-                title="Toggle sort direction"
-                aria-label="Toggle sort direction"
-                type="button"
-              >
-                <span className="text-[12px] leading-none">
-                  {sortDir === "asc" ? "▲" : "▼"}
-                </span>
-              </button>
-
-              <button
-                className={`${BTN_SECONDARY} ${
-                  !hasActiveFilters ? "opacity-50 cursor-not-allowed" : ""
-                }`}
+                className={BTN_SECONDARY}
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
                 title="Clear all filters"
-                type="button"
               >
                 Clear
               </button>
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1 block text-left md:text-right">
-                Rows per page
-              </label>
-              <div className="relative">
-                <select
-                  className={PILL_SELECT}
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                    setAPage(1);
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500">
-                  ▼
-                </span>
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
+                  Rows per page
+                </label>
+                <div className="relative">
+                  <select
+                    className={PILL_SELECT}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                      setAPage(1);
+                    }}
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                    ▼
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Table */}
-        <TableShell>
-          <div className={TABLE_SCROLL}>
-            {usersErr && (
-              <div className="p-3 text-sm text-red-700 border-b border-slate-200 dark:border-white/10">
-                {usersErr}
-              </div>
-            )}
+        {/* Table (Companies-exact UI) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          {usersErr && (
+            <div className="p-4 text-sm text-rose-700 dark:text-rose-300 border-b border-slate-200 dark:border-white/10">
+              {usersErr}
+            </div>
+          )}
 
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
             {usersLoading ? (
-              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
-                Loading contractors…
-              </div>
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">Loading contractors…</div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No contractors match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-xs">
-                <StickyThead>
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
-                    <th className={TH}>Action</th>
                     {[
+                      { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
                       { key: "company", label: "Company" },
-                      { key: "projects", label: "Project" },
+                      { key: "projects", label: "Projects" },
                       { key: "mobile", label: "Mobile" },
                       { key: "email", label: "Email" },
                       { key: "state", label: "State" },
                       { key: "zone", label: "Zone" },
                       { key: "status", label: "Status" },
                       { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const active = sortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const sortable = key !== "action";
+                      const active = sortKey === (key as any);
+                      const dir = active ? sortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
-                          className={`${TH} cursor-pointer`}
-                          title={`Sort by ${h.label}`}
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
+                            (sortable ? "cursor-pointer" : "")
+                          }
+                          title={sortable ? `Sort by ${label}` : undefined}
                           onClick={() => {
-                            if (sortKey !== (h.key as any)) {
-                              setSortKey(h.key as any);
+                            if (!sortable) return;
+                            if (sortKey !== (key as any)) {
+                              setSortKey(key as any);
                               setSortDir("asc");
                             } else {
                               setSortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                             setPage(1);
                           }}
+                          aria-sort={
+                            sortable
+                              ? active
+                                ? dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            <span className="text-[10px] opacity-70">
-                              {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                            </span>
-                          </span>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </StickyThead>
-
-                <tbody>
-                  {rowsPaged.map((r) => (
-                    <tr key={r._id} className={TR}>
-                      <td className={TD}>
-                        <button
-                          type="button"
-                          aria-label="Move contractor"
-                          title="Move to selection"
-                          onClick={() => onMoveToTile2(r._raw!)}
-                          className={ICON_MOVE}
-                        >
-                          <MoveUpIcon />
-                        </button>
-                      </td>
-
-                      <td className={TD}>{r.code}</td>
-                      <td className={TD}>{r.name}</td>
-
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
-                        <div className="truncate max-w-[260px]">
-                          {r.company}
-                        </div>
-                      </td>
-
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects}
-                        </div>
-                      </td>
-
-                      <td className={TD}>{r.mobile}</td>
-                      <td className={TD}>{r.email}</td>
-                      <td className={TD}>{r.state}</td>
-                      <td className={TD}>{r.zone}</td>
-
-                      <td className={TD}>
-                        <span className={pillClass(r.status || "—")}>
-                          {r.status || "—"}
-                        </span>
-                      </td>
-
-                      <td className={TD} title={fmtLocalDateTime(r.updated)}>
-                        {fmtLocalDateTime(r.updated)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
-            <div className="text-slate-500 dark:text-slate-300">
-              Page <b className="text-slate-800 dark:text-white">{pageSafe}</b>{" "}
-              of <b className="text-slate-800 dark:text-white">{totalPages}</b>{" "}
-              · Showing{" "}
-              <b className="text-slate-800 dark:text-white">
-                {rowsPaged.length}
-              </b>{" "}
-              of <b className="text-slate-800 dark:text-white">{total}</b>{" "}
-              contractors
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setPage(1)}
-                disabled={pageSafe <= 1}
-              >
-                « First
-              </button>
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={pageSafe <= 1}
-              >
-                ‹ Prev
-              </button>
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={pageSafe >= totalPages}
-              >
-                Next ›
-              </button>
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setPage(totalPages)}
-                disabled={pageSafe >= totalPages}
-              >
-                Last »
-              </button>
-            </div>
-          </div>
-        </TableShell>
-      </section>
-
-      {/* Tile 4 — Contractor Assignments */}
-      <section
-        className={`${CARD}`}
-        aria-label="Tile: Contractor Assignments"
-        data-tile-name="Contractor Assignments"
-      >
-        <SectionKicker
-          title="Contractor Assignments"
-          subtitle="All contractors who have been assigned to projects."
-        />
-
-        <TableShell>
-          <div className={TABLE_SCROLL}>
-            {assignedRowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
-                No contractor assignments found.
-              </div>
-            ) : (
-              <table className="min-w-full text-xs">
-                <StickyThead>
-                  <tr>
-                    <th className={TH}>Action</th>
-                    {[
-                      { key: "userName", label: "Contractor" },
-                      { key: "company", label: "Company" },
-                      { key: "projects", label: "Project" },
-                      { key: "status", label: "Status" },
-                      { key: "validFrom", label: "Valid From" },
-                      { key: "validTo", label: "Valid To" },
-                      { key: "__validity", label: "Validity", noSort: true },
-                      { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const sortable = !(h as any).noSort;
-                      const active = aSortKey === (h.key as any);
-                      return (
-                        <th
-                          key={h.key}
-                          className={`${TH} ${
-                            sortable ? "cursor-pointer" : ""
-                          }`}
-                          title={sortable ? `Sort by ${h.label}` : h.label}
-                          onClick={() => {
-                            if (!sortable) return;
-                            if (aSortKey !== (h.key as any)) {
-                              setASortKey(h.key as any);
-                              setASortDir("asc");
-                            } else {
-                              setASortDir((d) =>
-                                d === "asc" ? "desc" : "asc"
-                              );
-                            }
-                            setAPage(1);
-                          }}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            {h.label}
+                            {label}
                             {sortable && (
-                              <span className="text-[10px] opacity-70">
-                                {active
-                                  ? aSortDir === "asc"
-                                    ? "▲"
-                                    : "▼"
-                                  : "↕"}
+                              <span
+                                className="text-[10px] opacity-70"
+                                style={{ color: active ? "#00379C" : undefined }}
+                              >
+                                {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
                           </span>
@@ -1637,73 +1418,85 @@ export default function ContractorsAssignments() {
                       );
                     })}
                   </tr>
-                </StickyThead>
+                </thead>
 
                 <tbody>
-                  {assignedRowsPaged.map((r) => (
+                  {rowsPaged.map((r, idx) => (
                     <tr
-                      key={`${r.userId}-${r.projectId}-${r.membershipId || ""}`}
-                      className={TR}
+                      key={r._id ?? idx}
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className={TD}>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            className={ICON_VIEW}
-                            title="View"
-                            aria-label="View assignment"
-                            onClick={() => openView(r)}
+                      {/* Action */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                          title="Move this contractor to selection"
+                          aria-label="Move this contractor to selection"
+                          onClick={() => r._raw && onMoveToTile2(r._raw)}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.7}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           >
-                            <EyeIcon />
-                          </button>
+                            <path d="M12 19V5" />
+                            <path d="M6.5 10.5 12 5l5.5 5.5" />
+                          </svg>
+                        </button>
+                      </td>
 
-                          <button
-                            type="button"
-                            className={ICON_EDIT}
-                            title="Edit validity"
-                            aria-label="Edit assignment"
-                            onClick={() => openEdit(r)}
-                            disabled={!r.membershipId}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100" title={r.code}>
+                        {r.code}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100" title={r.name}>
+                        {r.name}
+                      </td>
+
+                      <td className="px-3 py-1.5 align-middle" title={r.company}>
+                        <div className="truncate max-w-[280px]">{r.company}</div>
+                      </td>
+
+                      <td className="px-3 py-1.5 align-middle" title={r.projects}>
+                        <div className="truncate max-w-[360px]">{r.projects}</div>
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.mobile}>
+                        {r.mobile}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.email}>
+                        {r.email}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.state}>
+                        {r.state}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.zone}>
+                        {r.zone}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.status}>
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
                           >
-                            <PenIcon />
-                          </button>
-                        </div>
+                            {r.status}
+                          </span>
+                        ) : (
+                          ""
+                        )}
                       </td>
 
-                      <td className={TD}>{r.userName}</td>
-
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
-                        <div className="truncate max-w-[260px]">
-                          {r.company || "—"}
-                        </div>
-                      </td>
-
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10">
-                        <div className="truncate max-w-[360px]">
-                          {r.projectTitle}
-                        </div>
-                      </td>
-
-                      <td className={TD}>
-                        <span className={pillClass(r.status || "—")}>
-                          {r.status || "—"}
-                        </span>
-                      </td>
-
-                      <td className={TD}>
-                        {fmtLocalDateOnly(r.validFrom) || "—"}
-                      </td>
-                      <td className={TD}>
-                        {fmtLocalDateOnly(r.validTo) || "—"}
-                      </td>
-
-                      <td className={TD}>
-                        <span className={pillClass(r.validity || "—")}>
-                          {r.validity || "—"}
-                        </span>
-                      </td>
-
-                      <td className={TD} title={fmtLocalDateTime(r.updated)}>
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={fmtLocalDateTime(r.updated)}>
                         {fmtLocalDateTime(r.updated)}
                       </td>
                     </tr>
@@ -1713,73 +1506,325 @@ export default function ContractorsAssignments() {
             )}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
-            <div className="text-slate-500 dark:text-slate-300">
-              Page <b className="text-slate-800 dark:text-white">{aPageSafe}</b>{" "}
-              of <b className="text-slate-800 dark:text-white">{aTotalPages}</b>{" "}
-              · Showing{" "}
-              <b className="text-slate-800 dark:text-white">
-                {assignedRowsPaged.length}
-              </b>{" "}
-              of <b className="text-slate-800 dark:text-white">{aTotal}</b>{" "}
-              assignments
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
+              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of <b>{total}</b>{" "}
+              contractors
+              {companyFilter ? (
+                <>
+                  {" "}
+                  · Company: <b>{companyFilter}</b>
+                </>
+              ) : null}
+              {stateFilter ? (
+                <>
+                  {" "}
+                  · State: <b>{stateFilter}</b>
+                </>
+              ) : null}
+              {districtFilter ? (
+                <>
+                  {" "}
+                  · District: <b>{districtFilter}</b>
+                </>
+              ) : null}
+              {statusFilter !== "all" ? (
+                <>
+                  {" "}
+                  · Status: <b>{statusFilter}</b>
+                </>
+              ) : null}
             </div>
 
-            <div className="flex items-center gap-1">
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setAPage(1)}
-                disabled={aPageSafe <= 1}
-              >
+            <div className="flex flex-wrap items-center gap-1 justify-end">
+              <button className={`${ctl} ${ctlLight} disabled:opacity-50`} onClick={() => setPage(1)} disabled={pageSafe <= 1} title="First">
                 « First
               </button>
               <button
-                className={BTN_SECONDARY}
-                onClick={() => setAPage((p) => Math.max(1, p - 1))}
-                disabled={aPageSafe <= 1}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                title="Previous"
               >
                 ‹ Prev
               </button>
               <button
-                className={BTN_SECONDARY}
-                onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
-                disabled={aPageSafe >= aTotalPages}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={pageSafe >= totalPages}
+                title="Next"
               >
                 Next ›
               </button>
               <button
-                className={BTN_SECONDARY}
-                onClick={() => setAPage(aTotalPages)}
-                disabled={aPageSafe >= aTotalPages}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setPage(totalPages)}
+                disabled={pageSafe >= totalPages}
+                title="Last"
               >
                 Last »
               </button>
             </div>
           </div>
-        </TableShell>
+        </div>
       </section>
 
-      {/* ===== View Modal ===== */}
-      {viewOpen && viewRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setViewOpen(false)}
-          />
-          <div className="relative bg-white dark:bg-neutral-950 rounded-2xl shadow-lg border border-slate-200 dark:border-white/10 w-full max-w-md p-5">
-            <div className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-              Contractor Assignment
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-300 mb-4">
-              {viewRow.userName} · {viewRow.projectTitle}
+      {/* Section 4 — Contractor Assignments */}
+      <section className={CARD + " mb-4"} aria-label="Contractor Assignments" data-tile-name="Contractor Assignments">
+        <SectionHeader
+          title="Contractor Assignments"
+          subtitle="All contractors who have been assigned to projects."
+        />
+
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
+            {assignedSortedRows.length === 0 ? (
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
+                No contractor assignments found.
+              </div>
+            ) : (
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
+                  <tr>
+                    <th
+                      className={
+                        "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                        "text-slate-600 dark:text-slate-200 " +
+                        "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none"
+                      }
+                    >
+                      Action
+                    </th>
+
+                    {[
+                      { key: "userName", label: "Contractor" },
+                      { key: "company", label: "Company" },
+                      { key: "projectTitle", label: "Project" },
+                      { key: "status", label: "Status" },
+                      { key: "validFrom", label: "Valid From" },
+                      { key: "validTo", label: "Valid To" },
+                      { key: "validity", label: "Validity" },
+                      { key: "updated", label: "Last Updated" },
+                    ].map(({ key, label }) => {
+                      const active = aSortKey === (key as any);
+                      const dir = active ? aSortDir : undefined;
+
+                      return (
+                        <th
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none cursor-pointer"
+                          }
+                          title={`Sort by ${label}`}
+                          onClick={() => {
+                            if (aSortKey !== (key as any)) {
+                              setASortKey(key as any);
+                              setASortDir("asc");
+                            } else {
+                              setASortDir((d) => (d === "asc" ? "desc" : "asc"));
+                            }
+                          }}
+                          aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {label}
+                            <span className="text-[10px] opacity-70" style={{ color: active ? "#00379C" : undefined }}>
+                              {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
+                            </span>
+                          </span>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {assignedRowsPaged.map((r, i) => (
+                    <tr
+                      key={`${r.userId}-${r.projectId}-${i}`}
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
+                    >
+                      {/* Action icons like Companies */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                            onClick={() => openView(r)}
+                            title="View assignment"
+                            aria-label="View assignment"
+                          >
+                            {/* eye */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+                              <circle cx="12" cy="12" r="3.25" />
+                            </svg>
+                          </button>
+
+                          <button
+                            type="button"
+                            className={
+                              "inline-flex h-7 w-7 items-center justify-center rounded-full " +
+                              "text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15 " +
+                              (!r.membershipId ? "opacity-50 cursor-not-allowed" : "")
+                            }
+                            onClick={() => openEdit(r)}
+                            disabled={!r.membershipId}
+                            title={r.membershipId ? "Edit validity dates" : "Missing membership id"}
+                            aria-label="Edit validity dates"
+                          >
+                            {/* pencil */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
+                              <path d="M14.5 5.5l4 4" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100 max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.userName}
+                      >
+                        {r.userName}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis" title={r.company}>
+                        {r.company || "—"}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis" title={r.projectTitle}>
+                        {r.projectTitle}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.status}>
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {fmtLocalDateOnly(r.validFrom) || "—"}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {fmtLocalDateOnly(r.validTo) || "—"}
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        <ValidityBadge value={r.validity || "—"} />
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {fmtLocalDateTime(r.updated) || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
+              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing <b>{assignedRowsPaged.length}</b> of{" "}
+              <b>{aTotal}</b> contractor assignments
             </div>
 
-            <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-              <table className="min-w-full text-xs">
+            <div className="flex flex-wrap items-center gap-1 justify-end">
+              <button
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setAPage(1)}
+                disabled={aPageSafe <= 1}
+                title="First"
+              >
+                « First
+              </button>
+              <button
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setAPage((p) => Math.max(1, p - 1))}
+                disabled={aPageSafe <= 1}
+                title="Previous"
+              >
+                ‹ Prev
+              </button>
+              <button
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
+                disabled={aPageSafe >= aTotalPages}
+                title="Next"
+              >
+                Next ›
+              </button>
+              <button
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
+                onClick={() => setAPage(aTotalPages)}
+                disabled={aPageSafe >= aTotalPages}
+                title="Last"
+              >
+                Last »
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== View Modal (read-only) ===== */}
+      {viewOpen && viewRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setViewOpen(false)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Contractor Assignment
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {viewRow.userName} · {viewRow.projectTitle}
+                </div>
+              </div>
+
+              <button className={BTN_SECONDARY + " h-8 px-3 text-[11px]"} onClick={() => setViewOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+              <table className="min-w-full text-sm">
                 <tbody>
                   {[
                     ["Contractor", viewRow.userName || "—"],
+                    ["Company", viewRow.company || "—"],
                     ["Project", viewRow.projectTitle || "—"],
                     ["Status", viewRow.status || "—"],
                     ["Valid From", fmtLocalDateOnly(viewRow.validFrom) || "—"],
@@ -1787,27 +1832,19 @@ export default function ContractorsAssignments() {
                     ["Validity", viewRow.validity || "—"],
                     ["Last Updated", fmtLocalDateTime(viewRow.updated) || "—"],
                   ].map(([k, v]) => (
-                    <tr
-                      key={k}
-                      className="odd:bg-slate-50/40 dark:odd:bg-white/5"
-                    >
+                    <tr key={k as string} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
                       <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
                         {k}
                       </td>
-                      <td className="px-3 py-2 text-slate-800 dark:text-slate-100">
-                        {v}
-                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v as ReactNode}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="mt-2 flex justify-end">
-              <button
-                className={BTN_PRIMARY}
-                onClick={() => setViewOpen(false)}
-              >
+            <div className="mt-4 flex justify-end">
+              <button className={BTN_PRIMARY} onClick={() => setViewOpen(false)}>
                 OK
               </button>
             </div>
@@ -1815,120 +1852,97 @@ export default function ContractorsAssignments() {
         </div>
       )}
 
-      {/* ===== Edit Modal ===== */}
+      {/* ===== Edit Modal (with date updates + hard delete button) ===== */}
       {editOpen && editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/50"
             onClick={() => {
               if (!deleting) setEditOpen(false);
             }}
           />
 
-          <div className="relative bg-white dark:bg-neutral-950 rounded-2xl shadow-lg border border-slate-200 dark:border-white/10 w-full max-w-md p-5">
-            {deleting && (
-              <div className="absolute inset-0 rounded-2xl bg-white/50 dark:bg-black/30 backdrop-blur-[1px] cursor-wait" />
-            )}
-
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-bold text-slate-900 dark:text-white">
-                Edit Validity
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">Edit Validity</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {editRow.userName} · {editRow.projectTitle}
+                </div>
               </div>
+
               <button
-                className="h-9 px-3 rounded-full text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                onClick={onHardDeleteFromEdit}
-                disabled={deleting || !editRow?.membershipId}
-                title={
-                  editRow?.membershipId
-                    ? "Permanently remove this assignment"
-                    : "Missing membership id"
+                className={
+                  "h-8 px-3 rounded-full text-[11px] font-semibold text-white shadow-sm " +
+                  (deleting ? "bg-rose-600/60 cursor-not-allowed" : "bg-rose-600 hover:bg-rose-700")
                 }
+                onClick={onHardDeleteFromEdit}
+                disabled={deleting}
+                title="Permanently remove this assignment"
               >
                 {deleting ? "Removing…" : "Remove"}
               </button>
             </div>
 
-            <div className="text-xs text-slate-500 dark:text-slate-300 mb-4">
-              {editRow.userName} · {editRow.projectTitle}
-            </div>
-
-            <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-              <table className="min-w-full text-xs">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+              <table className="min-w-full text-sm">
                 <tbody>
                   {[
                     ["Contractor", editRow.userName || "—"],
+                    ["Company", editRow.company || "—"],
                     ["Project", editRow.projectTitle || "—"],
                     ["Status", editRow.status || "—"],
                   ].map(([k, v]) => (
-                    <tr
-                      key={k}
-                      className="odd:bg-slate-100 dark:odd:bg-white/10"
-                    >
+                    <tr key={k as string} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
                       <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
                         {k}
                       </td>
-                      <td className="px-3 py-2 text-slate-800 dark:text-slate-100">
-                        {v}
-                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v as ReactNode}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  Valid From
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid From</div>
                 <input
                   type="date"
-                  className={PILL_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editFrom}
                   min={todayLocalISO()}
+                  disabled={deleting}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
                     if (editTo && editTo < v) setEditTo(v);
                   }}
-                  disabled={deleting}
                 />
               </div>
 
               <div>
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  Valid To
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid To</div>
                 <input
                   type="date"
-                  className={PILL_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editTo}
-                  min={
-                    editFrom && editFrom > todayLocalISO()
-                      ? editFrom
-                      : todayLocalISO()
-                  }
-                  onChange={(e) => setEditTo(e.target.value)}
+                  min={editFrom && editFrom > todayLocalISO() ? editFrom : todayLocalISO()}
                   disabled={deleting}
+                  onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className={BTN_SECONDARY}
-                onClick={() => setEditOpen(false)}
-                disabled={deleting}
-              >
+            <div className="mt-5 flex justify-end gap-2">
+              <button className={BTN_SECONDARY} onClick={() => setEditOpen(false)} disabled={deleting}>
                 Cancel
               </button>
 
               <button
-                className={`${BTN_PRIMARY} ${
-                  !editRow?.membershipId || deleting
-                    ? "opacity-50 cursor-not-allowed"
-                    : ""
-                }`}
+                className={BTN_PRIMARY}
+                title="Update validity dates"
+                disabled={!editRow?.membershipId || deleting}
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) {
@@ -1949,26 +1963,19 @@ export default function ContractorsAssignments() {
                   }
 
                   try {
-                    const companyId =
-                      editRow?._mem?.company?.companyId ||
-                      (editRow?._user
-                        ? contractorCompanyId(editRow._user)
-                        : null);
-
                     const payload: any = {
                       validTo: editTo,
                       scopeType: "Project",
                       projectId: editRow.projectId,
-                      ...(companyId ? { companyId } : {}),
                     };
-                    if (!origFrom || editFrom !== origFrom) {
-                      payload.validFrom = editFrom;
-                    }
+                    if (!origFrom || editFrom !== origFrom) payload.validFrom = editFrom;
 
-                    await api.patch(
-                      `/admin/assignments/${editRow.membershipId}`,
-                      payload
-                    );
+                    await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
+
+                    const { data: fresh } = await api.get("/admin/users", {
+                      params: { includeMemberships: "1" },
+                    });
+                    setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
 
                     const successMsg = [
                       `Updated validity`,
@@ -1979,13 +1986,6 @@ export default function ContractorsAssignments() {
                       `Valid From: ${origFrom || "—"} → ${editFrom}`,
                       `Valid To:   ${origTo || "—"} → ${editTo}`,
                     ].join("\n");
-
-                    const { data: fresh } = await api.get("/admin/users", {
-                      params: { includeMemberships: "1" },
-                    });
-                    setAllUsers(
-                      Array.isArray(fresh) ? fresh : fresh?.users ?? []
-                    );
 
                     setEditOpen(false);
                     setEditRow(null);
@@ -1999,8 +1999,6 @@ export default function ContractorsAssignments() {
                     alert(msg);
                   }
                 }}
-                title="Update validity dates"
-                disabled={!editRow?.membershipId || deleting}
               >
                 Update
               </button>
@@ -2008,18 +2006,20 @@ export default function ContractorsAssignments() {
           </div>
         </div>
       )}
+
+      {/* Thin scrollbar style (same as Client page) */}
       <style>
         {`
-    .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
-    .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .thin-scrollbar::-webkit-scrollbar-thumb {
-      background-color: rgba(148, 163, 184, 0.7);
-      border-radius: 999px;
-    }
-    .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-      background-color: rgba(100, 116, 139, 0.9);
-    }
-  `}
+          .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+          .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .thin-scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(148, 163, 184, 0.7);
+            border-radius: 999px;
+          }
+          .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(100, 116, 139, 0.9);
+          }
+        `}
       </style>
     </div>
   );
