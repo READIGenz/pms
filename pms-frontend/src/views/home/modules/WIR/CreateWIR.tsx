@@ -60,6 +60,23 @@ type NavState = {
   project?: ProjectState;
 };
 
+/* ---------------- THEME / UI primitives (CreateWIR only) ---------------- */
+const CARD =
+  "rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-sm";
+const SOFT_BG = "bg-slate-50 dark:bg-neutral-950";
+const PILL_INPUT =
+  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 px-4 text-[15px] sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/25";
+const PILL_SELECT =
+  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 px-3 text-[15px] sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/25";
+const TEXTAREA =
+  "w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 px-4 py-2 text-[15px] sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/25";
+const BTN_PRIMARY =
+  "h-10 px-5 rounded-full bg-[#00379C] text-white hover:brightness-110 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#00379C]/30 dark:focus:ring-[#FCC020]/30 disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_SECONDARY =
+  "h-10 px-5 rounded-full border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-neutral-950 text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#00379C]/15 dark:focus:ring-[#FCC020]/20 disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_GHOST =
+  "h-10 px-4 rounded-full border border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-[#00379C]/10 dark:focus:ring-[#FCC020]/15 disabled:opacity-60 disabled:cursor-not-allowed";
+
 function FieldLabel({
   children,
   className = "",
@@ -69,12 +86,13 @@ function FieldLabel({
 }) {
   return (
     <div
-      className={`text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1 ${className}`}
+      className={`text-[11px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 mb-1 ${className}`}
     >
       {children}
     </div>
   );
 }
+
 function Note({
   children,
   className = "",
@@ -84,24 +102,33 @@ function Note({
 }) {
   return (
     <div
-      className={`text-[12px] text-gray-500 dark:text-gray-400 ${className}`}
+      className={`text-[12px] text-slate-500 dark:text-slate-400 ${className}`}
     >
       {children}
     </div>
   );
 }
+
 function SectionTitle({
   children,
   className = "",
+  right,
 }: {
   children: ReactNode;
   className?: string;
+  right?: ReactNode;
 }) {
   return (
     <div
-      className={`text-sm sm:text-base font-semibold dark:text-white mb-3 ${className}`}
+      className={`flex items-center justify-between gap-3 mb-3 ${className}`}
     >
-      {children}
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
+        <div className="text-sm sm:text-base font-semibold text-[#00379C] dark:text-[#FCC020] truncate">
+          {children}
+        </div>
+      </div>
+      {right ? <div className="shrink-0">{right}</div> : null}
     </div>
   );
 }
@@ -124,11 +151,9 @@ function SelectStrict({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-        {label}
-      </span>
+      <FieldLabel>{label}</FieldLabel>
       <select
-        className="w-full px-3 py-2 rounded-full border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
+        className={PILL_SELECT}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
@@ -507,11 +532,7 @@ export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
         const isOptional = it.required === false || /^optional$/i.test(req);
 
         return (
-          <div
-            key={it.id}
-            className="rounded-2xl border dark:border-neutral-800 p-3"
-          >
-            {" "}
+          <div key={it.id} className={`${CARD} p-3`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold dark:text-white">
@@ -519,46 +540,48 @@ export function ComplianceItemsGrid({ items }: { items: UiComplianceItem[] }) {
                   {tol ? ` — ${tol}` : ""}
                 </div>
                 {codeLine && (
-                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {codeLine}
                   </div>
                 )}
               </div>
 
               {it.critical ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-800">
                   Critical
                 </span>
               ) : null}
             </div>
+
             <div className="mt-2 flex flex-wrap gap-2">
               {isMandatory && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                   Mandatory
                 </span>
               )}
               {isOptional && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                   Optional
                 </span>
               )}
               {it.units && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                   Unit: {it.units}
                 </span>
               )}
               {tol && (
-                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                   Tolerance: {tol}
                 </span>
               )}
             </div>
+
             {(it.tags?.length || 0) > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {it.tags!.map((t, i) => (
                   <span
                     key={i}
-                    className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
+                    className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-white/10"
                   >
                     {t}
                   </span>
@@ -1598,8 +1621,6 @@ export default function CreateWIR() {
             "[WIR] documents upload failed (draft still saved):",
             e?.response?.data || e?.message || e
           );
-          // OPTIONAL: show a softer message:
-          // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
         }
       }
 
@@ -1668,8 +1689,6 @@ export default function CreateWIR() {
             "[WIR] documents upload failed (draft still saved):",
             e?.response?.data || e?.message || e
           );
-          // OPTIONAL: show a softer message:
-          // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
         }
       }
 
@@ -1776,426 +1795,420 @@ export default function CreateWIR() {
   );
 
   return (
-    <div className="min-h-[100svh] md:min-h-screen flex flex-col">
-      <section className="flex-1 overflow-y-auto touch-pan-y overscroll-contain pb-28 bg-white dark:bg-neutral-900 rounded-2xl sm:rounded-2xl shadow-sm border dark:border-neutral-800 p-4 sm:p-5 md:p-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
-          <div className="min-w-0">
-            <div className="text-base sm:text-xl md:text-2xl font-semibold dark:text-white">
-              {isEdit
-                ? "Edit Work Inspection Request"
-                : "Create Work Inspection Request"}
-            </div>
-            <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 truncate">
-              {projectFromState?.code ? `${projectFromState.code} — ` : ""}
-              {projectFromState?.title || `Project: ${projectId}`}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={backToWirList}
-              className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-        {isFollowupMode && (
-          <div className="mt-2">
-            <div className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border dark:border-neutral-800 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-300" />
-              Follow-up mode: existing failed items preserved; Library disabled.
-            </div>
-          </div>
-        )}
-        {/* Body grid */}
-        <div className="mt-4 sm:mt-5 space-y-4 sm:space-y-5">
-          {/* ===== Section 1 — Project & Reference ===== */}
-          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-            <div className="text-sm sm:text-base font-semibold dark:text-white mb-3">
-              Project & Reference
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              {/* Project Code/Title (read-only display) */}
-              <div className="sm:col-span-3">
-                <div className="text-[12px] sm:text-sm text-gray-600 dark:text-gray-300 mb-1">
-                  Project
-                </div>
-                <div className="rounded-full border px-4 py-2 dark:border-neutral-800 dark:text-white">
-                  {(projectFromState?.code
-                    ? projectFromState.code + " — "
-                    : "") +
-                    (projectFromState?.title || `Project: ${projectId}`)}
-                </div>
+    <div className={`min-h-[100svh] ${SOFT_BG}`}>
+      {/* <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:px-14 py-6"> */}
+        <div className={`${CARD} p-4 sm:p-5 md:p-6`}>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white">
+                {isEdit
+                  ? "Edit Work Inspection Request"
+                  : "Create Work Inspection Request"}
+              </div>
+              <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate">
+                {projectFromState?.code ? `${projectFromState.code} — ` : ""}
+                {projectFromState?.title || `Project: ${projectId}`}
               </div>
 
-              {/* Select Discipline */}
-              <SelectStrict
-                label="Discipline"
-                value={discipline}
-                disabled={isFollowupMode}
-                onChange={(v: string) => {
-                  if (isFollowupMode) return;
-                  setDiscipline(v as Discipline | "");
-                  setActivityId("");
-                  setActivityOpts([]);
-                  lastLoadedFor.current = null;
-                  if (v) ensureActivities(true, v);
-                }}
-                options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
-              />
+              {isFollowupMode && (
+                <div className="mt-3">
+                  <div className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border border-[#23A192]/30 bg-[#23A192]/10 text-[#23A192] dark:border-[#23A192]/30 dark:bg-[#23A192]/10">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#23A192]" />
+                    Follow-up mode: existing failed items preserved; Library
+                    disabled.
+                  </div>
+                </div>
+              )}
+            </div>
 
-              {/* Select Activity */}
-              <label className="block sm:col-span-2">
-                <span className="block text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                  Activity
-                </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={backToWirList}
+                className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border
+             border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-[0.99]
+             dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <select
-                    ref={activitySelectRef}
-                    className="w-full px-3 py-2 rounded-full border dark:border-neutral-800 dark:bg-neutral-900 dark:text-white focus:outline-none focus:ring"
-                    value={activityId}
-                    onChange={(e) => {
-                      if (isFollowupMode) return;
-                      setActivityId(e.target.value);
-                    }}
-                    onPointerDownCapture={() => {
-                      if (!discipline || isFollowupMode) return;
-                      ensureActivities(false, discipline);
-                    }}
-                    disabled={!discipline || isFollowupMode}
-                  >
-                    <option value="">
-                      {!discipline
-                        ? "Select Discipline first"
-                        : activityLoading && !activityOpts.length
-                        ? "Loading…"
-                        : activityOpts.length
-                        ? "Select…"
-                        : "Tap again after loading…"}
-                    </option>
-                    {activityOpts.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+          {/* Body */}
+          <div className="mt-6 space-y-4 sm:space-y-5">
+            {/* ===== Section 1 — Project & Reference ===== */}
+            <section className={`${CARD} p-3 sm:p-5`}>
+              <SectionTitle>Project & Reference</SectionTitle>
 
-                  {/* smaller, single-arrow icon */}
-                  <button
-                    type="button"
-                    className="shrink-0 h-9 w-9 rounded-full border border-emerald-200 text-emerald-700
-                               hover:bg-emerald-50 active:scale-[0.98]
-                               dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/20
-                               disabled:opacity-60 disabled:cursor-not-allowed
-                               inline-flex items-center justify-center"
-                    disabled={!discipline || activityLoading || isFollowupMode}
-                    onClick={() => {
-                      if (isFollowupMode) return;
-                      ensureActivities(true, discipline);
-                    }}
-                    title="Reload activities"
-                    aria-label="Reload activities"
-                  >
-                    <IconRefresh
-                      className={`h-4 w-4 ${
-                        activityLoading ? "animate-spin" : ""
-                      }`}
-                    />
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                {/* Project */}
+                <div className="sm:col-span-3">
+                  <FieldLabel>Project</FieldLabel>
+                  <div className="h-10 flex items-center rounded-full border border-slate-200 dark:border-white/10 px-4 text-sm text-slate-800 dark:text-white bg-slate-50/60 dark:bg-white/5">
+                    {(projectFromState?.code
+                      ? projectFromState.code + " — "
+                      : "") +
+                      (projectFromState?.title || `Project: ${projectId}`)}
+                  </div>
                 </div>
 
-                {activityErr && (
-                  <div className="mt-1 text-xs text-red-600 dark:text-red-400">
-                    {activityErr}
+                {/* Discipline */}
+                <SelectStrict
+                  label="Discipline"
+                  value={discipline}
+                  disabled={isFollowupMode}
+                  onChange={(v: string) => {
+                    if (isFollowupMode) return;
+                    setDiscipline(v as Discipline | "");
+                    setActivityId("");
+                    setActivityOpts([]);
+                    lastLoadedFor.current = null;
+                    if (v) ensureActivities(true, v);
+                  }}
+                  options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
+                  placeholder={
+                    isFollowupMode ? "Locked (follow-up)" : "Select…"
+                  }
+                />
+
+                {/* Activity */}
+                <label className="block sm:col-span-2">
+                  <FieldLabel>Activity</FieldLabel>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      ref={activitySelectRef}
+                      className={PILL_SELECT}
+                      value={activityId}
+                      onChange={(e) => {
+                        if (isFollowupMode) return;
+                        setActivityId(e.target.value);
+                      }}
+                      onPointerDownCapture={() => {
+                        if (!discipline || isFollowupMode) return;
+                        ensureActivities(false, discipline);
+                      }}
+                      disabled={!discipline || isFollowupMode}
+                    >
+                      <option value="">
+                        {!discipline
+                          ? "Select Discipline first"
+                          : activityLoading && !activityOpts.length
+                          ? "Loading…"
+                          : activityOpts.length
+                          ? "Select…"
+                          : "Tap again after loading…"}
+                      </option>
+                      {activityOpts.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="shrink-0 h-10 w-10 rounded-full border border-slate-200 dark:border-white/10 text-[#23A192]
+                                 hover:bg-slate-50 dark:hover:bg-white/5 active:scale-[0.99]
+                                 disabled:opacity-60 disabled:cursor-not-allowed
+                                 inline-flex items-center justify-center"
+                      disabled={
+                        !discipline || activityLoading || isFollowupMode
+                      }
+                      onClick={() => {
+                        if (isFollowupMode) return;
+                        ensureActivities(true, discipline);
+                      }}
+                      title="Reload activities"
+                      aria-label="Reload activities"
+                    >
+                      <IconRefresh
+                        className={`h-4 w-4 ${
+                          activityLoading ? "animate-spin" : ""
+                        }`}
+                      />
+                    </button>
                   </div>
-                )}
-              </label>
-            </div>
-          </section>
 
-          {/* Location */}
-          <div>
-            <FieldLabel>Location</FieldLabel>
-            <input
-              value={locationText}
-              onChange={(e) => setLocationText(e.target.value)}
-              placeholder="e.g., Block A, Podium Level"
-              className="w-full text-[15px] sm:text-sm border rounded-full px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-            />
-          </div>
+                  {activityErr && (
+                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                      {activityErr}
+                    </div>
+                  )}
+                </label>
 
-          {/* Date (ONLY one input; removed extra DD/MM/YY pill) */}
-          <div>
-            <FieldLabel>Date *</FieldLabel>
-            <input
-              type="date"
-              value={dateISO ?? ""}
-              onChange={(e) => onNativeDateChange(e.target.value)}
-              className="w-full text-[15px] sm:text-sm border rounded-full px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-            />
-          </div>
+                {/* Location */}
+                <div className="sm:col-span-3">
+                  <FieldLabel>Location</FieldLabel>
+                  <input
+                    value={locationText}
+                    onChange={(e) => setLocationText(e.target.value)}
+                    placeholder="e.g., Block A, Podium Level"
+                    className={PILL_INPUT}
+                  />
+                </div>
 
-          {/* Time (ONLY selects; removed extra 09:00 AM pill) */}
-          <div>
-            <FieldLabel>Time *</FieldLabel>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={hh}
-                onChange={(e) => setHH(e.target.value)}
-                className="w-24 text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              >
-                {HOURS_12.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
-              </select>
-              <span className="opacity-60">:</span>
-              <select
-                value={mm}
-                onChange={(e) => setMM(e.target.value)}
-                className="w-24 text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              >
-                {MINUTES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={ampm}
-                onChange={(e) => setAMPM(e.target.value as "AM" | "PM")}
-                className="w-24 text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-              >
-                <option>AM</option>
-                <option>PM</option>
-              </select>
-            </div>
-          </div>
+                {/* Date */}
+                <div>
+                  <FieldLabel>Date *</FieldLabel>
+                  <input
+                    type="date"
+                    value={dateISO ?? ""}
+                    onChange={(e) => onNativeDateChange(e.target.value)}
+                    className={PILL_INPUT}
+                  />
+                </div>
 
-          {/* Section 2 — Work Inspection (200 chars) */}
-          <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-            <SectionTitle>Work Inspection</SectionTitle>
-            <textarea
-              value={workInspection}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v.length <= 200) setWorkInspection(v);
-              }}
-              rows={4}
-              placeholder="Describe the work to be inspected (max 200 chars)…"
-              className="w-full text-[15px] sm:text-sm border rounded-2xl px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-            />
-            <div className="text-right text-[12px] text-gray-500 dark:text-gray-400">
-              {workInspection.length}/200
-            </div>
-          </div>
+                {/* Time */}
+                <div className="sm:col-span-2">
+                  <FieldLabel>Time *</FieldLabel>
+                  <div className="grid grid-cols-3 gap-2">
+                    <select
+                      value={hh}
+                      onChange={(e) => setHH(e.target.value)}
+                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                    >
+                      {HOURS_12.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
 
-          {/* Section 3 — Documents & Evidence */}
-          <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-            <SectionTitle>Documents & Evidence</SectionTitle>
+                    <select
+                      value={mm}
+                      onChange={(e) => setMM(e.target.value)}
+                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                    >
+                      {MINUTES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
 
-            {/* auto-fit grid with minimum card width (prevents skinny columns / vertical text) */}
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-              {docTiles.map((tile) => {
-                const files = (docs as any)[tile.key] as WirFile[] | undefined;
-                const has = !!files?.length;
-                const Icon = tile.Icon;
+                    <select
+                      value={ampm}
+                      onChange={(e) => setAMPM(e.target.value as "AM" | "PM")}
+                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                    >
+                      <option>AM</option>
+                      <option>PM</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-                return (
-                  <label
-                    key={tile.key}
-                    className={[
-                      "cursor-pointer rounded-2xl border p-3 transition",
-                      "hover:bg-gray-50 dark:hover:bg-neutral-800",
-                      "min-h-[112px]",
-                      has
-                        ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-900/10"
-                        : "border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
+            {/* Section 2 — Work Inspection */}
+            <section className={`${CARD} p-3 sm:p-5`}>
+              <SectionTitle>Work Inspection</SectionTitle>
+              <textarea
+                value={workInspection}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.length <= 200) setWorkInspection(v);
+                }}
+                rows={4}
+                placeholder="Describe the work to be inspected (max 200 chars)…"
+                className={TEXTAREA}
+              />
+              <div className="mt-1 text-right text-[12px] text-slate-500 dark:text-slate-400">
+                {workInspection.length}/200
+              </div>
+            </section>
+
+            {/* Section 3 — Documents & Evidence */}
+            <section className={`${CARD} p-3 sm:p-5`}>
+              <SectionTitle>Documents & Evidence</SectionTitle>
+
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+                {docTiles.map((tile) => {
+                  const files = (docs as any)[tile.key] as
+                    | WirFile[]
+                    | undefined;
+                  const has = !!files?.length;
+                  const Icon = tile.Icon;
+
+                  return (
+                    <label
+                      key={tile.key}
+                      className={[
+                        "cursor-pointer rounded-2xl border p-3 transition",
+                        "hover:bg-slate-50 dark:hover:bg-white/5",
+                        "min-h-[120px]",
+                        has
+                          ? "border-[#23A192]/30 bg-[#23A192]/10"
+                          : "border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <span
+                            className={[
+                              "h-10 w-10 rounded-2xl border flex items-center justify-center shrink-0",
+                              has
+                                ? "border-[#23A192]/30 text-[#23A192] bg-white dark:bg-neutral-950 dark:border-[#23A192]/30"
+                                : "border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-white dark:bg-neutral-950",
+                            ].join(" ")}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </span>
+
+                          <div className="min-w-0">
+                            <div
+                              className="text-sm font-semibold leading-snug text-slate-900 dark:text-white truncate"
+                              title={tile.label}
+                            >
+                              {tile.label}
+                            </div>
+                            <div
+                              className="mt-0.5 text-[12px] text-slate-600 dark:text-slate-300 leading-snug truncate"
+                              title={tile.hint}
+                            >
+                              Upload:{" "}
+                              <span className="font-medium">{tile.hint}</span>
+                            </div>
+
+                            <div
+                              className="mt-2 text-[11px] text-slate-500 dark:text-slate-400"
+                              title={
+                                has ? fileSummary(files) : "Tap to choose files"
+                              }
+                            >
+                              {has
+                                ? `${files!.length} file${
+                                    files!.length === 1 ? "" : "s"
+                                  } selected`
+                                : "Tap to choose files"}
+                            </div>
+
+                            {has && (
+                              <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
+                                {files!.map((f, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between gap-2 text-[11px]
+                                               text-slate-700 dark:text-slate-200
+                                               bg-slate-50 dark:bg-white/5 rounded-full px-2 py-1"
+                                  >
+                                    <span className="truncate" title={f.name}>
+                                      {f.name}
+                                    </span>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setDocs((prev) => {
+                                          const current = (prev as any)[
+                                            tile.key
+                                          ] as File[] | undefined;
+                                          if (!current) return prev;
+
+                                          const next = current.filter(
+                                            (_, i) => i !== idx
+                                          );
+                                          return {
+                                            ...prev,
+                                            [tile.key]: next.length
+                                              ? next
+                                              : undefined,
+                                          };
+                                        });
+                                      }}
+                                      className="ml-1 shrink-0 text-[10px] px-2 py-0.5 rounded-full border
+                                                 border-slate-300 text-slate-600 hover:bg-slate-200
+                                                 dark:border-white/15 dark:text-slate-200 dark:hover:bg-white/10"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                         <span
                           className={[
-                            "h-10 w-10 rounded-2xl border flex items-center justify-center shrink-0",
+                            "text-[11px] px-2 py-0.5 rounded-full border shrink-0",
                             has
-                              ? "border-emerald-200 text-emerald-700 bg-white dark:bg-neutral-900 dark:border-emerald-900/40 dark:text-emerald-300"
-                              : "border-gray-200 text-gray-600 bg-white dark:bg-neutral-900 dark:border-neutral-800 dark:text-gray-300",
+                              ? "border-[#23A192]/30 text-[#23A192] bg-white dark:bg-neutral-950 dark:border-[#23A192]/30"
+                              : "border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 bg-white dark:bg-neutral-950",
                           ].join(" ")}
                         >
-                          <Icon className="h-5 w-5" />
+                          {has ? `${files!.length}` : "0"}
                         </span>
-
-                        <div className="min-w-0">
-                          <div
-                            className="text-[13px] sm:text-sm font-semibold leading-snug dark:text-white truncate"
-                            title={tile.label}
-                          >
-                            {tile.label}
-                          </div>
-                          <div
-                            className="mt-0.5 text-[11px] sm:text-[12px] text-gray-600 dark:text-gray-300 leading-snug truncate"
-                            title={tile.hint}
-                          >
-                            Upload:{" "}
-                            <span className="font-medium">{tile.hint}</span>
-                          </div>
-                          {/* Summary line (count) */}
-                          <div
-                            className="mt-2 text-[11px] text-gray-500 dark:text-gray-400"
-                            title={
-                              has ? fileSummary(files) : "Tap to choose files"
-                            }
-                          >
-                            {has
-                              ? `${files!.length} file${
-                                  files!.length === 1 ? "" : "s"
-                                } selected`
-                              : "Tap to choose files"}
-                          </div>
-
-                          {/* Per-file rows with remove option */}
-                          {has && (
-                            <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
-                              {files!.map((f, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200
-                   bg-gray-50/80 dark:bg-neutral-800/60 rounded-full px-2 py-1"
-                                >
-                                  <span className="truncate" title={f.name}>
-                                    {f.name}
-                                  </span>
-
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation(); // avoid reopening file dialog when deleting
-
-                                      setDocs((prev) => {
-                                        const current = (prev as any)[
-                                          tile.key
-                                        ] as File[] | undefined;
-                                        if (!current) return prev;
-
-                                        const next = current.filter(
-                                          (_, i) => i !== idx
-                                        );
-                                        return {
-                                          ...prev,
-                                          [tile.key]: next.length
-                                            ? next
-                                            : undefined,
-                                        };
-                                      });
-                                    }}
-                                    className="ml-1 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-gray-300
-                     text-gray-600 hover:bg-gray-200
-                     dark:border-neutral-600 dark:text-gray-200 dark:hover:bg-neutral-700"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
 
-                      <span
-                        className={[
-                          "text-[11px] px-2 py-0.5 rounded-full border shrink-0",
-                          has
-                            ? "border-emerald-200 text-emerald-700 bg-white dark:bg-neutral-900 dark:border-emerald-900/40 dark:text-emerald-300"
-                            : "border-gray-200 text-gray-500 bg-white dark:bg-neutral-900 dark:border-neutral-800 dark:text-gray-400",
-                        ].join(" ")}
-                      >
-                        {has ? `${files!.length}` : "0"}
-                      </span>
-                    </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        multiple
+                        accept={tile.accept}
+                        onChange={(e) => {
+                          const picked = e.target.files
+                            ? Array.from(e.target.files)
+                            : [];
+                          if (!picked.length) return;
 
-                    <input
-                      type="file"
-                      className="hidden"
-                      multiple
-                      accept={tile.accept}
-                      onChange={(e) => {
-                        const picked = e.target.files
-                          ? Array.from(e.target.files)
-                          : [];
-                        if (!picked.length) return;
+                          const enhanced = picked.map((file) =>
+                            Object.assign(file, {
+                              existing: false,
+                              category: tile.key,
+                              tag: {
+                                drawings: "dwg",
+                                itp: "itp",
+                                photos: "pic",
+                                material: "mat",
+                                safety: "sft",
+                                other: "doc",
+                              }[tile.key],
+                            } as Partial<WirFile>)
+                          ) as WirFile[];
 
-                        // Wrap into WirFile with category/tag + existing flag
-                        const enhanced = picked.map((file) =>
-                          Object.assign(file, {
-                            existing: false,
-                            category: tile.key,
-                            tag: {
-                              drawings: "dwg",
-                              itp: "itp",
-                              photos: "pic",
-                              material: "mat",
-                              safety: "sft",
-                              other: "doc",
-                            }[tile.key],
-                          } as Partial<WirFile>)
-                        ) as WirFile[];
+                          setDocs((prev) => {
+                            const existing = (prev as any)[tile.key] as
+                              | WirFile[]
+                              | undefined;
+                            const base: WirFile[] = existing
+                              ? [...existing]
+                              : [];
 
-                        setDocs((prev) => {
-                          const existing = (prev as any)[tile.key] as
-                            | WirFile[]
-                            | undefined;
-                          const base: WirFile[] = existing ? [...existing] : [];
-
-                          // simple de-dup by name+size+lastModified
-                          for (const f of enhanced) {
-                            if (
-                              !base.some(
-                                (g) =>
-                                  g.name === f.name &&
-                                  g.size === f.size &&
-                                  g.lastModified === f.lastModified
-                              )
-                            ) {
-                              base.push(f);
+                            for (const f of enhanced) {
+                              if (
+                                !base.some(
+                                  (g) =>
+                                    g.name === f.name &&
+                                    g.size === f.size &&
+                                    g.lastModified === f.lastModified
+                                )
+                              ) {
+                                base.push(f);
+                              }
                             }
-                          }
 
-                          return { ...prev, [tile.key]: base };
-                        });
-                      }}
-                    />
-                  </label>
-                );
-              })}
+                            return { ...prev, [tile.key]: base };
+                          });
+                        }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
               <Note className="mt-2">
                 Selected documents and photos will be uploaded when you save or
                 submit this WIR.
               </Note>
+            </section>
 
-              {/* Section 4 — Checklist Library */}
-              <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5">
-                <SectionTitle>Checklist Library</SectionTitle>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="text-[13px] sm:text-sm dark:text-white">
-                    Selected: <b>{combinedSelectedCount}</b> checklists
-                    {combinedItemsCount ? (
-                      <>
-                        {" "}
-                        · <b>{combinedItemsCount}</b> items
-                      </>
-                    ) : null}
-                    {isFollowupMode && (
-                      <span className="ml-2 text-[12px] text-emerald-700 dark:text-emerald-300">
-                        (Follow-up: library is disabled)
-                      </span>
-                    )}
-                  </div>
+            {/* Section 4 — Checklist Library */}
+            <section className={`${CARD} p-3 sm:p-5`}>
+              <SectionTitle
+                right={
                   <button
                     onClick={() => !isFollowupMode && setLibOpen(true)}
                     disabled={isFollowupMode}
@@ -2204,157 +2217,165 @@ export default function CreateWIR() {
                         ? "Disabled in follow-up: items already carried over"
                         : "Add from Library"
                     }
-                    className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800
-                  ${
-                    isFollowupMode
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  }`}
+                    className={BTN_SECONDARY}
                   >
                     {isFollowupMode
                       ? "Add from Library (disabled)"
                       : "Add from Library"}
                   </button>
+                }
+              >
+                Checklist Library
+              </SectionTitle>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="text-sm text-slate-700 dark:text-slate-200">
+                  Selected: <b>{combinedSelectedCount}</b> checklists
+                  {combinedItemsCount ? (
+                    <>
+                      {" "}
+                      · <b>{combinedItemsCount}</b> items
+                    </>
+                  ) : null}
+                  {isFollowupMode && (
+                    <span className="ml-2 text-[12px] text-[#23A192]">
+                      (Follow-up: library is disabled)
+                    </span>
+                  )}
                 </div>
-                {refErr && (
-                  <div className="mt-2 text-sm text-rose-600">{refErr}</div>
-                )}
               </div>
 
-              {/* Section 5 — Compliance Checklist */}
-              <div className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-5 mb-24 sm:mb-0">
-                <SectionTitle>
+              {refErr && (
+                <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                  {refErr}
+                </div>
+              )}
+            </section>
+
+            {/* Section 5 — Compliance Checklist */}
+            <section className={`${CARD} p-3 sm:p-5`}>
+              <SectionTitle>
+                {isFollowupMode
+                  ? "Follow-up Items (Failed from previous)"
+                  : "Compliance Checklist"}
+              </SectionTitle>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-sm text-slate-600 dark:text-slate-300">
                   {isFollowupMode
-                    ? "Follow-up Items (Failed from previous)"
-                    : "Compliance Checklist"}
-                </SectionTitle>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="text-[13px] sm:text-sm text-gray-700 dark:text-gray-200">
-                    {isFollowupMode
-                      ? "View the carried failed items that will be included in this follow-up."
-                      : "View the combined list of items from your selected checklists."}
-                  </div>
-
-                  <div className="flex gap-2">
-                    {hasCarriedFailed && (
-                      <button
-                        onClick={openViewFailed}
-                        className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                      >
-                        View Failed Items
-                      </button>
-                    )}
-
-                    <button
-                      onClick={openViewCompliance}
-                      disabled={!selectedRefIds.length || isFollowupMode}
-                      className={`text-sm w-full sm:w-auto px-4 py-2 rounded-full border ${
-                        !isFollowupMode && selectedRefIds.length
-                          ? "dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                          : "opacity-60 cursor-not-allowed"
-                      }`}
-                      title={isFollowupMode ? "Disabled in follow-up mode" : ""}
-                    >
-                      View Combined Items
-                    </button>
-                  </div>
+                    ? "View the carried failed items that will be included in this follow-up."
+                    : "View the combined list of items from your selected checklists."}
                 </div>
 
-                {!isFollowupMode && viewErr && (
-                  <div className="mt-2 text-sm text-rose-600">{viewErr}</div>
-                )}
-              </div>
-            </div>
-          </div>
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                  {hasCarriedFailed && (
+                    <button onClick={openViewFailed} className={BTN_SECONDARY}>
+                      View Failed Items
+                    </button>
+                  )}
 
-          {/* Sticky Action Bar (mobile-first, pill-shaped buttons, no box) */}
-          <div className="sticky bottom-0 left-0 right-0 z-20 -mx-4 sm:mx-0">
-            <div className="px-4 sm:px-0 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-end bg-transparent">
+                  <button
+                    onClick={openViewCompliance}
+                    disabled={!selectedRefIds.length || isFollowupMode}
+                    className={BTN_SECONDARY}
+                    title={isFollowupMode ? "Disabled in follow-up mode" : ""}
+                  >
+                    View Combined Items
+                  </button>
+                </div>
+              </div>
+
+              {!isFollowupMode && viewErr && (
+                <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                  {viewErr}
+                </div>
+              )}
+            </section>
+
+            {/* Actions (NOT sticky — normal footer like other form pages) */}
+            <div className="pt-2">
+              <div className="h-px bg-slate-200 dark:bg-white/10 mb-4" />
+
               {submitErr && (
-                <div className="text-sm text-rose-600 sm:mr-auto w-full sm:w-auto">
+                <div className="mb-3 text-sm text-rose-600 dark:text-rose-400">
                   {submitErr}
                 </div>
               )}
 
-              {/* Save Draft – outline pill */}
-              <button
-                onClick={() => {
-                  const isPatch = isEdit && !!editId;
-                  const payload = buildDraftPayload(isPatch);
-                  if (isPatch) delete payload.plannedAt;
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    const isPatch = isEdit && !!editId;
+                    const payload = buildDraftPayload(isPatch);
+                    if (isPatch) delete payload.plannedAt;
 
-                  const path = isPatch
-                    ? `/projects/${projectId}/wir/${editId}`
-                    : `/projects/${projectId}/wir`;
-                  const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
+                    const path = isPatch
+                      ? `/projects/${projectId}/wir/${editId}`
+                      : `/projects/${projectId}/wir`;
+                    const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
 
-                  savePayloadRef.current = payload;
-                  savePathRef.current = path;
-                  saveMethodRef.current = method;
+                    savePayloadRef.current = payload;
+                    savePathRef.current = path;
+                    saveMethodRef.current = method;
 
-                  setSaveDlgErr(null);
-                  setSaveDlgRows(buildPreviewRows(payload));
-                  setSaveDlgOpen(true);
-                }}
-                disabled={!roleCanCreate || submitting}
-                className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border dark:border-neutral-800
-              ${
-                !roleCanCreate || submitting
-                  ? "opacity-60 cursor-not-allowed"
-                  : "hover:bg-gray-50 dark:hover:bg-neutral-800"
-              }`}
-              >
-                Save Draft
-              </button>
+                    setSaveDlgErr(null);
+                    setSaveDlgRows(buildPreviewRows(payload));
+                    setSaveDlgOpen(true);
+                  }}
+                  disabled={!roleCanCreate || submitting}
+                  className={BTN_SECONDARY + " w-full sm:w-auto"}
+                >
+                  Save Draft
+                </button>
 
-              {/* Submit – solid pill */}
-              <button
-                onClick={saveDraftBeforeDispatch}
-                disabled={!roleCanCreate || submitting || !hasRequiredForSubmit}
-                className={`w-full sm:w-auto text-sm px-6 py-2 rounded-full border
-              ${
-                !roleCanCreate || submitting || !hasRequiredForSubmit
-                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-              }`}
-                title="Discipline, Activity, Date/Time, and at least one Checklist are required"
-              >
-                Submit
-              </button>
+                <button
+                  onClick={saveDraftBeforeDispatch}
+                  disabled={
+                    !roleCanCreate || submitting || !hasRequiredForSubmit
+                  }
+                  className={BTN_PRIMARY + " w-full sm:w-auto"}
+                  title="Discipline, Activity, Date/Time, and at least one Checklist are required"
+                >
+                  Submit
+                </button>
+              </div>
+
+              <div className="mt-2">
+                <Note>* Required for submit. Draft can be saved anytime.</Note>
+              </div>
             </div>
           </div>
 
           {/* Save Draft – Confirm Dialog */}
           {saveDlgOpen && (
             <div className="fixed inset-0 z-50 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">
                     Review Draft Save
                   </div>
                   <button
                     onClick={() => !saveDlgBusy && setSaveDlgOpen(false)}
-                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
+                    className={BTN_SECONDARY}
                     disabled={saveDlgBusy}
                   >
                     Close
                   </button>
                 </div>
-                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
+                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
                   This is exactly what will be saved to the WIR draft.
                 </div>
 
-                <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y">
+                <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y divide-slate-200 dark:divide-white/10">
                   {saveDlgRows.map((r, i) => (
                     <div key={i} className="py-2">
-                      <div className="text-[12px] text-gray-500 dark:text-gray-400">
+                      <div className="text-[12px] text-slate-500 dark:text-slate-400">
                         {r.label}
                       </div>
-                      <div className="text-[13px] sm:text-sm dark:text-white break-all">
+                      <div className="text-[13px] sm:text-sm text-slate-900 dark:text-white break-all">
                         {String(r.value)}
                       </div>
-                      <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                      <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
                         API key: <span className="font-mono">{r.apiKey}</span>
                       </div>
                     </div>
@@ -2362,13 +2383,15 @@ export default function CreateWIR() {
                 </div>
 
                 {saveDlgErr && (
-                  <div className="mt-2 text-sm text-rose-600">{saveDlgErr}</div>
+                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                    {saveDlgErr}
+                  </div>
                 )}
 
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
                   <button
                     onClick={() => setSaveDlgOpen(false)}
-                    className="w-full sm:w-auto text-sm px-4 py-2 rounded-full border dark:border-neutral-800 disabled:opacity-60"
+                    className={BTN_SECONDARY + " w-full sm:w-auto"}
                     disabled={saveDlgBusy}
                   >
                     Cancel
@@ -2393,7 +2416,6 @@ export default function CreateWIR() {
                             : await api.post(path, payload);
                         logWir("saveDraft(confirm) <- response", res?.data);
 
-                        // NEW: upload header docs for this WIR
                         const wirId =
                           extractWirIdFromResponse(res) ||
                           (method === "PATCH" ? editId || "" : "");
@@ -2405,8 +2427,6 @@ export default function CreateWIR() {
                               "[WIR] documents upload failed (draft still saved):",
                               e?.response?.data || e?.message || e
                             );
-                            // OPTIONAL: show a softer message:
-                            // setSubmitErr("Draft saved, but document upload failed. Please reopen and re-upload.");
                           }
                         }
 
@@ -2422,11 +2442,7 @@ export default function CreateWIR() {
                         setSaveDlgBusy(false);
                       }
                     }}
-                    className={`w-full sm:w-auto text-sm px-5 py-2 rounded-full border ${
-                      saveDlgBusy
-                        ? "opacity-60 cursor-not-allowed"
-                        : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                    }`}
+                    className={BTN_PRIMARY + " w-full sm:w-auto"}
                     disabled={saveDlgBusy}
                   >
                     {saveDlgBusy ? "Saving…" : "Confirm & Save"}
@@ -2440,20 +2456,20 @@ export default function CreateWIR() {
           {/* Add from Library Modal */}
           {libOpen && (
             <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-                {/* Header */}
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">
                     Checklist Library
                   </div>
                   <button
                     onClick={() => setLibOpen(false)}
-                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                    className={BTN_SECONDARY}
                   >
                     Close
                   </button>
                 </div>
-                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
+
+                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
                   {discipline ? (
                     <>
                       Filtered by discipline <b>{discipline}</b>
@@ -2463,18 +2479,17 @@ export default function CreateWIR() {
                   )}
                 </div>
 
-                {/* Search + bulk toggle */}
                 <div className="mt-3 flex items-center gap-2">
                   <input
                     value={libSearch}
                     onChange={(e) => setLibSearch(e.target.value)}
                     placeholder="Search by code or title…"
-                    className="flex-1 text-[15px] sm:text-sm border rounded-full px-4 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                    className={PILL_INPUT}
                   />
                   <button
                     type="button"
                     onClick={toggleSelectAllVisible}
-                    className="text-xs sm:text-sm px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
+                    className={BTN_SECONDARY + " whitespace-nowrap"}
                     disabled={!libVisible.length}
                     title={
                       allVisibleSelected
@@ -2486,13 +2501,14 @@ export default function CreateWIR() {
                   </button>
                 </div>
 
-                {/* List */}
                 {refLoading ? (
-                  <div className="mt-4 text-sm">Loading…</div>
+                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                    Loading…
+                  </div>
                 ) : (
                   <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
                     {libVisible.length === 0 ? (
-                      <div className="text-sm text-gray-600 dark:text-gray-400 p-2">
+                      <div className="text-sm text-slate-600 dark:text-slate-400 p-2">
                         No checklists found.
                       </div>
                     ) : (
@@ -2525,7 +2541,7 @@ export default function CreateWIR() {
                         return (
                           <label
                             key={id}
-                            className="flex items-start gap-3 p-3 rounded-2xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
+                            className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
                           >
                             <input
                               type="checkbox"
@@ -2534,16 +2550,16 @@ export default function CreateWIR() {
                               onChange={() => toggleSelectChecklist(id)}
                             />
                             <div className="min-w-0">
-                              <div className="text-[13px] sm:text-sm dark:text-white truncate">
+                              <div className="text-sm text-slate-900 dark:text-white truncate">
                                 {code ? (
-                                  <span className="font-medium">
+                                  <span className="font-medium text-[#00379C] dark:text-[#FCC020]">
                                     #{code} •{" "}
                                   </span>
                                 ) : null}
                                 {title}
                               </div>
                               {metaLine ? (
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                   {metaLine}
                                 </div>
                               ) : null}
@@ -2555,9 +2571,8 @@ export default function CreateWIR() {
                   </div>
                 )}
 
-                {/* Footer */}
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
-                  <div className="text-gray-700 dark:text-gray-300">
+                  <div className="text-slate-700 dark:text-slate-300">
                     Selected <b>{combinedSelectedCount}</b>
                     {combinedItemsCount ? (
                       <>
@@ -2568,7 +2583,7 @@ export default function CreateWIR() {
                   </div>
                   <button
                     onClick={() => setLibOpen(false)}
-                    className="w-full sm:w-auto px-4 py-2 rounded-full border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    className={BTN_PRIMARY + " w-full sm:w-auto"}
                   >
                     Done
                   </button>
@@ -2580,105 +2595,113 @@ export default function CreateWIR() {
           {/* Compliance View Modal */}
           {viewOpen && (
             <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">
                     Compliance Checklist
                   </div>
                   <button
                     onClick={() => setViewOpen(false)}
-                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                    className={BTN_SECONDARY}
                   >
                     Close
                   </button>
                 </div>
 
-                {viewLoading ? (
-                  <div className="text-sm">Loading…</div>
-                ) : viewErr ? (
-                  <div className="text-sm text-rose-600">{viewErr}</div>
-                ) : combinedItems.length === 0 ? (
-                  <div className="text-sm">No checklist items.</div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {combinedItems.map((it) => {
-                      const tol = tolPillOf(it);
-                      const codeLine = [it.refCode, it.code]
-                        .filter(Boolean)
-                        .join(" - ");
-                      const req = (it.requirement || "").toString().trim();
-                      const isMandatory =
-                        it.required === true || /^mandatory$/i.test(req);
-                      const isOptional =
-                        it.required === false || /^optional$/i.test(req);
+                <div className="mt-3">
+                  {viewLoading ? (
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      Loading…
+                    </div>
+                  ) : viewErr ? (
+                    <div className="text-sm text-rose-600 dark:text-rose-400">
+                      {viewErr}
+                    </div>
+                  ) : combinedItems.length === 0 ? (
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      No checklist items.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {combinedItems.map((it) => {
+                        const tol = tolPillOf(it);
+                        const codeLine = [it.refCode, it.code]
+                          .filter(Boolean)
+                          .join(" - ");
+                        const req = (it.requirement || "").toString().trim();
+                        const isMandatory =
+                          it.required === true || /^mandatory$/i.test(req);
+                        const isOptional =
+                          it.required === false || /^optional$/i.test(req);
 
-                      return (
-                        <div
-                          key={it.id}
-                          className="rounded-2xl border dark:border-neutral-800 p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold dark:text-white">
-                                {it.text || "Untitled"}
-                                {tol ? ` — ${tol}` : ""}
-                              </div>
-                              {codeLine && (
-                                <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
-                                  {codeLine}
+                        return (
+                          <div key={it.id} className={`${CARD} p-3`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {it.text || "Untitled"}
+                                  {tol ? ` — ${tol}` : ""}
                                 </div>
+                                {codeLine && (
+                                  <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                    {codeLine}
+                                  </div>
+                                )}
+                              </div>
+
+                              {it.critical ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-800">
+                                  Critical
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {isMandatory && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                  Mandatory
+                                </span>
+                              )}
+                              {isOptional && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                  Optional
+                                </span>
+                              )}
+                              {it.units && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                  Unit: {it.units}
+                                </span>
+                              )}
+                              {tol && (
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                  Tolerance: {tol}
+                                </span>
                               )}
                             </div>
 
-                            {it.critical ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                                Critical
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {isMandatory && (
-                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                                Mandatory
-                              </span>
-                            )}
-                            {isOptional && (
-                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                                Optional
-                              </span>
-                            )}
-                            {it.units && (
-                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                                Unit: {it.units}
-                              </span>
-                            )}
-                            {tol && (
-                              <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
-                                Tolerance: {tol}
-                              </span>
+                            {(it.tags?.length || 0) > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {it.tags!.map((t, i) => (
+                                  <span
+                                    key={i}
+                                    className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-white/10"
+                                  >
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
 
-                          {(it.tags?.length || 0) > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {it.tags!.map((t, i) => (
-                                <span
-                                  key={i}
-                                  className="text-[10px] px-2 py-0.5 rounded-full border dark:border-neutral-800"
-                                >
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
                 {viewErr && (
-                  <div className="mt-2 text-sm text-rose-600">{viewErr}</div>
+                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                    {viewErr}
+                  </div>
                 )}
               </div>
             </div>
@@ -2687,23 +2710,25 @@ export default function CreateWIR() {
           {/* PATCH: Follow-up Failed Items Modal */}
           {fuOpen && (
             <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-900 border-t sm:border dark:border-neutral-800 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
                 <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold dark:text-white">
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">
                     Follow-up Items
                   </div>
                   <button
                     onClick={() => setFuOpen(false)}
-                    className="text-sm px-4 py-2 rounded-full border dark:border-neutral-800"
+                    className={BTN_SECONDARY}
                   >
                     Close
                   </button>
                 </div>
 
                 {fuLoading ? (
-                  <div className="mt-4 text-sm">Loading…</div>
+                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                    Loading…
+                  </div>
                 ) : fuItems.length === 0 ? (
-                  <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-400">
                     No items to display. This follow-up does not have carried
                     failed items.
                   </div>
@@ -2725,18 +2750,15 @@ export default function CreateWIR() {
                           .join(" - ");
 
                         return (
-                          <div
-                            key={it.id}
-                            className="rounded-2xl border dark:border-neutral-800 p-3"
-                          >
+                          <div key={it.id} className={`${CARD} p-3`}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm font-semibold dark:text-white">
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
                                   {it.text || "Untitled"}
                                   {tol ? ` — ${tol}` : ""}
                                 </div>
                                 {codeLine && (
-                                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                  <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
                                     {codeLine}
                                   </div>
                                 )}
@@ -2745,12 +2767,12 @@ export default function CreateWIR() {
 
                             <div className="mt-2 flex flex-wrap gap-2">
                               {it.units && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                                   Unit: {it.units}
                                 </span>
                               )}
                               {tol && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800">
+                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
                                   Tolerance: {tol}
                                 </span>
                               )}
@@ -2761,8 +2783,11 @@ export default function CreateWIR() {
                     </div>
                   </div>
                 )}
+
                 {fuErr && (
-                  <div className="mt-2 text-sm text-rose-600">{fuErr}</div>
+                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                    {fuErr}
+                  </div>
                 )}
               </div>
             </div>
@@ -2783,10 +2808,8 @@ export default function CreateWIR() {
             projectId={projectId}
             wirId={wirIdForModal || ""}
           />
-        </div>{" "}
-        {/* closes body grid div */}
-      </section>{" "}
-      {/* closes main section */}
+        </div>
+      {/* </div> */}
     </div>
   );
 }
