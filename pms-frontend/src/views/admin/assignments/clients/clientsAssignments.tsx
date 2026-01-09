@@ -174,7 +174,7 @@ const SectionHeader = ({
   <div className="mb-4">
     <div className="flex items-center gap-3">
       <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
-      <div className="text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
+      <div className="text-[11px] sm:text-sm font-extrabold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
         {title}
       </div>
     </div>
@@ -185,6 +185,20 @@ const SectionHeader = ({
     ) : null}
   </div>
 );
+
+// --- UI helper: status pill color (same as Companies/Users table) ---
+function statusBadgeClass(status?: string | null) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active")
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  if (s === "inactive" || s === "disabled")
+    return "bg-slate-100 text-slate-800 dark:bg-neutral-800/70 dark:text-slate-200 border-slate-200/60 dark:border-white/10";
+  if (s === "blocked" || s === "suspended")
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/25 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (s === "deleted")
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/25 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/25 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+}
 
 function ValidityBadge({ value }: { value: string }) {
   const v = (value || "").toLowerCase();
@@ -215,18 +229,20 @@ function ValidityBadge({ value }: { value: string }) {
 }
 
 // ===== UI constants (CompanyEdit look) =====
+// ===== UI constants (CompanyEdit look) =====
 const CARD =
   "bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm p-5";
 
+// Smaller pills (more compact + cleaner)
 const PILL_INPUT =
-  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 " +
-  "bg-white dark:bg-neutral-950 px-4 text-sm text-slate-900 dark:text-slate-100 shadow-sm " +
-  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent";
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent";
 
 const PILL_SELECT =
-  "h-10 w-full rounded-full border border-slate-200 dark:border-white/10 " +
-  "bg-white dark:bg-neutral-950 px-4 pr-10 text-sm text-slate-900 dark:text-slate-100 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/25 dark:focus:ring-[#FCC020]/25 focus:border-transparent appearance-none";
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 pr-9 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent appearance-none";
 
 const PILL_DATE = PILL_INPUT;
 
@@ -801,6 +817,13 @@ export default function ClientsAssignments() {
   useEffect(() => {
     if (aPage > aTotalPages) setAPage(aTotalPages);
   }, [aTotalPages, aPage]);
+  // Companies-table style tiny controls (used for pagination)
+  const ctl =
+    "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+  const ctlLight =
+    "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
@@ -966,6 +989,16 @@ export default function ClientsAssignments() {
   return (
     // Remove extra padding (Assignments wrapper already provides spacing)
     <div className="w-full">
+      {/* Page Heading */}
+      <div className="mb-4">
+        <div className="text-xl font-extrabold text-slate-900 dark:text-white">
+          Client Assignments
+        </div>
+        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Assign clients to projects and manage validity.
+        </div>
+        <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
+      </div>
       {err && (
         <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
           {err}
@@ -1006,7 +1039,7 @@ export default function ClientsAssignments() {
               ))}
             </select>
 
-            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
               ▼
             </span>
           </div>
@@ -1225,7 +1258,7 @@ export default function ClientsAssignments() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
@@ -1253,7 +1286,7 @@ export default function ClientsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
@@ -1284,7 +1317,7 @@ export default function ClientsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
@@ -1319,7 +1352,7 @@ export default function ClientsAssignments() {
                       <option value="status">Status</option>
                       <option value="updated">Updated</option>
                     </select>
-                    <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                       ▼
                     </span>
                   </div>
@@ -1369,7 +1402,7 @@ export default function ClientsAssignments() {
                       </option>
                     ))}
                   </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                     ▼
                   </span>
                 </div>
@@ -1379,28 +1412,29 @@ export default function ClientsAssignments() {
         </div>
 
         {/* Table */}
-        <div className={TABLE_WRAP}>
-          <div
-            className="overflow-x-auto overflow-y-auto"
-            style={{ maxHeight: "55vh" }}
-          >
-            {usersErr && (
-              <div className="p-3 text-sm text-rose-700 dark:text-rose-200 border-b border-slate-200 dark:border-white/10 bg-rose-50 dark:bg-rose-950/20">
-                {usersErr}
-              </div>
-            )}
+        {/* Table (Companies-exact UI) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          {usersErr && (
+            <div className="p-4 text-sm text-rose-700 dark:text-rose-300 border-b border-slate-200 dark:border-white/10">
+              {usersErr}
+            </div>
+          )}
 
+          <div
+            className="overflow-auto thin-scrollbar"
+            style={{ maxHeight: "65vh" }}
+          >
             {usersLoading ? (
-              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 Loading clients…
               </div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-slate-600 dark:text-slate-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No clients match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className={TABLE_HEAD}>
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
                     {[
                       { key: "action", label: "Action" },
@@ -1413,35 +1447,51 @@ export default function ClientsAssignments() {
                       { key: "zone", label: "Zone" },
                       { key: "status", label: "Status" },
                       { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const sortable = h.key !== "action";
-                      const active = sortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const sortable = key !== "action";
+                      const active = sortKey === (key as any);
+                      const dir = active ? sortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
-                          className={[
-                            "px-3 py-2 border-b border-slate-200 dark:border-white/10 text-left font-semibold whitespace-nowrap text-[11px] sm:text-xs select-none",
-                            sortable
-                              ? "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-white/10"
-                              : "",
-                          ].join(" ")}
-                          title={sortable ? `Sort by ${h.label}` : undefined}
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
+                            (sortable ? "cursor-pointer" : "")
+                          }
+                          title={sortable ? `Sort by ${label}` : undefined}
                           onClick={() => {
                             if (!sortable) return;
-                            if (sortKey !== (h.key as any)) {
-                              setSortKey(h.key as any);
+                            if (sortKey !== (key as any)) {
+                              setSortKey(key as any);
                               setSortDir("asc");
                             } else {
                               setSortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                             setPage(1);
                           }}
+                          aria-sort={
+                            sortable
+                              ? active
+                                ? dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
+                            {label}
                             {sortable && (
-                              <span className="text-[10px] opacity-70">
-                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                              <span
+                                className="text-[10px] opacity-70"
+                                style={{
+                                  color: active ? "#00379C" : undefined,
+                                }}
+                              >
+                                {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
                           </span>
@@ -1454,23 +1504,21 @@ export default function ClientsAssignments() {
                 <tbody>
                   {rowsPaged.map((r, idx) => (
                     <tr
-                      key={r._id}
-                      className={
-                        (idx % 2
-                          ? "bg-white dark:bg-neutral-950"
-                          : "bg-slate-50/50 dark:bg-white/[0.03]") +
-                        " hover:bg-slate-100/60 dark:hover:bg-white/10 transition-colors"
-                      }
+                      key={r._id ?? idx}
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
+                      {/* Action */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
                         <button
-                          className={ICON_BTN}
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
                           title="Move this client to selection"
+                          aria-label="Move this client to selection"
                           onClick={() => r._raw && onMoveToTile2(r._raw)}
                         >
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-3.5 h-3.5"
+                            className="h-4 w-4"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth={1.7}
@@ -1483,58 +1531,85 @@ export default function ClientsAssignments() {
                         </button>
                       </td>
 
+                      {/* Code */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
                         title={r.code}
                       >
                         {r.code}
                       </td>
+
+                      {/* Name */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
                         title={r.name}
                       >
                         {r.name}
                       </td>
+
+                      {/* Projects */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10"
+                        className="px-3 py-1.5 align-middle"
                         title={r.projects}
                       >
                         <div className="truncate max-w-[360px]">
                           {r.projects}
                         </div>
                       </td>
+
+                      {/* Mobile */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={r.mobile}
                       >
                         {r.mobile}
                       </td>
+
+                      {/* Email */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={r.email}
                       >
                         {r.email}
                       </td>
+
+                      {/* State */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={r.state}
                       >
                         {r.state}
                       </td>
+
+                      {/* Zone */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={r.zone}
                       >
                         {r.zone}
                       </td>
+
+                      {/* Status (pill like Companies) */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={r.status}
                       >
-                        {r.status}
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          ""
+                        )}
                       </td>
+
+                      {/* Updated */}
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={fmtLocalDateTime(r.updated)}
                       >
                         {fmtLocalDateTime(r.updated)}
@@ -1546,8 +1621,8 @@ export default function ClientsAssignments() {
             )}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
             <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{rowsPaged.length}</b> of <b>{total}</b> clients
@@ -1571,9 +1646,9 @@ export default function ClientsAssignments() {
               ) : null}
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -1581,7 +1656,7 @@ export default function ClientsAssignments() {
                 « First
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -1589,7 +1664,7 @@ export default function ClientsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -1597,7 +1672,7 @@ export default function ClientsAssignments() {
                 Next ›
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -1620,20 +1695,27 @@ export default function ClientsAssignments() {
           subtitle="All clients who have been assigned to projects."
         />
 
-        <div className={TABLE_WRAP}>
+        {/* Table (Companies-exact UI) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
           <div
-            className="overflow-x-auto overflow-y-auto"
-            style={{ maxHeight: "55vh" }}
+            className="overflow-auto thin-scrollbar"
+            style={{ maxHeight: "65vh" }}
           >
             {assignedSortedRows.length === 0 ? (
               <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No client assignments found.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className={TABLE_HEAD}>
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
-                    <th className="px-3 py-2 border-b border-slate-200 dark:border-white/10 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-left">
+                    <th
+                      className={
+                        "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                        "text-slate-600 dark:text-slate-200 " +
+                        "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none"
+                      }
+                    >
                       Action
                     </th>
 
@@ -1645,16 +1727,22 @@ export default function ClientsAssignments() {
                       { key: "validTo", label: "Valid To" },
                       { key: "validity", label: "Validity" },
                       { key: "updated", label: "Last Updated" },
-                    ].map((h) => {
-                      const active = aSortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const active = aSortKey === (key as any);
+                      const dir = active ? aSortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
-                          className="px-3 py-2 border-b border-slate-200 dark:border-white/10 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-left select-none cursor-pointer hover:bg-slate-100/60 dark:hover:bg-white/10"
-                          title={`Sort by ${h.label}`}
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none cursor-pointer"
+                          }
+                          title={`Sort by ${label}`}
                           onClick={() => {
-                            if (aSortKey !== (h.key as any)) {
-                              setASortKey(h.key as any);
+                            if (aSortKey !== (key as any)) {
+                              setASortKey(key as any);
                               setASortDir("asc");
                             } else {
                               setASortDir((d) =>
@@ -1662,11 +1750,21 @@ export default function ClientsAssignments() {
                               );
                             }
                           }}
+                          aria-sort={
+                            active
+                              ? dir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            <span className="text-[10px] opacity-70">
-                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
+                            {label}
+                            <span
+                              className="text-[10px] opacity-70"
+                              style={{ color: active ? "#00379C" : undefined }}
+                            >
+                              {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                             </span>
                           </span>
                         </th>
@@ -1679,64 +1777,115 @@ export default function ClientsAssignments() {
                   {assignedRowsPaged.map((r, i) => (
                     <tr
                       key={`${r.userId}-${r.projectId}-${i}`}
-                      className={
-                        (i % 2
-                          ? "bg-white dark:bg-neutral-950"
-                          : "bg-slate-50/50 dark:bg-white/[0.03]") +
-                        " hover:bg-slate-100/60 dark:hover:bg-white/10 transition-colors"
-                      }
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      {/* Action icons like Companies */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-1.5">
                           <button
-                            className={BTN_TINY}
-                            title="View assignment"
+                            type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
                             onClick={() => openView(r)}
+                            title="View assignment"
+                            aria-label="View assignment"
                           >
-                            View
+                            {/* eye */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+                              <circle cx="12" cy="12" r="3.25" />
+                            </svg>
                           </button>
+
                           <button
-                            className={BTN_TINY}
-                            title="Edit validity dates"
+                            type="button"
+                            className={
+                              "inline-flex h-7 w-7 items-center justify-center rounded-full " +
+                              "text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15 " +
+                              (!r.membershipId
+                                ? "opacity-50 cursor-not-allowed"
+                                : "")
+                            }
                             onClick={() => openEdit(r)}
                             disabled={!r.membershipId}
+                            title={
+                              r.membershipId
+                                ? "Edit validity dates"
+                                : "Missing membership id"
+                            }
+                            aria-label="Edit validity dates"
                           >
-                            Edit
+                            {/* pencil */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M4 20h4l10.5-10.5-4-4L4 16v4z" />
+                              <path d="M14.5 5.5l4 4" />
+                            </svg>
                           </button>
                         </div>
                       </td>
 
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100 max-w-[14rem] overflow-hidden text-ellipsis"
                         title={r.userName}
                       >
                         {r.userName}
                       </td>
 
                       <td
-                        className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap max-w-[12rem] overflow-hidden text-ellipsis"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis"
                         title={r.projectTitle}
                       >
                         {r.projectTitle}
                       </td>
 
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
-                        {r.status || "—"}
+                      {/* Status pill */}
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
+                        title={r.status}
+                      >
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
 
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validFrom) || "—"}
                       </td>
 
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validTo) || "—"}
                       </td>
 
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         <ValidityBadge value={r.validity || "—"} />
                       </td>
 
-                      <td className="px-3 py-2 border-b border-slate-200 dark:border-white/10 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateTime(r.updated) || "—"}
                       </td>
                     </tr>
@@ -1746,17 +1895,17 @@ export default function ClientsAssignments() {
             )}
           </div>
 
-          {/* Pagination for assignments */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950">
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
             <div className="text-slate-600 dark:text-slate-300">
               Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
               <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> client
               assignments
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
                 title="First"
@@ -1764,7 +1913,7 @@ export default function ClientsAssignments() {
                 « First
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
                 title="Previous"
@@ -1772,7 +1921,7 @@ export default function ClientsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
                 title="Next"
@@ -1780,7 +1929,7 @@ export default function ClientsAssignments() {
                 Next ›
               </button>
               <button
-                className={BTN_TINY}
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
                 title="Last"
@@ -2042,6 +2191,20 @@ export default function ClientsAssignments() {
           </div>
         </div>
       )}
+      <style>
+        {`
+    .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+    .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .thin-scrollbar::-webkit-scrollbar-thumb {
+      background-color: rgba(148, 163, 184, 0.7);
+      border-radius: 999px;
+    }
+    .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(100, 116, 139, 0.9);
+    }
+  `}
+
+      </style>
     </div>
   );
 }
