@@ -1,4 +1,4 @@
-//src/views/home/modules/WIR/DispatchWIRModal.tsx
+// src/views/home/modules/WIR/DispatchWIRModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   listActiveMembersForProjectRole,
@@ -10,7 +10,6 @@ import {
 import { api } from "../../../../api/client";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../../../hooks/useAuth";
-
 
 type Props = {
   open: boolean;
@@ -29,7 +28,7 @@ type Props = {
     bicUserId: string;
     bicFullName?: string; // NEW
     updatedAt?: string;
-    version?: number;           // <— NEW
+    version?: number; // <— NEW
   }) => void;
 };
 
@@ -57,6 +56,33 @@ function displayName(u: any): string {
   return String(s);
 }
 
+/* ---------------- UI helpers (theme only) ---------------- */
+function SectionHeader({
+  title,
+  sub,
+}: {
+  title: string;
+  sub?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+          <div className="text-[13px] sm:text-sm font-semibold tracking-wide text-[#00379C] dark:text-white uppercase">
+            {title}
+          </div>
+        </div>
+        {sub ? (
+          <div className="mt-1 text-[12px] text-gray-600 dark:text-gray-300">
+            {sub}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function DispatchWIRModal({
   open,
   onClose,
@@ -76,11 +102,17 @@ export default function DispatchWIRModal({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Recipient[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);  // NEW: confirm dialog state
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // NEW: confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(null);
+  const [confirmInspector, setConfirmInspector] = useState<Recipient | null>(
+    null
+  );
   const { user, claims } = useAuth();
-  const [wirMeta, setWirMeta] = useState<{ code?: string | null; title?: string | null } | null>(null);
+  const [wirMeta, setWirMeta] = useState<{
+    code?: string | null;
+    title?: string | null;
+  } | null>(null);
   const [wirHeader, setWirHeader] = useState<any>(null);
   // Same rule we used in CreateWIR.tsx
   const currentUserId =
@@ -93,6 +125,7 @@ export default function DispatchWIRModal({
 
   const params = useParams<{ wirId?: string }>();
   const targetWirId = wirId || params.wirId || undefined;
+
   // Fetch on open+projectId
   useEffect(() => {
     let abort = false;
@@ -106,7 +139,11 @@ export default function DispatchWIRModal({
       try {
         // list all active PMC members for this project (today)
         const onDate = todayISO();
-        const members = await listActiveMembersForProjectRole(projectId, "PMC", onDate);
+        const members = await listActiveMembersForProjectRole(
+          projectId,
+          "PMC",
+          onDate
+        );
 
         // Resolve acting role PER USER using base+overrides (deny-only)
         const mapped: Recipient[] = [];
@@ -114,9 +151,12 @@ export default function DispatchWIRModal({
           const uid = String(user.userId || "");
           if (!uid) continue;
 
-          //  const acting: ActingRole = await resolveActingRoleFor(projectId, "PMC", uid);
           const diag = await resolveActingRoleForVerbose(projectId, "PMC", uid);
-          console.log("[DispatchWIR] role diag", { uid, name: displayName(user), ...diag });
+          console.log("[DispatchWIR] role diag", {
+            uid,
+            name: displayName(user),
+            ...diag,
+          });
           const acting: ActingRole = diag.acting;
 
           if (acting === "HOD") continue; // exclude pure HOD; allow ViewerOnly + Inspector + Inspector+HOD
@@ -130,13 +170,18 @@ export default function DispatchWIRModal({
               (user as any)?.phone ??
               (user as any)?.mobile ??
               null,
-            acting: (acting === "Inspector+HOD" ? "Inspector+HOD" : acting) as Recipient["acting"],
+            acting: (acting === "Inspector+HOD"
+              ? "Inspector+HOD"
+              : acting) as Recipient["acting"],
           });
         }
 
         if (!abort) setCandidates(mapped);
       } catch (e: any) {
-        const msg = e?.response?.data?.error || e?.message || "Failed to load recipients.";
+        const msg =
+          e?.response?.data?.error ||
+          e?.message ||
+          "Failed to load recipients.";
         if (!abort) {
           setErr(msg);
           setCandidates([]);
@@ -157,7 +202,9 @@ export default function DispatchWIRModal({
     async function loadWirMeta() {
       if (!open || !projectId || !targetWirId) return;
       try {
-        const { data } = await api.get(`/projects/${projectId}/wir/${targetWirId}`);
+        const { data } = await api.get(
+          `/projects/${projectId}/wir/${targetWirId}`
+        );
         if (!abort) {
           setWirHeader(data || null);
           setWirMeta({ code: data?.code ?? null, title: data?.title ?? null });
@@ -170,7 +217,9 @@ export default function DispatchWIRModal({
       }
     }
     loadWirMeta();
-    return () => { abort = true; };
+    return () => {
+      abort = true;
+    };
   }, [open, projectId, targetWirId]);
 
   const filtered = useMemo(() => {
@@ -205,10 +254,6 @@ export default function DispatchWIRModal({
   const [hodPreviewOpen, setHodPreviewOpen] = useState(false);
   const [hodPatch, setHodPatch] = useState<Record<string, any> | null>(null);
 
-  // const isHodFlow = useMemo(
-  //   () => !!confirmInspector && (confirmInspector.acting === "HOD" || confirmInspector.acting === "Inspector+HOD"),
-  //   [confirmInspector]
-  // );
   const isHodFlow = useMemo(() => {
     // route by current WIR status:
     // - Draft      -> Inspector dispatch ("Confirm & Send")
@@ -216,18 +261,15 @@ export default function DispatchWIRModal({
     return isSubmittedStatus(wirHeader?.status);
   }, [wirHeader?.status]);
 
-  // const confirmCta = useMemo(() => {
-  //   if (!confirmInspector) return (submitting ? "Sending…" : "Confirm & Send");
-  //   return isHodFlow
-  //     ? (submitting ? "Sending…" : "Proceed & Send")
-  //     : (submitting ? "Sending…" : "Confirm & Send");
-  // }, [confirmInspector, isHodFlow, submitting]);
-
   const confirmCta = useMemo(() => {
     // status-driven CTA
     return isHodFlow
-      ? (submitting ? "Sending…" : "Proceed & Send")
-      : (submitting ? "Sending…" : "Confirm & Send");
+      ? submitting
+        ? "Sending…"
+        : "Proceed & Send"
+      : submitting
+      ? "Sending…"
+      : "Confirm & Send";
   }, [isHodFlow, submitting]);
 
   function onSend() {
@@ -237,7 +279,9 @@ export default function DispatchWIRModal({
       return;
     }
     if (!targetWirId) {
-      setErr("Missing WIR ID. Open this from a WIR detail/edit screen and try again.");
+      setErr(
+        "Missing WIR ID. Open this from a WIR detail/edit screen and try again."
+      );
       return;
     }
 
@@ -278,7 +322,7 @@ export default function DispatchWIRModal({
         if (!ensuredVersion || ensuredVersion !== 1) {
           const v = await api.patch(
             `/projects/${projectId}/wir/${targetWirId}`,
-            { version: 1 }                        // <— enforce version 1 at submit
+            { version: 1 } // <— enforce version 1 at submit
           );
           ensuredVersion = v?.data?.version ?? 1;
         }
@@ -287,12 +331,14 @@ export default function DispatchWIRModal({
         // still fall back to 1 so UI stays consistent
         if (!ensuredVersion || ensuredVersion < 1) ensuredVersion = 1;
       }
+
       onDispatched?.({
         wirId: data?.wirId ?? targetWirId,
         status: "Submitted",
         code: data?.code ?? undefined,
         bicUserId: inspectorId,
-        bicFullName: confirmInspector?.fullName || data?.bicFullName || data?.inspectorName, // NEW
+        bicFullName:
+          confirmInspector?.fullName || data?.bicFullName || data?.inspectorName, // NEW
         updatedAt: data?.updatedAt,
         version: ensuredVersion ?? 1,
       });
@@ -307,17 +353,19 @@ export default function DispatchWIRModal({
         role === "Contractor"
           ? `/home/projects/${projectId}/wir`
           : role === "PMC"
-            ? `/home/projects/${projectId}/wir`
-            : role === "IH-PMT"
-              ? `/home/projects/${projectId}/wir`
-              : role === "Client"
-                ? `/home/projects/${projectId}/wir`
-                : `/home/projects/${projectId}/wir`;
+          ? `/home/projects/${projectId}/wir`
+          : role === "IH-PMT"
+          ? `/home/projects/${projectId}/wir`
+          : role === "Client"
+          ? `/home/projects/${projectId}/wir`
+          : `/home/projects/${projectId}/wir`;
 
       navigate(baseList, {
         state: {
           role,
-          project: projectCaption ? { projectId, title: projectCaption } : { projectId },
+          project: projectCaption
+            ? { projectId, title: projectCaption }
+            : { projectId },
         },
       });
     } catch (e: any) {
@@ -376,238 +424,301 @@ export default function DispatchWIRModal({
       setConfirmInspector(null);
       onClose?.();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Failed to send to HOD.");
+      setErr(
+        e?.response?.data?.message || e?.message || "Failed to send to HOD."
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]">
       {/* Modal panel: full-height sheet on mobile; centered card on sm+ with scrollable content */}
       <div
         className="
           absolute inset-x-0 bottom-0
-          sm:static sm:mx-auto
+          sm:static sm:mx-auto sm:mt-16
           w-full sm:w-auto sm:max-w-xl
-          sm:rounded-2xl
-          bg-white dark:bg-neutral-900
-          border-t sm:border dark:border-neutral-800
-          p-4 sm:p-5
+          bg-white dark:bg-neutral-950
+          border-t sm:border border-slate-200 dark:border-white/10
+          rounded-t-2xl sm:rounded-2xl
+          shadow-sm
           h-[92vh] sm:h-auto
           max-h-[92vh] sm:max-h-[85vh]
-          rounded-t-2xl sm:rounded-2xl
           overflow-y-auto
         "
       >
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="text-base font-semibold dark:text-white">
-            Dispatch Work Inspection
-          </div>
-          <button
-            onClick={onClose}
-            className="text-sm px-3 py-2 rounded border dark:border-neutral-800"
-          >
-            Close
-          </button>
-        </div>
-        {projectCaption ? (
-          <div className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
-            {projectCaption}
-          </div>
-        ) : null}
+        <div className="p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-base sm:text-lg font-semibold text-[#00379C] dark:text-white">
+                Dispatch Work Inspection
+              </div>
+              {projectCaption ? (
+                <div className="mt-1 text-[12px] text-gray-600 dark:text-gray-300 truncate">
+                  {projectCaption}
+                </div>
+              ) : null}
+            </div>
 
-        {/* Meta (creator + role) */}
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div className="rounded-xl border dark:border-neutral-800 p-3">
-            <div className="text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-              Created By
-            </div>
-            <div className="text-[15px] sm:text-sm dark:text-white">
-              {creatorName || "—"}
-            </div>
+            <button
+              onClick={onClose}
+              className="shrink-0 h-10 px-4 rounded-full border
+                         border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-[0.99]
+                         dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30"
+            >
+              Close
+            </button>
           </div>
 
-          <div className="rounded-xl border dark:border-neutral-800 p-3">
-            <div className="text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-              Your Role
+          {/* Meta (creator + role) */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-[#00379C] dark:text-gray-200">
+                Created By
+              </div>
+              <div className="mt-1 text-[15px] sm:text-sm text-gray-900 dark:text-white">
+                {creatorName || "—"}
+              </div>
             </div>
-            <div className="text-[15px] sm:text-sm dark:text-white">{role || "—"}</div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-[#00379C] dark:text-gray-200">
+                Your Role
+              </div>
+              <div className="mt-1 text-[15px] sm:text-sm text-gray-900 dark:text-white">
+                {role || "—"}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Body */}
-        <div className="mt-4 space-y-4">
-          {/* Tile 1: Recipients */}
-          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm sm:text-base font-semibold dark:text-white">
-                Recipients
-              </div>
-              <div className="text-[12px] text-gray-500 dark:text-gray-400">
-                PMC members assigned to this project
-              </div>
-            </div>
+        <div className="px-4 sm:px-5 pb-5 space-y-4">
+          {/* Recipients */}
+          <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4">
+            <SectionHeader
+              title="Recipients"
+              sub="PMC members assigned to this project"
+            />
 
-            {/* Search + Select all */}
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by name, email, phone, or role…"
-                className="flex-1 text-[15px] sm:text-sm border rounded-lg px-3 py-3 sm:py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                className="w-full h-10 rounded-full border border-slate-200 dark:border-white/10
+                           bg-white dark:bg-neutral-900 text-gray-900 dark:text-white
+                           px-4 text-[15px] sm:text-sm
+                           outline-none focus:ring-2 focus:ring-[#00379C]/25"
               />
             </div>
 
-            {/* List */}
             <div className="mt-3 h-[38vh] sm:max-h-[40vh] overflow-auto space-y-2 pr-1">
               {loading ? (
                 <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 p-2">
                   Loading recipients…
                 </div>
               ) : err ? (
-                <div className="text-[13px] sm:text-sm text-rose-700 dark:text-rose-400 p-2">
+                <div className="text-[13px] sm:text-sm text-rose-700 dark:text-rose-300 p-2">
                   {err}
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 p-2 rounded-lg border border-dashed dark:border-neutral-800">
-                  No recipients to show. (PMC users without WIR permissions are hidden.)
+                <div className="text-[13px] sm:text-sm text-gray-600 dark:text-gray-300 p-3 rounded-2xl border border-dashed border-slate-200 dark:border-white/10">
+                  No recipients to show. (PMC users without WIR permissions are
+                  hidden.)
                 </div>
               ) : (
-                filtered.map((r) => (
-                  <label
-                    key={r.id}
-                    className="flex items-start gap-3 p-3 rounded-xl border dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer"
-                  >
-                    + <input
-                      type="radio"
-                      name="recipient"
-                      className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
-                      checked={selectedId === r.id}
-                      onChange={() => toggle(r.id)}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] sm:text-sm dark:text-white truncate">
-                        {r.fullName}
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                          {r.acting}
-                        </span>
-                        {r.email ? (
-                          <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300 truncate">
-                            {r.email}
+                filtered.map((r) => {
+                  const isSelected = selectedId === r.id;
+                  return (
+                    <label
+                      key={r.id}
+                      className={[
+                        "flex items-start gap-3 p-3 rounded-2xl border transition cursor-pointer",
+                        "border-slate-200 dark:border-white/10",
+                        "hover:bg-slate-50 dark:hover:bg-neutral-900/60",
+                        isSelected
+                          ? "bg-[#23A192]/5 border-[#23A192]/40"
+                          : "bg-white dark:bg-neutral-950",
+                      ].join(" ")}
+                    >
+                      <input
+                        type="radio"
+                        name="recipient"
+                        className="mt-0.5 h-5 w-5 accent-[#23A192]"
+                        checked={isSelected}
+                        onChange={() => toggle(r.id)}
+                      />
+
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] sm:text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {r.fullName}
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <span
+                            className="text-[11px] px-2 py-1 rounded-full border
+                                       border-[#23A192]/30 text-[#23A192]
+                                       dark:border-[#23A192]/40 dark:text-[#23A192]"
+                          >
+                            {r.acting}
                           </span>
-                        ) : null}
-                        {r.phone ? (
-                          <span className="text-[11px] px-2 py-1 rounded-full border dark:border-neutral-800 text-gray-600 dark:text-gray-300">
-                            {r.phone}
-                          </span>
-                        ) : null}
+
+                          {r.email ? (
+                            <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10 text-gray-600 dark:text-gray-300 truncate">
+                              {r.email}
+                            </span>
+                          ) : null}
+
+                          {r.phone ? (
+                            <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10 text-gray-600 dark:text-gray-300">
+                              {r.phone}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </label>
-                ))
+
+                      <span
+                        className={[
+                          "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                          isSelected
+                            ? "border-[#FCC020]/50 bg-[#FCC020]/15 text-[#00379C] dark:text-white"
+                            : "border-slate-200 dark:border-white/10 text-gray-500 dark:text-gray-400",
+                        ].join(" ")}
+                      >
+                        {isSelected ? "Selected" : "Pick"}
+                      </span>
+                    </label>
+                  );
+                })
               )}
             </div>
 
-            {/* Mini summary */}
-            <div className="mt-2 text-[12px] text-gray-600 dark:text-gray-300">
-              Selected: <b>{selectedId ? 1 : 0}</b>            </div>
+            <div className="mt-3 text-[12px] text-gray-600 dark:text-gray-300">
+              Selected: <b className="text-gray-900 dark:text-white">{selectedId ? 1 : 0}</b>
+            </div>
           </section>
 
-          {/* Tile 2: AI Routing & Summary (placeholder) */}
-          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
-            <div className="text-sm sm:text-base font-semibold dark:text-white">
-              AI Routing &amp; Summary
-            </div>
+          {/* AI Routing & Summary */}
+          <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4">
+            <SectionHeader title="AI Routing & Summary" />
             <div className="mt-2 text-[13px] sm:text-sm text-gray-600 dark:text-gray-300">
               We’ll add routing rules and a compact summary here (auto-generated
               for recipients) in the next step.
             </div>
           </section>
 
-          {/* Tile 3: Actions */}
-          <section className="rounded-2xl border dark:border-neutral-800 p-3 sm:p-4">
-            {/* error line */}
+          {/* Actions */}
+          <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 p-4">
             {err && !loading ? (
-              <div className="text-[12px] sm:text-sm text-rose-700 dark:text-rose-400 mb-2">
+              <div className="text-[12px] sm:text-sm text-rose-700 dark:text-rose-300 mb-3">
                 {err}
               </div>
             ) : null}
+
             <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-end">
               <button
                 onClick={onClose}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+                className="w-full sm:w-auto h-10 text-sm px-5 rounded-full border
+                           border-slate-200 dark:border-white/10
+                           hover:bg-slate-50 dark:hover:bg-neutral-900/60
+                           text-gray-800 dark:text-gray-200"
               >
                 Cancel
               </button>
+
               <button
                 onClick={onSend}
                 disabled={!canSend}
-                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${canSend
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                  : "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                  }`}
-                title={canSend ? "Send" : "Select a recipient"}              >
+                className={[
+                  "w-full sm:w-auto h-10 text-sm px-6 rounded-full border transition",
+                  canSend
+                    ? "bg-[#00379C] text-white border-[#00379C] hover:brightness-110"
+                    : "bg-[#00379C]/60 text-white border-[#00379C]/60 cursor-not-allowed",
+                ].join(" ")}
+                title={canSend ? "Send" : "Select a recipient"}
+              >
                 {submitting ? "Sending…" : "Send"}
               </button>
             </div>
           </section>
         </div>
       </div>
+
+      {/* Confirm Dispatch */}
       {confirmOpen && confirmInspector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4 sm:p-5">
-            <div className="text-base font-semibold dark:text-white">
-              Confirm Dispatch
+          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 p-4 sm:p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+              <div className="text-base font-semibold text-[#00379C] dark:text-white">
+                Confirm Dispatch
+              </div>
             </div>
 
             <div className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-200">
               <div>
-                <span className="font-medium">Project:</span>{" "}
+                <span className="font-medium text-gray-900 dark:text-white">
+                  Project:
+                </span>{" "}
                 {projectCaption || projectId}
               </div>
               <div>
-                <span className="font-medium">WIR:</span>{" "}
+                <span className="font-medium text-gray-900 dark:text-white">
+                  WIR:
+                </span>{" "}
                 {wirLabel}
               </div>
 
               <div>
-                <span className="font-medium">Recipient:</span>{" "}
+                <span className="font-medium text-gray-900 dark:text-white">
+                  Recipient:
+                </span>{" "}
                 {confirmInspector.fullName} ({confirmInspector.acting})
               </div>
               {confirmInspector.email && (
                 <div>
-                  <span className="font-medium">Email:</span>{" "}
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    Email:
+                  </span>{" "}
                   {confirmInspector.email}
                 </div>
               )}
               {confirmInspector.phone && (
                 <div>
-                  <span className="font-medium">Phone:</span>{" "}
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    Phone:
+                  </span>{" "}
                   {confirmInspector.phone}
                 </div>
               )}
             </div>
 
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmOpen(false)}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+                className="w-full sm:w-auto h-10 text-sm px-5 rounded-full border
+                           border-slate-200 dark:border-white/10
+                           hover:bg-slate-50 dark:hover:bg-neutral-900/60
+                           text-gray-800 dark:text-gray-200"
               >
                 Cancel
               </button>
+
               <button
                 type="button"
                 onClick={onConfirmSend}
                 disabled={submitting}
-                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${submitting
-                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                  }`}
+                className={[
+                  "w-full sm:w-auto h-10 text-sm px-6 rounded-full border transition",
+                  submitting
+                    ? "bg-[#00379C]/60 text-white border-[#00379C]/60 cursor-not-allowed"
+                    : "bg-[#00379C] text-white border-[#00379C] hover:brightness-110",
+                ].join(" ")}
               >
                 {confirmCta}
               </button>
@@ -615,43 +726,95 @@ export default function DispatchWIRModal({
           </div>
         </div>
       )}
+
+      {/* HOD Preview */}
       {hodPreviewOpen && hodPatch && confirmInspector && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-900 border dark:border-neutral-800 p-4 sm:p-5">
-            <div className="text-base font-semibold dark:text-white">
-              Confirm Updates (Send to HOD)
+          <div className="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-neutral-950 border border-slate-200 dark:border-white/10 p-4 sm:p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-5 w-1 rounded-full bg-[#FCC020]" />
+              <div className="text-base font-semibold text-[#00379C] dark:text-white">
+                Confirm Updates (Send to HOD)
+              </div>
             </div>
+
             <div className="mt-3 text-sm text-gray-700 dark:text-gray-200 space-y-1">
-              <div><span className="font-medium">WIR:</span> {wirLabel}</div>
-              <div><span className="font-medium">HOD:</span> {confirmInspector.fullName}</div>
-              <div className="mt-2 font-medium">Fields to update:</div>
-              <ul className="list-disc pl-5 space-y-1">
-                {"hodId" in hodPatch && <li>hodId → <b>{hodPatch.hodId}</b></li>}
-                {"bicUserId" in hodPatch && <li>bicUserId → <b>{hodPatch.bicUserId}</b></li>}
-                {"inspectorRecommendation" in hodPatch && (
-                  <li>inspectorRecommendation → <i className="break-words">{String(hodPatch.inspectorRecommendation)}</i></li>
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  WIR:
+                </span>{" "}
+                {wirLabel}
+              </div>
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  HOD:
+                </span>{" "}
+                {confirmInspector.fullName}
+              </div>
+
+              <div className="mt-3 font-medium text-gray-900 dark:text-white">
+                Fields to update:
+              </div>
+              <ul className="mt-1 list-disc pl-5 space-y-1">
+                {"hodId" in hodPatch && (
+                  <li>
+                    hodId → <b>{hodPatch.hodId}</b>
+                  </li>
                 )}
-                {"status" in hodPatch && <li>status → <b>{hodPatch.status}</b></li>}
-                {"version" in hodPatch && <li>version → <b>{hodPatch.version}</b></li>}
-                {"contractorId" in hodPatch && <li>contractorId → <b>{hodPatch.contractorId}</b> <span className="opacity-70">(best-effort)</span></li>}
+                {"bicUserId" in hodPatch && (
+                  <li>
+                    bicUserId → <b>{hodPatch.bicUserId}</b>
+                  </li>
+                )}
+                {"inspectorRecommendation" in hodPatch && (
+                  <li>
+                    inspectorRecommendation →{" "}
+                    <i className="break-words">
+                      {String(hodPatch.inspectorRecommendation)}
+                    </i>
+                  </li>
+                )}
+                {"status" in hodPatch && (
+                  <li>
+                    status → <b>{hodPatch.status}</b>
+                  </li>
+                )}
+                {"version" in hodPatch && (
+                  <li>
+                    version → <b>{hodPatch.version}</b>
+                  </li>
+                )}
+                {"contractorId" in hodPatch && (
+                  <li>
+                    contractorId → <b>{hodPatch.contractorId}</b>{" "}
+                    <span className="opacity-70">(best-effort)</span>
+                  </li>
+                )}
               </ul>
             </div>
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setHodPreviewOpen(false)}
-                className="w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border dark:border-neutral-800"
+                className="w-full sm:w-auto h-10 text-sm px-5 rounded-full border
+                           border-slate-200 dark:border-white/10
+                           hover:bg-slate-50 dark:hover:bg-neutral-900/60
+                           text-gray-800 dark:text-gray-200"
               >
                 Cancel
               </button>
+
               <button
                 type="button"
                 onClick={applyHodPatch}
                 disabled={submitting}
-                className={`w-full sm:w-auto text-sm px-3 py-3 sm:py-2 rounded-lg border ${submitting
-                  ? "bg-emerald-600/60 text-white cursor-not-allowed dark:border-emerald-700"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-700"
-                  }`}
+                className={[
+                  "w-full sm:w-auto h-10 text-sm px-6 rounded-full border transition",
+                  submitting
+                    ? "bg-[#00379C]/60 text-white border-[#00379C]/60 cursor-not-allowed"
+                    : "bg-[#00379C] text-white border-[#00379C] hover:brightness-110",
+                ].join(" ")}
               >
                 {submitting ? "Applying…" : "OK, Proceed"}
               </button>
@@ -659,7 +822,6 @@ export default function DispatchWIRModal({
           </div>
         </div>
       )}
-
     </div>
   );
 }
