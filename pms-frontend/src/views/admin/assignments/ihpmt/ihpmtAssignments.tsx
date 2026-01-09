@@ -6,7 +6,7 @@ import { api } from "../../../../api/client";
 // ---------- Types ----------
 type ProjectLite = { projectId: string; title: string };
 type MembershipLite = {
-  id?: string | null;
+  id?: string | null; // membership id for edit
   role?: string | null;
   project?: { projectId?: string; title?: string } | null;
   company?: { companyId?: string; name?: string } | null;
@@ -35,16 +35,17 @@ type UserLite = {
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
-// ---------- Local date helpers ----------
+// ---------- Local date helpers (no UTC conversions) ----------
 function formatLocalYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${y}-${m}-${day}`; // local YYYY-MM-DD
 }
 function todayLocalISO() {
   return formatLocalYMD(new Date());
 }
+/** Add days to a local YYYY-MM-DD and return local YYYY-MM-DD */
 function addDaysISO(dateISO: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
   const [y, m, d] = dateISO.split("-").map(Number);
@@ -53,16 +54,42 @@ function addDaysISO(dateISO: string, days: number) {
   dt.setDate(dt.getDate() + days);
   return formatLocalYMD(dt);
 }
+/** Render any input as local date-time string (for display only) */
 function fmtLocalDateTime(v: any) {
   if (!v) return "";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v ?? "") : d.toLocaleString();
 }
+/** Normalize any input to local YYYY-MM-DD (for date-only UI) */
 function fmtLocalDateOnly(v: any) {
   if (!v) return "";
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v; // already date-only
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
+}
+function isYmd(s?: string) {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+function floorForEditFrom(existingFrom: string): string {
+  const today = todayLocalISO();
+  // lock to existing date only if it's already in the past
+  return existingFrom && existingFrom < today ? existingFrom : "";
+}
+
+// ---------- Role helpers (avoid IH_PMT / IH-PMT / ih_pmt mismatches) ----------
+const ROLE_IH_PMT = "IH_PMT";
+function normalizeRole(v?: string | null) {
+  if (!v) return "";
+  const s = String(v).trim();
+  if (/^ih[-_ ]?pmt$/i.test(s)) return ROLE_IH_PMT;
+  return s.toUpperCase();
+}
+function isRole(v: string | null | undefined, role: string) {
+  return normalizeRole(v) === normalizeRole(role);
+}
+function isRoleUser(u: UserLite, role: string): boolean {
+  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+  return mem.some((m) => isRole(m?.role, role));
 }
 
 // ---------- Small utils ----------
@@ -70,7 +97,13 @@ function displayName(u: UserLite) {
   return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
 }
 function phoneDisplay(u: UserLite) {
-  return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+  const cc = String(u.countryCode ?? "")
+    .trim()
+    .replace(/^\+/, "");
+  const ph = String(u.phone ?? "").trim();
+  if (cc && ph) return `+${cc}${ph}`;
+  if (ph) return ph;
+  return "";
 }
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
@@ -93,22 +126,26 @@ function companiesLabel(u: UserLite): string {
   return Array.from(set).join(", ");
 }
 
-// ---- Role helpers (avoid IH_PMT / IH-PMT / ih_pmt mismatches)
-const ROLE_IH_PMT = "IH_PMT";
-function normalizeRole(v?: string | null) {
-  if (!v) return "";
-  const s = String(v).trim();
-  if (/^ih[-_ ]?pmt$/i.test(s)) return ROLE_IH_PMT; // IH_PMT, IH-PMT, ih pmt, etc.
-  return s.toUpperCase();
+// robustly read membership dates regardless of API key shape -> always local YYYY-MM-DD
+function pickMembershipDate(m: any, primary: "validFrom" | "validTo"): string {
+  if (!m) return "";
+  const candidates = [
+    primary, // validFrom / validTo
+    `${primary}Date`, // validFromDate / validToDate
+    primary === "validFrom" ? "from" : "to",
+    primary === "validFrom" ? "startDate" : "endDate",
+    primary === "validFrom" ? "start" : "end",
+    `${primary}_date`,
+    `${primary}At`,
+    `${primary}_at`,
+  ];
+  for (const key of candidates) {
+    if (m[key] != null && m[key] !== "") return fmtLocalDateOnly(m[key]);
+  }
+  return "";
 }
-function isRole(v: string | null | undefined, role: string) {
-  return normalizeRole(v) === normalizeRole(role);
-}
-function isRoleUser(u: UserLite, role: string): boolean {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  return mem.some((m) => isRole(m?.role, role));
-}
-// detect dup for selected project (for this role)
+
+// prevent duplicate assignment to selected project
 function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boolean {
   if (!projectId) return false;
   const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
@@ -116,6 +153,8 @@ function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boole
     (m) => isRole(m?.role, ROLE_IH_PMT) && m?.project?.projectId === projectId
   );
 }
+
+// validity badge computation (inclusive range) — all local YYYY-MM-DD
 function computeValidityLabel(validFrom?: string, validTo?: string): string {
   const from = fmtLocalDateOnly(validFrom);
   const to = fmtLocalDateOnly(validTo);
@@ -125,58 +164,122 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   if (to && today > to) return "Expired";
   return "Valid";
 }
+
 function ihpmtCompanyId(u: UserLite): string | null {
   const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   const m = mems.find((m) => isRole(m?.role, ROLE_IH_PMT) && m?.company?.companyId);
   return (m?.company?.companyId as string) || null;
 }
 
-// ---------- UI atoms (match reference) ----------
-const TileHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-  <div className="mb-3">
-    <div className="text-sm font-semibold dark:text-white">{title}</div>
+/** CompanyEdit-style section header (same as Clients page) */
+const SectionHeader = ({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) => (
+  <div className="mb-4">
+    <div className="flex items-center gap-3">
+      <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
+      <div className="text-[11px] sm:text-sm font-extrabold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
+        {title}
+      </div>
+    </div>
     {subtitle ? (
-      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        {subtitle}
+      </div>
     ) : null}
   </div>
 );
 
-const TILE_SHELL =
-  "bg-white dark:bg-neutral-900 rounded-2xl shadow-sm " +
-  "border border-[#c9ded3] dark:border-neutral-800 p-4 mb-4";
+// --- UI helper: status pill color (same as Clients page) ---
+function statusBadgeClass(status?: string | null) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active")
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  if (s === "inactive" || s === "disabled")
+    return "bg-slate-100 text-slate-800 dark:bg-neutral-800/70 dark:text-slate-200 border-slate-200/60 dark:border-white/10";
+  if (s === "blocked" || s === "suspended")
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/25 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (s === "deleted")
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/25 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/25 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+}
 
-const SOFT_SELECT =
-  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 pr-8 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60 appearance-none";
+function ValidityBadge({ value }: { value: string }) {
+  const v = (value || "").toLowerCase();
+  let cls =
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/5 dark:text-slate-200 dark:border-white/10";
 
-const SOFT_INPUT =
-  "h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 " +
-  "bg-white dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white placeholder:text-gray-400 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent";
+  if (v === "valid") {
+    cls =
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-900/40";
+  } else if (v === "yet to start") {
+    cls =
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-900/40";
+  } else if (v === "expired") {
+    cls =
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-900/40";
+  }
 
-const SOFT_DATE =
-  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60";
+  return (
+    <span
+      className={
+        "inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium " +
+        cls
+      }
+    >
+      {value || "—"}
+    </span>
+  );
+}
 
-export default function IhpmtsAssignments() {
+// ===== UI constants (CompanyEdit look) =====
+const CARD =
+  "bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm p-5";
+
+const PILL_INPUT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent";
+
+const PILL_SELECT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 pr-9 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent appearance-none";
+
+const PILL_DATE = PILL_INPUT;
+
+const btnSmBase =
+  "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_SECONDARY =
+  `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+  "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+const BTN_PRIMARY = `${btnSmBase} bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35`;
+
+const ICON_BTN =
+  "inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 hover:bg-slate-50 dark:hover:bg-white/5";
+
+export default function IhpmtAssignments() {
   const nav = useNavigate();
 
-  // --- Auth gate ---
+  // --- Auth gate only (keep Assignments page heading consistent) ---
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) nav("/login", { replace: true });
   }, [nav]);
 
+  // Common state
   const [err, setErr] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
-  // Tile 2 (role assignment)
+  // Tile 2 (IH-PMT assignment)
   const [picked, setPicked] = useState<UserLite[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
@@ -185,7 +288,7 @@ export default function IhpmtsAssignments() {
   const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
   const [assignLoading, setAssignLoading] = useState(false);
 
-  // Load projects
+  // Load projects (same behavior as Clients page)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -201,74 +304,47 @@ export default function IhpmtsAssignments() {
           .filter((p: ProjectLite) => p.projectId && p.title);
         if (!alive) return;
         setProjects(minimal);
-        // intentionally NOT auto-selecting first project
       } catch (e: any) {
         if (!alive) return;
-        setErr(e?.response?.data?.error || e?.message || "Failed to load projects.");
+        setErr(
+          e?.response?.data?.error || e?.message || "Failed to load projects."
+        );
       }
     })();
     return () => {
       alive = false;
     };
-  }, [selectedProjectId]);
+  }, []);
 
-  // Tile 3 (browse role users) — using /admin/users
+  // Tile 3 (browse IH-PMTs) data + refs
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
 
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
-  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive">("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
+  const [companyFilter, setCompanyFilter] = useState<string>("");
 
-  // Match reference: Sort By default Name + separate arrow button
   const [sortKey, setSortKey] = useState<
-    "code" | "name" | "company" | "projects" | "mobile" | "email" | "state" | "zone" | "status" | "updated"
+    | "code"
+    | "name"
+    | "company"
+    | "projects"
+    | "mobile"
+    | "email"
+    | "state"
+    | "zone"
+    | "status"
+    | "updated"
   >("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
-  const companyOptions = useMemo<string[]>(() => {
-    const set = new Set<string>();
-    for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-      for (const m of mems) {
-        if (!isRole(m?.role, ROLE_IH_PMT)) continue;
-        const name = (m?.company?.name || "").trim();
-        if (name) set.add(name);
-      }
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [allUsers]);
-
-  const hasActiveFilters =
-    q.trim() !== "" ||
-    statusFilter !== "all" ||
-    stateFilter !== "" ||
-    districtFilter !== "" ||
-    companyFilter !== "";
-
-  const clearFilters = () => {
-    setQ("");
-    setStatusFilter("all");
-    setStateFilter("");
-    setDistrictFilter("");
-    setCompanyFilter("");
-    setPage(1);
-  };
-
-  useEffect(() => {
-    if (companyFilter && !companyOptions.includes(companyFilter)) {
-      setCompanyFilter("");
-    }
-  }, [companyOptions, companyFilter]);
 
   useEffect(() => {
     let alive = true;
@@ -276,13 +352,17 @@ export default function IhpmtsAssignments() {
       try {
         setUsersLoading(true);
         setUsersErr(null);
-        const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
+        const { data } = await api.get("/admin/users", {
+          params: { includeMemberships: "1" },
+        });
         const list = (Array.isArray(data) ? data : data?.users ?? []) as UserLite[];
         if (!alive) return;
         setAllUsers(list);
       } catch (e: any) {
         if (!alive) return;
-        setUsersErr(e?.response?.data?.error || e?.message || "Failed to load users.");
+        setUsersErr(
+          e?.response?.data?.error || e?.message || "Failed to load users."
+        );
       } finally {
         if (alive) setUsersLoading(false);
       }
@@ -332,6 +412,23 @@ export default function IhpmtsAssignments() {
     };
   }, [stateFilter, statesRef]);
 
+  const companyOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const u of allUsers) {
+      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+      for (const m of mems) {
+        if (!isRole(m?.role, ROLE_IH_PMT)) continue;
+        const name = (m?.company?.name || "").trim();
+        if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allUsers]);
+
+  useEffect(() => {
+    if (companyFilter && !companyOptions.includes(companyFilter)) setCompanyFilter("");
+  }, [companyOptions, companyFilter]);
+
   type Row = {
     action: string;
     code: string;
@@ -343,7 +440,7 @@ export default function IhpmtsAssignments() {
     state: string;
     zone: string;
     status: string;
-    updated: string;
+    updated: string; // raw from API
     _id: string;
     _raw?: UserLite;
   };
@@ -420,15 +517,15 @@ export default function IhpmtsAssignments() {
 
     const key = sortKey;
     const dir = sortDir;
-
     const cmp = (a: any, b: any) => {
       if (a === b) return 0;
-      if (a == null) return -1;
-      if (b == null) return 1;
+      if (a === null || a === undefined) return -1;
+      if (b === null || b === undefined) return 1;
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a), bn = Number(b);
+      const an = Number(a),
+        bn = Number(b);
       if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
       return String(a).localeCompare(String(b));
     };
@@ -444,11 +541,11 @@ export default function IhpmtsAssignments() {
     statusFilter,
     stateFilter,
     districtFilter,
+    companyFilter,
     q,
     sortKey,
     sortDir,
     movedIds,
-    companyFilter,
   ]);
 
   const total = rowsAll.length;
@@ -462,106 +559,39 @@ export default function IhpmtsAssignments() {
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
-  }, [totalPages]);
+  }, [totalPages, page, setPage]);
 
   // Submit (assign)
   const canSubmit =
-    selectedProjectId &&
-    selectedIds.size > 0 &&
-    validFrom &&
-    validTo &&
-    !assignLoading;
+    selectedProjectId && selectedIds.size > 0 && validFrom && validTo && !assignLoading;
 
-  // ===== Robust membership refresh helpers (kept exactly) =====
-  const refetchUsers = async (): Promise<UserLite[]> => {
-    const { data } = await api.get("/admin/users", { params: { includeMemberships: "1" } });
-    const list = Array.isArray(data) ? data : data?.users ?? [];
-    setAllUsers(list as UserLite[]);
-    return list as UserLite[];
-  };
-
-  const normalizeId = (v: any) => String(v ?? "").trim();
-
-  /** Try to find the freshest IH-PMT membership id for (userId, projectId) */
-  const findCurrentMembershipId = async (userId: string, projectId: string) => {
-    const pickBest = (mems: any[]) => {
-      const candidates = mems
-        .filter((mem) => isRole(mem?.role, ROLE_IH_PMT))
-        .filter((mem) => normalizeId(mem?.project?.projectId) === normalizeId(projectId));
-
-      if (candidates.length === 0) return null;
-
-      // Sort by updatedAt desc, then validFrom desc, then id for stability
-      candidates.sort((a, b) => {
-        const au = Date.parse(a?.updatedAt ?? "") || 0;
-        const bu = Date.parse(b?.updatedAt ?? "") || 0;
-        if (au !== bu) return -(au - bu);
-        const af =
-          Date.parse(
-            a.validFrom ??
-              a.validFromDate ??
-              a.from ??
-              a.startDate ??
-              a.valid_from ??
-              a.validFromAt ??
-              a.valid_from_at ??
-              ""
-          ) || 0;
-        const bf =
-          Date.parse(
-            b.validFrom ??
-              b.validFromDate ??
-              b.from ??
-              b.startDate ??
-              b.valid_from ??
-              b.validFromAt ??
-              b.valid_from_at ??
-              ""
-          ) || 0;
-        if (af !== bf) return -(af - bf);
-        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
-      });
-
-      const best = candidates[0];
-      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as string | null;
-    };
-
-    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
-
-    let id = match(allUsers.find((u) => u.userId === userId));
-    if (id) return id;
-
-    const users = await refetchUsers();
-    id = match(users.find((u) => u.userId === userId));
-    return id ?? null;
-  };
-
-  const [deleting, setDeleting] = useState(false);
-
-  // Assign action
   const onAssign = async () => {
     const project = projects.find((p) => p.projectId === selectedProjectId);
     const projectTitle = project?.title || "(Unknown Project)";
     const selected = picked.filter((u) => selectedIds.has(u.userId));
     const names = selected.map(displayName).filter(Boolean);
 
-    const dupes = selected.filter((u) => alreadyAssignedToSelectedProject(u, selectedProjectId));
+    // duplicate guard
+    const dupes = selected.filter((u) =>
+      alreadyAssignedToSelectedProject(u, selectedProjectId)
+    );
     if (dupes.length > 0) {
       const lines = dupes.map((u) => {
         const name = displayName(u) || "(No name)";
-        return `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the IH-PMTs Assignments.`;
+        return `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the IH-PMT Assignments.`;
       });
       alert(lines.join("\n"));
       return;
     }
 
-    const ok = window.confirm(
+    const summary =
       `Please Confirm your assignment:\n\n` +
-        `Project: ${projectTitle}\n` +
-        `IH-PMT(s): ${names.length ? names.join(", ") : "—"}\n` +
-        `Validity: From ${validFrom} To ${validTo}\n\n` +
-        `Press OK to assign, or Cancel to go back.`
-    );
+      `Project: ${projectTitle}\n` +
+      `IH-PMT(s): ${names.length ? names.join(", ") : "—"}\n` +
+      `Validity: From ${validFrom} To ${validTo}\n\n` +
+      `Press OK to assign, or Cancel to go back.`;
+
+    const ok = window.confirm(summary);
     if (!ok) return;
 
     const items = selected.map((u) => ({
@@ -570,8 +600,8 @@ export default function IhpmtsAssignments() {
       scopeType: "Project",
       projectId: selectedProjectId,
       companyId: ihpmtCompanyId(u),
-      validFrom,
-      validTo,
+      validFrom, // "YYYY-MM-DD" (local)
+      validTo, // "YYYY-MM-DD" (local)
       isDefault: false,
     }));
 
@@ -579,13 +609,18 @@ export default function IhpmtsAssignments() {
       setAssignLoading(true);
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(`Assigned ${data?.created ?? items.length} IH-PMT(s) to "${projectTitle}".`);
 
+      alert(
+        `Assigned ${data?.created ?? items.length} IH-PMT(s) to "${projectTitle}".`
+      );
+
+      // Reset Tile 2
       setSelectedIds(new Set());
       setMovedIds(new Set());
       setValidFrom("");
       setValidTo("");
 
+      // Refresh users list, so Tile 4 shows the new assignments immediately
       try {
         const { data: fresh } = await api.get("/admin/users", {
           params: { includeMemberships: "1" },
@@ -608,16 +643,22 @@ export default function IhpmtsAssignments() {
     }
   };
 
-  // Move from Tile 3 to Tile 2
+  // Move user from Tile 3 to Tile 2
   const onMoveToTile2 = (user: UserLite) => {
     if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
       const projectTitle =
-        projects.find((p) => p.projectId === selectedProjectId)?.title || "(Selected Project)";
+        projects.find((p) => p.projectId === selectedProjectId)?.title ||
+        "(Selected Project)";
       const name = displayName(user) || "(No name)";
-      alert(`${name} has already assigned ${projectTitle}. If you wish to make changes, edit the IH-PMT Assignments.`);
+      alert(
+        `${name} has already assigned ${projectTitle}. If you wish to make changes, edit the IH-PMT Assignments.`
+      );
       return;
     }
-    setPicked((prev) => (prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]));
+
+    setPicked((prev) =>
+      prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]
+    );
     setMovedIds((prev) => {
       const next = new Set(prev);
       next.add(user.userId);
@@ -628,6 +669,7 @@ export default function IhpmtsAssignments() {
       next.add(user.userId);
       return next;
     });
+
     const el = document.querySelector('[data-tile-name="Roles & Options"]');
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -650,19 +692,43 @@ export default function IhpmtsAssignments() {
     if (validFrom && validTo && validTo <= validFrom) setValidTo("");
   }, [validFrom, validTo]);
 
-  // ---- Tile 4 data: flatten IH-PMT assignments
+  const onCancelTile2 = () => {
+    setValidFrom("");
+    setValidTo("");
+    setSelectedIds(new Set());
+    setMovedIds(new Set());
+    const el = document.querySelector('[data-tile-name="Browse IH-PMTs"]');
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const hasActiveFilters =
+    q.trim() !== "" ||
+    statusFilter !== "all" ||
+    stateFilter !== "" ||
+    districtFilter !== "" ||
+    companyFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    setCompanyFilter("");
+    setPage(1);
+  };
+
+  // ---- Tile 4 data: flatten "IH_PMT" memberships with a project
   type AssignmentRow = {
     userId: string;
     userName: string;
+    company: string;
     projectId: string;
     projectTitle: string;
-    company: string;
-    projects: string;
     status: string;
-    validFrom: string;
-    validTo: string;
+    validFrom: string; // local YYYY-MM-DD
+    validTo: string; // local YYYY-MM-DD
     validity: string;
-    updated: string;
+    updated: string; // raw ISO/string from API; format on render
     membershipId?: string | null;
     _user?: UserLite;
     _mem?: MembershipLite;
@@ -671,40 +737,23 @@ export default function IhpmtsAssignments() {
   const assignedRows = useMemo<AssignmentRow[]>(() => {
     const rows: AssignmentRow[] = [];
     for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
+      const mems = Array.isArray(u.userRoleMemberships)
+        ? u.userRoleMemberships
+        : [];
       for (const m of mems) {
         if (!isRole(m?.role, ROLE_IH_PMT)) continue;
         const pj = m?.project;
         if (!pj?.projectId || !pj?.title) continue;
 
-        const vf = fmtLocalDateOnly(
-          m.validFrom ??
-            (m as any).validFromDate ??
-            (m as any).from ??
-            (m as any).startDate ??
-            (m as any).end ??
-            (m as any).valid_from ??
-            (m as any).validFromAt ??
-            (m as any).valid_from_at
-        );
-        const vt = fmtLocalDateOnly(
-          m.validTo ??
-            (m as any).validToDate ??
-            (m as any).to ??
-            (m as any).endDate ??
-            (m as any).end ??
-            (m as any).valid_to ??
-            (m as any).validToAt ??
-            (m as any).valid_to_at
-        );
+        const vf = pickMembershipDate(m, "validFrom");
+        const vt = pickMembershipDate(m, "validTo");
 
         rows.push({
           userId: u.userId,
           userName: displayName(u) || "(No name)",
+          company: m?.company?.name || "",
           projectId: pj.projectId,
           projectTitle: pj.title,
-          company: m?.company?.name || "",
-          projects: pj.title,
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
@@ -719,8 +768,16 @@ export default function IhpmtsAssignments() {
     return rows;
   }, [allUsers]);
 
+  // ===== Tile 4 sort state + sorted rows =====
   const [aSortKey, setASortKey] = useState<
-    "userName" | "company" | "projects" | "status" | "validFrom" | "validTo" | "updated"
+    | "userName"
+    | "company"
+    | "projectTitle"
+    | "status"
+    | "validFrom"
+    | "validTo"
+    | "validity"
+    | "updated"
   >("updated");
   const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
 
@@ -728,7 +785,6 @@ export default function IhpmtsAssignments() {
     const rows = [...assignedRows];
     const key = aSortKey;
     const dir = aSortDir;
-
     const cmp = (a: any, b: any) => {
       if (a === b) return 0;
       if (a == null) return -1;
@@ -736,23 +792,21 @@ export default function IhpmtsAssignments() {
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
-      const an = Number(a), bn = Number(b);
+      const an = Number(a),
+        bn = Number(b);
       if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
       return String(a).localeCompare(String(b));
     };
-
     rows.sort((ra, rb) => {
-      const delta = cmp((ra as any)[key]);
-      const delta2 = cmp((ra as any)[key], (rb as any)[key]);
-      return dir === "asc" ? delta2 : -delta2;
+      const delta = cmp((ra as any)[key], (rb as any)[key]);
+      return dir === "asc" ? delta : -delta;
     });
-
     return rows;
   }, [assignedRows, aSortKey, aSortDir]);
 
-  // ===== Assignments pagination (uses shared Rows selector) =====
+  // ===== Tile 4 pagination =====
   const [aPage, setAPage] = useState(1);
-  const aPageSize = pageSize;
+  const aPageSize = pageSize; // use same selector value as Browse
   const aTotal = assignedSortedRows.length;
   const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
   const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
@@ -766,6 +820,14 @@ export default function IhpmtsAssignments() {
     if (aPage > aTotalPages) setAPage(aTotalPages);
   }, [aTotalPages, aPage]);
 
+  // Companies-table style tiny controls (used for pagination)
+  const ctl =
+    "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+  const ctlLight =
+    "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
@@ -777,6 +839,7 @@ export default function IhpmtsAssignments() {
   const [origFrom, setOrigFrom] = useState<string>("");
   const [origTo, setOrigTo] = useState<string>("");
   const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const openView = (row: AssignmentRow) => {
     setViewRow(row);
@@ -784,13 +847,11 @@ export default function IhpmtsAssignments() {
   };
 
   const openEdit = (row: AssignmentRow) => {
-    setDeleting(false);
     setEditRow(row);
 
     const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
     const currentTo = fmtLocalDateOnly(row.validTo) || "";
 
-    // keep existing behavior for initial values
     setEditFrom(currentFrom || todayLocalISO());
     setEditTo(currentTo || addDaysISO(todayLocalISO(), 1));
 
@@ -804,11 +865,8 @@ export default function IhpmtsAssignments() {
     if (!editOpen && pendingEditAlert) {
       const msg = pendingEditAlert;
       setPendingEditAlert(null);
-
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          alert(msg);
-        });
+        requestAnimationFrame(() => alert(msg));
       });
     }
   }, [editOpen, pendingEditAlert]);
@@ -830,11 +888,61 @@ export default function IhpmtsAssignments() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editOpen, deleting]);
 
+  // ---- Helpers for refreshing and robust membership resolution (for delete) ----
+  const refetchUsers = async (): Promise<UserLite[]> => {
+    const { data } = await api.get("/admin/users", {
+      params: { includeMemberships: "1" },
+    });
+    const list = Array.isArray(data) ? data : data?.users ?? [];
+    setAllUsers(list);
+    return list as UserLite[];
+  };
+
+  const normalizeId = (v: any) => String(v ?? "").trim();
+
+  /** Try to find the freshest membership id for (userId, projectId) */
+  const findCurrentMembershipId = async (userId: string, projectId: string) => {
+    const pickBest = (mems: any[]) => {
+      const candidates = mems
+        .filter((mem) => isRole(mem?.role, ROLE_IH_PMT))
+        .filter(
+          (mem) =>
+            normalizeId(mem?.project?.projectId) === normalizeId(projectId)
+        );
+
+      if (candidates.length === 0) return null;
+
+      candidates.sort((a, b) => {
+        const au = Date.parse(a?.updatedAt ?? "") || 0;
+        const bu = Date.parse(b?.updatedAt ?? "") || 0;
+        if (au !== bu) return bu - au;
+        const af = Date.parse(pickMembershipDate(a, "validFrom")) || 0;
+        const bf = Date.parse(pickMembershipDate(b, "validFrom")) || 0;
+        if (af !== bf) return bf - af;
+        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
+      });
+
+      const best = candidates[0];
+      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as
+        | string
+        | null;
+    };
+
+    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
+
+    let id = match(allUsers.find((u) => u.userId === userId));
+    if (id) return id;
+
+    const users = await refetchUsers();
+    id = match(users.find((u) => u.userId === userId));
+    return id ?? null;
+  };
+
   const onHardDeleteFromEdit = async () => {
     if (!editRow) return;
-
     const resolvedId =
-      editRow.membershipId || (await findCurrentMembershipId(editRow.userId, editRow.projectId));
+      editRow.membershipId ||
+      (await findCurrentMembershipId(editRow.userId, editRow.projectId));
 
     if (!resolvedId) {
       await refetchUsers();
@@ -858,7 +966,9 @@ export default function IhpmtsAssignments() {
       await refetchUsers();
       setEditOpen(false);
       setEditRow(null);
-      setPendingEditAlert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
+      setPendingEditAlert(
+        `Unassigned ${editRow.userName} from ${editRow.projectTitle}.`
+      );
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 404) {
@@ -879,26 +989,43 @@ export default function IhpmtsAssignments() {
     }
   };
 
+  const existingFromForMin = fmtLocalDateOnly(editRow?.validFrom || "");
+  const editFromMin = floorForEditFrom(existingFromForMin) || todayLocalISO();
+
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">IH-PMT Assignments</h1>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles & Options · <b>Browse IH-PMTs</b> · IH-PMT Assignments
-        </p>
-        {err && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>}
+    <div className="w-full">
+      {/* Page Heading (same as Clients page) */}
+      <div className="mb-4">
+        <div className="text-xl font-extrabold text-slate-900 dark:text-white">
+          IH-PMT Assignments
+        </div>
+        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Assign IH-PMTs to projects and manage validity.
+        </div>
+        <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
 
-      {/* Tile 1 — Projects */}
-      <section className={TILE_SHELL} aria-label="Tile: Projects" data-tile-name="Projects">
-        <TileHeader title="Projects" subtitle="Choose the project to assign." />
-        <div className="max-w-xl mt-2">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+      {err && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+          {err}
+        </div>
+      )}
+
+      {/* Section 1 — Projects */}
+      <section className={CARD + " mb-4"} aria-label="Projects" data-tile-name="Projects">
+        <SectionHeader
+          title="Projects"
+          subtitle="Choose the project to assign IH-PMTs to."
+        />
+
+        <div className="max-w-xl">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
             Project
           </label>
+
           <div className="relative">
             <select
-              className={SOFT_SELECT}
+              className={PILL_SELECT}
               value={selectedProjectId}
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
@@ -907,68 +1034,85 @@ export default function IhpmtsAssignments() {
               }}
               title="Select project"
             >
-              {projects.length === 0 ? (
-                <option value="">Loading…</option>
-              ) : (
-                <>
-                  <option value="">Select a project…</option>
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.title}
-                    </option>
-                  ))}
-                </>
-              )}
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
             </select>
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
               ▼
             </span>
           </div>
         </div>
       </section>
 
-      {/* Tile 2 — Roles & Options (IH-PMT) */}
-      <section className={TILE_SHELL} aria-label="Tile: Roles & Options" data-tile-name="Roles & Options">
-        <TileHeader title="Roles & Options" subtitle="Pick from moved IH-PMTs & set validity." />
+      {/* Section 2 — Roles & Options */}
+      <section
+        className={CARD + " mb-4"}
+        aria-label="Roles & Options"
+        data-tile-name="Roles & Options"
+      >
+        <SectionHeader
+          title="Roles & Options"
+          subtitle="Pick from moved IH-PMTs and set validity."
+        />
 
-        {/* Match reference: stacked layout */}
-        <div className="mt-3 space-y-4">
-          {/* Subtile: moved list */}
-          <div className="space-y-3" aria-label="Subtile: Moved IH-PMTs">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
-              Moved IH-PMTs (select with checkbox)
-            </label>
+        <div className="mt-2 space-y-5">
+          {/* Moved IH-PMTs */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
+                Moved IH-PMTs
+              </div>
 
-            <div
-              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
-              style={{ maxHeight: 300 }}
-            >
+              {movedList.length > 0 && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {selectedIds.size}/{movedList.length} selected
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 overflow-auto bg-slate-50/60 dark:bg-white/5">
               {movedIds.size === 0 ? (
-                <div className="p-3 text-sm text-gray-600 dark:text-gray-300">
-                  <b>Move IH-PMTs</b> from list below to assign roles.
+                <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                  <b>Move IH-PMTs</b> from the list below to assign them for the selected project.
                 </div>
               ) : (
-                <ul className="divide-y dark:divide-neutral-800">
-                  {movedList.map((u: UserLite) => {
+                <ul className="divide-y divide-slate-200 dark:divide-white/10">
+                  {movedList.map((u) => {
                     const checked = selectedIds.has(u.userId);
                     return (
-                      <li key={u.userId} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <li
+                        key={u.userId}
+                        className="px-3 py-2 flex items-center justify-between gap-3"
+                      >
                         <label className="flex items-center gap-3 cursor-pointer">
-                          <input type="checkbox" checked={checked} onChange={() => toggleChecked(u.userId)} />
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 dark:border-white/20 accent-[#00379C]"
+                            checked={checked}
+                            onChange={() => toggleChecked(u.userId)}
+                          />
                           <div className="flex flex-col">
-                            <div className="font-medium dark:text-white">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
                               {displayName(u) || "(No name)"}
                             </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                               {u.code || ""}
                               {u.code ? " · " : ""}
                               {u.email || ""}
                               {u.email ? " · " : ""}
                               {phoneDisplay(u)}
+                              {companiesLabel(u) ? " · " : ""}
+                              {companiesLabel(u)}
                             </div>
                           </div>
                         </label>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-neutral-700">
+
+                        <span className="inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-neutral-950">
                           {u.userStatus || "—"}
                         </span>
                       </li>
@@ -979,74 +1123,85 @@ export default function IhpmtsAssignments() {
             </div>
 
             {movedList.length > 0 && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() => setSelectedIds(new Set(movedList.map((m) => m.userId)))}
                 >
                   Select All
                 </button>
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                  className={BTN_SECONDARY}
                   onClick={() => setSelectedIds(new Set())}
                 >
-                  Clear
+                  Clear Selection
                 </button>
               </div>
             )}
           </div>
 
-          {/* Subtile: Validity */}
-          <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+          {/* Validity */}
+          <div className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
               Validity
-            </label>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid From</div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Valid From
+                </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Valid To
+                </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validTo}
-                  min={validFrom || todayLocalISO()}
+                  min={validFrom || todayLocalISO() || undefined}
                   onChange={(e) => setValidTo(e.target.value)}
+                  title={
+                    validFrom
+                      ? `Choose a date on/after ${validFrom}`
+                      : "Choose end date"
+                  }
                 />
+                {validFrom && !validTo && (
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Choose a date on or after <b>{validFrom}</b>.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-2 flex items-center justify-end gap-2">
+            <div className="mt-1 flex items-center justify-end gap-2">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => {
-                  setValidFrom("");
-                  setValidTo("");
-                  setSelectedIds(new Set());
-                  setMovedIds(new Set());
-                  const el = document.querySelector('[data-tile-name="Browse IH-PMTs"]');
-                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
+                className={BTN_SECONDARY}
+                onClick={onCancelTile2}
+                title="Clear dates and move IH-PMTs back to Browse IH-PMTs"
               >
                 Cancel
               </button>
+
               <button
-                className={
-                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
-                  (canSubmit ? "bg-emerald-600 hover:bg-emerald-700" : "bg-emerald-600/50 cursor-not-allowed")
-                }
+                className={BTN_PRIMARY}
                 onClick={onAssign}
                 disabled={!canSubmit}
-                title={canSubmit ? "Assign selected IH-PMTs to project" : "Select all required fields"}
+                title={
+                  canSubmit
+                    ? "Assign selected IH-PMTs to project"
+                    : "Select project, IH-PMTs and validity dates"
+                }
               >
                 {assignLoading ? "Assigning…" : "Assign"}
               </button>
@@ -1055,23 +1210,23 @@ export default function IhpmtsAssignments() {
         </div>
       </section>
 
-      {/* Tile 3 — Browse IH-PMTs */}
-      <section className={TILE_SHELL} aria-label="Tile: Browse IH-PMTs" data-tile-name="Browse IH-PMTs">
-        <TileHeader
+      {/* Section 3 — Browse IH-PMTs */}
+      <section className={CARD + " mb-4"} aria-label="Browse IH-PMTs" data-tile-name="Browse IH-PMTs">
+        <SectionHeader
           title="Browse IH-PMTs"
-          subtitle="Search and filter; sort columns; paginate. Use the up arrow to move IH-PMTs to Tile 2."
+          subtitle="Search, filter, sort and move IH-PMTs into the selection."
         />
 
-        {/* === CONTROLS (match reference layout) === */}
-        <div className="mb-3">
-          {/* Line 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        {/* Controls */}
+        <div className="mb-4 space-y-3">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-5">
+            {/* Search */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Search
               </label>
               <input
-                className={SOFT_INPUT}
+                className={PILL_INPUT}
                 placeholder="Code, name, company, project, phone, email…"
                 value={q}
                 onChange={(e) => {
@@ -1081,13 +1236,14 @@ export default function IhpmtsAssignments() {
               />
             </div>
 
+            {/* Status */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Status
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as any);
@@ -1098,19 +1254,20 @@ export default function IhpmtsAssignments() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* State */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 State
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={stateFilter}
                   onChange={(e) => {
                     setStateFilter(e.target.value);
@@ -1125,19 +1282,20 @@ export default function IhpmtsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* District */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 District
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={districtFilter}
                   onChange={(e) => {
                     setDistrictFilter(e.target.value);
@@ -1153,7 +1311,7 @@ export default function IhpmtsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
@@ -1161,12 +1319,12 @@ export default function IhpmtsAssignments() {
 
             {/* Company */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Company
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={companyFilter}
                   onChange={(e) => {
                     setCompanyFilter(e.target.value);
@@ -1180,57 +1338,63 @@ export default function IhpmtsAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Line 2 */}
-          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div className="flex items-end gap-2">
+          {/* Bottom controls */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap items-end gap-2">
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                   Sort By
                 </label>
-                <div className="relative">
-                  <select
-                    className={SOFT_SELECT}
-                    value={sortKey}
-                    onChange={(e) => {
-                      setSortKey(e.target.value as any);
-                      setPage(1);
-                    }}
+
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <select
+                      className={PILL_SELECT}
+                      value={sortKey}
+                      onChange={(e) => {
+                        setSortKey(e.target.value as any);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="code">Code</option>
+                      <option value="name">Name</option>
+                      <option value="company">Company</option>
+                      <option value="projects">Projects</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="email">Email</option>
+                      <option value="state">State</option>
+                      <option value="zone">Zone</option>
+                      <option value="status">Status</option>
+                      <option value="updated">Updated</option>
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                      ▼
+                    </span>
+                  </div>
+
+                  <button
+                    className={ICON_BTN}
+                    onClick={() =>
+                      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                    }
+                    title="Toggle sort direction"
                   >
-                    <option value="name">Name</option>
-                    <option value="code">Code</option>
-                    <option value="company">Company</option>
-                    <option value="projects">Projects</option>
-                    <option value="mobile">Mobile</option>
-                    <option value="email">Email</option>
-                    <option value="state">State</option>
-                    <option value="zone">Zone</option>
-                    <option value="status">Status</option>
-                    <option value="updated">Updated</option>
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                    ▼
-                  </span>
+                    <span className="text-[12px]">
+                      {sortDir === "asc" ? "▲" : "▼"}
+                    </span>
+                  </button>
                 </div>
               </div>
 
               <button
-                className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-                title="Toggle sort direction"
-                aria-label="Toggle sort direction"
-              >
-                {sortDir === "asc" ? "▲" : "▼"}
-              </button>
-
-              <button
-                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
                 title="Clear all filters"
@@ -1239,93 +1403,112 @@ export default function IhpmtsAssignments() {
               </button>
             </div>
 
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block text-left md:text-right">
-                Rows per page
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                    setAPage(1);
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
+                  Rows per page
+                </label>
+                <div className="relative">
+                  <select
+                    className={PILL_SELECT}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                      setAPage(1);
+                    }}
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                    ▼
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Table shell */}
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
-            {usersErr && (
-              <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
-                {usersErr}
-              </div>
-            )}
+        {/* Table (Companies-exact UI) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          {usersErr && (
+            <div className="p-4 text-sm text-rose-700 dark:text-rose-300 border-b border-slate-200 dark:border-white/10">
+              {usersErr}
+            </div>
+          )}
+
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
             {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 Loading IH-PMTs…
               </div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No IH-PMTs match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
                     {[
                       { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
                       { key: "company", label: "Company" },
-                      { key: "projects", label: "Project" },
+                      { key: "projects", label: "Projects" },
                       { key: "mobile", label: "Mobile" },
                       { key: "email", label: "Email" },
                       { key: "state", label: "State" },
                       { key: "zone", label: "Zone" },
                       { key: "status", label: "Status" },
                       { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const sortable = h.key !== "action";
-                      const active = sortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const sortable = key !== "action";
+                      const active = sortKey === (key as any);
+                      const dir = active ? sortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
+                          key={key}
                           className={
-                            "text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
                             (sortable ? "cursor-pointer" : "")
                           }
-                          title={sortable ? `Sort by ${h.label}` : undefined}
+                          title={sortable ? `Sort by ${label}` : undefined}
                           onClick={() => {
                             if (!sortable) return;
-                            if (sortKey !== (h.key as any)) {
-                              setSortKey(h.key as any);
+                            if (sortKey !== (key as any)) {
+                              setSortKey(key as any);
                               setSortDir("asc");
                             } else {
                               setSortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                             setPage(1);
                           }}
+                          aria-sort={
+                            sortable
+                              ? active
+                                ? dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
+                            {label}
                             {sortable && (
-                              <span className="text-xs opacity-70">
-                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                              <span
+                                className="text-[10px] opacity-70"
+                                style={{ color: active ? "#00379C" : undefined }}
+                              >
+                                {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
                           </span>
@@ -1334,68 +1517,85 @@ export default function IhpmtsAssignments() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
-                  {rowsPaged.map((r) => (
-                    <tr key={r._id} className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60">
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                  {rowsPaged.map((r, idx) => (
+                    <tr
+                      key={r._id ?? idx}
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
+                    >
+                      {/* Action */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
                         <button
                           type="button"
-                          aria-label="Move IH-PMT"
-                          title="Move to selection"
-                          onClick={() => onMoveToTile2(r._raw!)}
-                          className="
-                            inline-flex items-center justify-center
-                            w-8 h-8 rounded-full
-                            border border-slate-200
-                            bg-white text-slate-700
-                            hover:bg-slate-50
-                            dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800
-                          "
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                          title="Move this IH-PMT to selection"
+                          aria-label="Move this IH-PMT to selection"
+                          onClick={() => r._raw && onMoveToTile2(r._raw)}
                         >
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-4 h-4"
+                            className="h-4 w-4"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="1.8"
+                            strokeWidth={1.7}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
                             <path d="M12 19V5" />
-                            <path d="M6.5 10.5L12 5l5.5 5.5" />
+                            <path d="M6.5 10.5 12 5l5.5 5.5" />
                           </svg>
                         </button>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100">
                         {r.code}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100">
                         {r.name}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
+
+                      <td className="px-3 py-1.5 align-middle" title={r.company}>
                         <div className="truncate max-w-[260px]">{r.company}</div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
+
+                      <td className="px-3 py-1.5 align-middle" title={r.projects}>
                         <div className="truncate max-w-[360px]">{r.projects}</div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {r.mobile}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {r.email}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {r.state}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {r.zone}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status}
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          ""
+                        )}
                       </td>
+
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={fmtLocalDateTime(r.updated)}
                       >
                         {fmtLocalDateTime(r.updated)}
@@ -1407,19 +1607,40 @@ export default function IhpmtsAssignments() {
             )}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
               <b>{rowsPaged.length}</b> of <b>{total}</b> IH-PMTs
-              {stateFilter ? <> · State: <b>{stateFilter}</b></> : null}
-              {districtFilter ? <> · District: <b>{districtFilter}</b></> : null}
-              {statusFilter !== "all" ? <> · Status: <b>{statusFilter}</b></> : null}
-              {companyFilter ? <> · Company: <b>{companyFilter}</b></> : null}
+              {stateFilter ? (
+                <>
+                  {" "}
+                  · State: <b>{stateFilter}</b>
+                </>
+              ) : null}
+              {districtFilter ? (
+                <>
+                  {" "}
+                  · District: <b>{districtFilter}</b>
+                </>
+              ) : null}
+              {statusFilter !== "all" ? (
+                <>
+                  {" "}
+                  · Status: <b>{statusFilter}</b>
+                </>
+              ) : null}
+              {companyFilter ? (
+                <>
+                  {" "}
+                  · Company: <b>{companyFilter}</b>
+                </>
+              ) : null}
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -1427,7 +1648,7 @@ export default function IhpmtsAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -1435,7 +1656,7 @@ export default function IhpmtsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -1443,7 +1664,7 @@ export default function IhpmtsAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -1455,55 +1676,79 @@ export default function IhpmtsAssignments() {
         </div>
       </section>
 
-      {/* Tile 4 — IH-PMTs Assignments */}
-      <section
-        className={TILE_SHELL.replace("mb-4", "")}
-        aria-label="Tile: IH-PMTs Assignments"
-        data-tile-name="IH-PMT Assignments"
-      >
-        <TileHeader title="IH-PMTs Assignments" subtitle="All IH-PMTs who have been assigned to projects." />
+      {/* Section 4 — IH-PMT Assignments */}
+      <section className={CARD + " mb-4"} aria-label="IH-PMT Assignments" data-tile-name="IH-PMT Assignments">
+        <SectionHeader
+          title="IH-PMT Assignments"
+          subtitle="All IH-PMTs who have been assigned to projects."
+        />
 
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
+        {/* Table (Companies-exact UI) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
             {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No IH-PMT assignments found.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
-                    <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">
+                    <th
+                      className={
+                        "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                        "text-slate-600 dark:text-slate-200 " +
+                        "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none"
+                      }
+                    >
                       Action
                     </th>
+
                     {[
-                      { key: "userName", label: "Name" },
+                      { key: "userName", label: "IH-PMT" },
                       { key: "company", label: "Company" },
-                      { key: "projects", label: "Projects" },
+                      { key: "projectTitle", label: "Project" },
                       { key: "status", label: "Status" },
                       { key: "validFrom", label: "Valid From" },
                       { key: "validTo", label: "Valid To" },
+                      { key: "validity", label: "Validity" },
                       { key: "updated", label: "Last Updated" },
-                    ].map((h) => {
-                      const active = aSortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const active = aSortKey === (key as any);
+                      const dir = active ? aSortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
-                          className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none cursor-pointer"
-                          title={`Sort by ${h.label}`}
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none cursor-pointer"
+                          }
+                          title={`Sort by ${label}`}
                           onClick={() => {
-                            if (aSortKey !== (h.key as any)) {
-                              setASortKey(h.key as any);
+                            if (aSortKey !== (key as any)) {
+                              setASortKey(key as any);
                               setASortDir("asc");
                             } else {
                               setASortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                           }}
+                          aria-sort={
+                            active
+                              ? dir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            <span className="text-xs opacity-70">
-                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
+                            {label}
+                            <span
+                              className="text-[10px] opacity-70"
+                              style={{ color: active ? "#00379C" : undefined }}
+                            >
+                              {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                             </span>
                           </span>
                         </th>
@@ -1516,45 +1761,54 @@ export default function IhpmtsAssignments() {
                   {assignedRowsPaged.map((r, i) => (
                     <tr
                       key={`${r.userId}-${r.projectId}-${i}`}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {/* View icon */}
+                      {/* Action icons like Companies */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                            onClick={() => {
+                              setViewRow(r);
+                              setViewOpen(true);
+                            }}
+                            title="View assignment"
                             aria-label="View assignment"
-                            title="View"
-                            onClick={() => openView(r)}
-                            className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                           >
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth={1.6}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                              <circle cx="12" cy="12" r="2.5" />
-                            </svg>
-                          </button>
-
-                          {/* Edit icon */}
-                          <button
-                            type="button"
-                            aria-label="Edit assignment"
-                            title="Edit"
-                            onClick={() => openEdit(r)}
-                            disabled={!r.membershipId}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40 disabled:opacity-50"
-                          >
+                            {/* eye */}
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               viewBox="0 0 24 24"
-                              className="w-4 h-4"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+                              <circle cx="12" cy="12" r="3.25" />
+                            </svg>
+                          </button>
+
+                          <button
+                            type="button"
+                            className={
+                              "inline-flex h-7 w-7 items-center justify-center rounded-full " +
+                              "text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15 " +
+                              (!r.membershipId ? "opacity-50 cursor-not-allowed" : "")
+                            }
+                            onClick={() => openEdit(r)}
+                            disabled={!r.membershipId}
+                            title={r.membershipId ? "Edit validity dates" : "Missing membership id"}
+                            aria-label="Edit validity dates"
+                          >
+                            {/* pencil */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
                               fill="none"
                               stroke="currentColor"
                               strokeWidth="1.7"
@@ -1568,25 +1822,54 @@ export default function IhpmtsAssignments() {
                         </div>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100 max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.userName}
+                      >
                         {r.userName}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.company}
+                      >
                         {r.company || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">{r.projects || "—"}</div>
+
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.projectTitle}
+                      >
+                        {r.projectTitle}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status || "—"}
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.status}>
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validFrom) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validTo) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        <ValidityBadge value={r.validity || "—"} />
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateTime(r.updated) || "—"}
                       </td>
                     </tr>
@@ -1596,15 +1879,16 @@ export default function IhpmtsAssignments() {
             )}
           </div>
 
-          {/* Pagination for assignments */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
+          {/* Pagination footer (Companies-exact UI) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
               Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
               <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> IH-PMT assignments
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
                 title="First"
@@ -1612,7 +1896,7 @@ export default function IhpmtsAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
                 title="Previous"
@@ -1620,7 +1904,7 @@ export default function IhpmtsAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
                 title="Next"
@@ -1628,7 +1912,7 @@ export default function IhpmtsAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
                 title="Last"
@@ -1640,54 +1924,52 @@ export default function IhpmtsAssignments() {
         </div>
       </section>
 
-      {/* ===== View Modal ===== */}
+      {/* ===== View Modal (read-only) ===== */}
       {viewOpen && viewRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setViewOpen(false)} />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">IH-PMT Assignment</div>
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {viewRow.userName} · {viewRow.projectTitle}
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  IH-PMT Assignment
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {viewRow.userName} · {viewRow.projectTitle}
+                </div>
+              </div>
+
+              <button className={BTN_SECONDARY + " h-8 px-3 text-[11px]"} onClick={() => setViewOpen(false)}>
+                Close
+              </button>
             </div>
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">IH-PMT</td>
-                    <td className="px-3 py-2">{viewRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Project</td>
-                    <td className="px-3 py-2">{viewRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Status</td>
-                    <td className="px-3 py-2">{viewRow.status || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Valid From</td>
-                    <td className="px-3 py-2">{fmtLocalDateOnly(viewRow.validFrom) || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Valid To</td>
-                    <td className="px-3 py-2">{fmtLocalDateOnly(viewRow.validTo) || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Validity</td>
-                    <td className="px-3 py-2">{viewRow.validity || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Last Updated</td>
-                    <td className="px-3 py-2">{fmtLocalDateTime(viewRow.updated) || "—"}</td>
-                  </tr>
+                  {[
+                    ["IH-PMT", viewRow.userName || "—"],
+                    ["Company", viewRow.company || "—"],
+                    ["Project", viewRow.projectTitle || "—"],
+                    ["Status", viewRow.status || "—"],
+                    ["Valid From", fmtLocalDateOnly(viewRow.validFrom) || "—"],
+                    ["Valid To", fmtLocalDateOnly(viewRow.validTo) || "—"],
+                    ["Validity", viewRow.validity || "—"],
+                    ["Last Updated", fmtLocalDateTime(viewRow.updated) || "—"],
+                  ].map(([k, v]) => (
+                    <tr key={k} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-            <div className="mt-2 flex justify-end">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => setViewOpen(false)}
-              >
+
+            <div className="mt-4 flex justify-end">
+              <button className={BTN_PRIMARY} onClick={() => setViewOpen(false)}>
                 OK
               </button>
             </div>
@@ -1695,24 +1977,34 @@ export default function IhpmtsAssignments() {
         </div>
       )}
 
-      {/* ===== Edit Modal ===== */}
+      {/* ===== Edit Modal (with date updates + hard delete button) ===== */}
       {editOpen && editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => {
               if (!deleting) setEditOpen(false);
             }}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            {deleting && (
-              <div className="absolute inset-0 rounded-2xl bg-white/40 dark:bg:black/30 backdrop-blur-[1px] cursor-wait" />
-            )}
 
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">Edit Validity</div>
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Edit Validity
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {editRow.userName} · {editRow.projectTitle}
+                </div>
+              </div>
+
               <button
-                className="h-9 px-3 rounded-full text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                className={
+                  "h-8 px-3 rounded-full text-[11px] font-semibold text-white shadow-sm " +
+                  (deleting || !editRow?.membershipId
+                    ? "bg-rose-600/60 cursor-not-allowed"
+                    : "bg-rose-600 hover:bg-rose-700")
+                }
                 onClick={onHardDeleteFromEdit}
                 disabled={deleting || !editRow?.membershipId}
                 title={editRow?.membershipId ? "Permanently remove this assignment" : "Missing membership id"}
@@ -1721,69 +2013,69 @@ export default function IhpmtsAssignments() {
               </button>
             </div>
 
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {editRow.userName} · {editRow.projectTitle}
-            </div>
-
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">IH-PMT</td>
-                    <td className="px-3 py-2">{editRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Project</td>
-                    <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">Status</td>
-                    <td className="px-3 py-2">{editRow.status || "—"}</td>
-                  </tr>
+                  {[
+                    ["IH-PMT", editRow.userName || "—"],
+                    ["Company", editRow.company || "—"],
+                    ["Project", editRow.projectTitle || "—"],
+                    ["Status", editRow.status || "—"],
+                  ].map(([k, v]) => (
+                    <tr key={k} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid From</div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Valid From
+                </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editFrom}
-                  min={todayLocalISO()}
+                  min={editFromMin}
+                  disabled={deleting}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
                     if (editTo && editTo < v) setEditTo(v);
                   }}
-                  disabled={deleting}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">Valid To</div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Valid To
+                </div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editTo}
                   min={editFrom && editFrom > todayLocalISO() ? editFrom : todayLocalISO()}
-                  onChange={(e) => setEditTo(e.target.value)}
                   disabled={deleting}
+                  onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
-                onClick={() => setEditOpen(false)}
-                disabled={deleting}
-              >
+            <div className="mt-5 flex justify-end gap-2">
+              <button className={BTN_SECONDARY} onClick={() => setEditOpen(false)} disabled={deleting}>
                 Cancel
               </button>
 
               <button
-                className="h-9 px-4 rounded-full text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                className={BTN_PRIMARY}
+                title="Update validity dates"
+                disabled={!editRow?.membershipId || deleting}
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) {
@@ -1804,36 +2096,29 @@ export default function IhpmtsAssignments() {
                   }
 
                   try {
-                    const companyId =
-                      editRow?._mem?.company?.companyId ||
-                      (editRow?._user ? ihpmtCompanyId(editRow._user) : null);
-
                     const payload: any = {
                       validTo: editTo,
                       scopeType: "Project",
                       projectId: editRow.projectId,
-                      ...(companyId ? { companyId } : {}),
                     };
-                    if (!origFrom || editFrom !== origFrom) {
-                      payload.validFrom = editFrom;
-                    }
+                    if (!origFrom || editFrom !== origFrom) payload.validFrom = editFrom;
 
                     await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
-
-                    const successMsg = [
-                      `Updated validity`,
-                      ``,
-                      `Project: ${editRow.projectTitle}`,
-                      `IH-PMT: ${editRow.userName}`,
-                      ``,
-                      `Valid From: ${origFrom || "—"} → ${editFrom}`,
-                      `Valid To:   ${origTo || "—"} → ${editTo}`,
-                    ].join("\n");
 
                     const { data: fresh } = await api.get("/admin/users", {
                       params: { includeMemberships: "1" },
                     });
                     setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
+
+                    const successMsg = [
+                      `Updated validity`,
+                      ``,
+                      `Project: ${editRow.projectTitle}`,
+                      `IH-PMT:  ${editRow.userName}`,
+                      ``,
+                      `Valid From: ${origFrom || "—"} → ${editFrom}`,
+                      `Valid To:   ${origTo || "—"} → ${editTo}`,
+                    ].join("\n");
 
                     setEditOpen(false);
                     setEditRow(null);
@@ -1847,8 +2132,6 @@ export default function IhpmtsAssignments() {
                     alert(msg);
                   }
                 }}
-                title="Update validity dates"
-                disabled={!editRow?.membershipId || deleting}
               >
                 Update
               </button>
@@ -1856,6 +2139,21 @@ export default function IhpmtsAssignments() {
           </div>
         </div>
       )}
+
+      {/* Same thin scrollbar CSS as Clients page */}
+      <style>
+        {`
+          .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+          .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .thin-scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(148, 163, 184, 0.7);
+            border-radius: 999px;
+          }
+          .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(100, 116, 139, 0.9);
+          }
+        `}
+      </style>
     </div>
   );
 }
