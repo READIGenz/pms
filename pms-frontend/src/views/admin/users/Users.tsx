@@ -981,7 +981,7 @@ export default function Users() {
           </div>
         </div>
 
-        {/* Modal kept as-is (no UI change requested here) */}
+        {/* Modal (UPDATED: categorized blocks like Companies) */}
         {modalData && (
           <div className="fixed inset-0 z-40">
             <div
@@ -1013,7 +1013,8 @@ export default function Users() {
                         <div
                           className="h-14 w-14 rounded-full grid place-items-center text-white font-extrabold"
                           style={{
-                            background: "linear-gradient(135deg,#00379C,#23A192)",
+                            background:
+                              "linear-gradient(135deg,#00379C,#23A192)",
                           }}
                         >
                           {initials}
@@ -1050,23 +1051,55 @@ export default function Users() {
                   </button>
                 </div>
 
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <Field label="Code" value={modalData.code} />
-                  <Field label="Name" value={modalData.name} />
-                  <Field label="Client?" value={fmtBool(modalData.isClient)} />
-                  <Field label="Project(s)" value={modalData.projects} />
-                  <Field
-                    label="ServiceProvider?"
-                    value={fmtBool(modalData.isServiceProvider)}
-                  />
-                  <Field label="Company(ies)" value={modalData.companies} />
-                  <Field label="Email" value={modalData.email} />
-                  <Field label="Mobile" value={modalData.mobile} />
-                  <Field label="State" value={modalData.state} />
-                  <Field label="Zone" value={modalData.zone} />
-                  <Field label="Status" value={modalData.status} />
-                  <Field label="Created" value={fmtDate(modalData.created)} />
-                  <Field label="Updated" value={fmtDate(modalData.updated)} />
+                <div className="p-4 max-h-[70vh] overflow-auto thin-scrollbar">
+                  <div className="flex flex-col gap-4">
+                    <SectionBlock title="Basic">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <Field label="Code" value={modalData.code} />
+                        <Field label="Status" value={modalData.status} />
+                        <div className="sm:col-span-2">
+                          <Field label="Name" value={modalData.name} />
+                        </div>
+                        <Field label="Client?" value={fmtBool(modalData.isClient)} />
+                        <Field
+                          label="Service Provider?"
+                          value={fmtBool(modalData.isServiceProvider)}
+                        />
+                      </div>
+                    </SectionBlock>
+
+                    <SectionBlock title="Assignments">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div className="sm:col-span-2">
+                          <Field label="Project(s)" value={modalData.projects} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Field label="Company(ies)" value={modalData.companies} />
+                        </div>
+                      </div>
+                    </SectionBlock>
+
+                    <SectionBlock title="Contact">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <Field label="Email" value={modalData.email} />
+                        <Field label="Mobile" value={modalData.mobile} />
+                      </div>
+                    </SectionBlock>
+
+                    <SectionBlock title="Operational">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <Field label="State" value={modalData.state} />
+                        <Field label="Zone" value={modalData.zone} />
+                      </div>
+                    </SectionBlock>
+
+                    <SectionBlock title="Audit">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <Field label="Created" value={fmtDate(modalData.created)} />
+                        <Field label="Updated" value={fmtDate(modalData.updated)} />
+                      </div>
+                    </SectionBlock>
+                  </div>
                 </div>
 
                 <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 text-right">
@@ -1093,6 +1126,20 @@ export default function Users() {
           `}
         </style>
       </div>
+    </div>
+  );
+}
+
+function SectionBlock({ title, children }: { title: string; children: any }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-1 w-5 rounded-full bg-[#FCC020]" />
+        <div className="text-[12px] font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-200">
+          {title}
+        </div>
+      </div>
+      {children}
     </div>
   );
 }
