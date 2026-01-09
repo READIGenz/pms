@@ -6,7 +6,7 @@ import { api } from "../../../../api/client";
 // ---------- Types ----------
 type ProjectLite = { projectId: string; title: string };
 type MembershipLite = {
-  id?: string | null;
+  id?: string | null; // membership id for edit
   role?: string | null;
   project?: { projectId?: string; title?: string } | null;
   company?: { companyId?: string; name?: string } | null;
@@ -27,6 +27,12 @@ type UserLite = {
   state?: { stateId: string; name: string; code: string } | null;
   district?: { districtId: string; name: string } | null;
   operatingZone?: string | null;
+
+  // different codebases use different flags – keep robust
+  isClient?: boolean | null;
+  isPmc?: boolean | null;
+  isPMC?: boolean | null;
+
   userStatus?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -35,16 +41,17 @@ type UserLite = {
 type StateRef = { stateId: string; name: string; code: string };
 type DistrictRef = { districtId: string; name: string; stateId: string };
 
-// ---------- Local date helpers ----------
+// ---------- Local date helpers (no UTC conversions) ----------
 function formatLocalYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${y}-${m}-${day}`; // local YYYY-MM-DD
 }
 function todayLocalISO() {
   return formatLocalYMD(new Date());
 }
+/** Add days to a local YYYY-MM-DD and return local YYYY-MM-DD */
 function addDaysISO(dateISO: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return "";
   const [y, m, d] = dateISO.split("-").map(Number);
@@ -53,65 +60,103 @@ function addDaysISO(dateISO: string, days: number) {
   dt.setDate(dt.getDate() + days);
   return formatLocalYMD(dt);
 }
+/** Render any input as local date-time string (for display only) */
 function fmtLocalDateTime(v: any) {
   if (!v) return "";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v ?? "") : d.toLocaleString();
 }
+/** Normalize any input to local YYYY-MM-DD (for date-only UI) */
 function fmtLocalDateOnly(v: any) {
   if (!v) return "";
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v; // already date-only
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : formatLocalYMD(d);
+}
+function isYmd(s?: string) {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+function maxYMD(a?: string, b?: string) {
+  const A = isYmd(a) ? a! : "";
+  const B = isYmd(b) ? b! : "";
+  if (!A) return B || "";
+  if (!B) return A;
+  return A >= B ? A : B; // string compare works for YYYY-MM-DD
+}
+
+function floorForEditFrom(existingFrom: string): string {
+  const today = todayLocalISO();
+  // lock to existing date only if it's already in the past
+  return existingFrom && existingFrom < today ? existingFrom : "";
 }
 
 // ---------- Small utils ----------
 function displayName(u: UserLite) {
-  return [u.firstName, u.middleName, u.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  return [u.firstName, u.middleName, u.lastName].filter(Boolean).join(" ").trim();
 }
 function phoneDisplay(u: UserLite) {
-  return [u.countryCode, u.phone].filter(Boolean).join(" ").trim();
+  const cc = String(u.countryCode ?? "")
+    .trim()
+    .replace(/^\+/, "");
+  const ph = String(u.phone ?? "").trim();
+  if (cc && ph) return `+${cc}${ph}`;
+  if (ph) return ph;
+  return "";
 }
+
+const ROLE_LC = "pmc"; // <-- IMPORTANT: this is the membership role we filter/sort by
+
 function projectsLabel(u: UserLite): string {
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   const set = new Set(
     mem
-      .filter((m) => String(m?.role || "").toLowerCase() === "pmc")
+      .filter((m) => String(m?.role || "").toLowerCase() === ROLE_LC)
       .map((m) => m?.project?.title)
       .filter(Boolean) as string[]
   );
   return Array.from(set).join(", ");
 }
-function companiesLabel(u: UserLite): string {
+
+/** Robust "is PMC user" detection */
+function isPmcUser(u: UserLite): boolean {
+  if ((u as any).isPmc === true) return true;
+  if ((u as any).isPMC === true) return true;
+
   const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  const set = new Set(
-    mem.map((m) => m?.company?.name).filter(Boolean) as string[]
-  );
-  return Array.from(set).join(", ");
+  return mem.some((m) => String(m?.role || "").toLowerCase() === ROLE_LC);
 }
-function isRoleUser(u: UserLite, role: string): boolean {
-  const mem = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
-  return mem.some(
-    (m) => String(m?.role || "").toLowerCase() === role.toLowerCase()
-  );
+
+// robustly read membership dates regardless of API key shape -> always local YYYY-MM-DD
+function pickMembershipDate(m: any, primary: "validFrom" | "validTo"): string {
+  if (!m) return "";
+  const candidates = [
+    primary, // validFrom / validTo
+    `${primary}Date`, // validFromDate / validToDate
+    primary === "validFrom" ? "from" : "to",
+    primary === "validFrom" ? "startDate" : "endDate",
+    primary === "validFrom" ? "start" : "end",
+    `${primary}_date`,
+    `${primary}At`,
+    `${primary}_at`,
+  ];
+  for (const key of candidates) {
+    if (m[key] != null && m[key] !== "") return fmtLocalDateOnly(m[key]);
+  }
+  return "";
 }
-function alreadyAssignedToSelectedProject(
-  u: UserLite,
-  projectId: string
-): boolean {
+
+// prevent duplicate assignment to selected project
+function alreadyAssignedToSelectedProject(u: UserLite, projectId: string): boolean {
   if (!projectId) return false;
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
+  const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
   return mems.some(
     (m) =>
-      String(m?.role || "").toLowerCase() === "pmc" &&
+      String(m?.role || "").toLowerCase() === ROLE_LC &&
       m?.project?.projectId === projectId
   );
 }
+
+// validity badge computation (inclusive range) — all local YYYY-MM-DD
 function computeValidityLabel(validFrom?: string, validTo?: string): string {
   const from = fmtLocalDateOnly(validFrom);
   const to = fmtLocalDateOnly(validTo);
@@ -121,76 +166,116 @@ function computeValidityLabel(validFrom?: string, validTo?: string): string {
   if (to && today > to) return "Expired";
   return "Valid";
 }
-function pmcCompanyId(u: UserLite): string | null {
-  const mems = Array.isArray(u.userRoleMemberships)
-    ? u.userRoleMemberships
-    : [];
-  const m = mems.find(
-    (m) =>
-      String(m?.role || "").toLowerCase() === "pmc" &&
-      m?.company?.companyId
-  );
-  return (m?.company?.companyId as string) || null;
-}
 
-// ---------- UI atoms (match Consultant) ----------
-const TileHeader = ({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle?: string;
-}) => (
-  <div className="mb-3">
-    <div className="text-sm font-semibold dark:text-white">{title}</div>
+/** CompanyEdit-style section header */
+const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
+  <div className="mb-4">
+    <div className="flex items-center gap-3">
+      <span className="h-5 w-1.5 rounded-full bg-[#FCC020]" />
+      <div className="text-[11px] sm:text-sm font-extrabold tracking-[0.18em] uppercase text-[#00379C] dark:text-[#FCC020]">
+        {title}
+      </div>
+    </div>
     {subtitle ? (
-      <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+      <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{subtitle}</div>
     ) : null}
   </div>
 );
 
-const TILE_SHELL =
-  "bg-white dark:bg-neutral-900 rounded-2xl shadow-sm " +
-  "border border-[#c9ded3] dark:border-neutral-800 p-4 mb-4";
+// --- UI helper: status pill color (same as Companies/Users table) ---
+function statusBadgeClass(status?: string | null) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active")
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  if (s === "inactive" || s === "disabled")
+    return "bg-slate-100 text-slate-800 dark:bg-neutral-800/70 dark:text-slate-200 border-slate-200/60 dark:border-white/10";
+  if (s === "blocked" || s === "suspended")
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/25 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (s === "deleted")
+    return "bg-rose-100 text-rose-800 dark:bg-rose-900/25 dark:text-rose-300 border-rose-200/60 dark:border-rose-700/60";
+  return "bg-blue-100 text-blue-800 dark:bg-blue-900/25 dark:text-blue-300 border-blue-200/60 dark:border-blue-700/60";
+}
 
-const SOFT_SELECT =
-  "h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 pr-8 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60 appearance-none";
+function ValidityBadge({ value }: { value: string }) {
+  const v = (value || "").toLowerCase();
+  let cls =
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-white/5 dark:text-slate-200 dark:border-white/10";
 
-const SOFT_INPUT =
-  "h-9 w-full rounded-full border border-slate-200/80 dark:border-neutral-800 " +
-  "bg-white dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white placeholder:text-gray-400 shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent";
+  if (v === "valid") {
+    cls =
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-900/40";
+  } else if (v === "yet to start") {
+    cls =
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-900/40";
+  } else if (v === "expired") {
+    cls =
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-900/40";
+  }
 
-const SOFT_DATE =
-  "mt-1 h-9 w-full rounded-full border border-[#c9ded3] dark:border-neutral-800 " +
-  "bg-[#f7fbf9] dark:bg-neutral-900 px-3 text-xs sm:text-sm " +
-  "text-slate-800 dark:text-white shadow-sm " +
-  "focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400/60";
+  return (
+    <span
+      className={
+        "inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium " +
+        cls
+      }
+    >
+      {value || "—"}
+    </span>
+  );
+}
+
+// ===== UI constants (CompanyEdit look) =====
+const CARD =
+  "bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm p-5";
+
+// Smaller pills (more compact + cleaner)
+const PILL_INPUT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent";
+
+const PILL_SELECT =
+  "h-9 w-full rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 px-3 pr-9 text-[13px] text-slate-900 dark:text-slate-100 shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-[#00379C]/20 dark:focus:ring-[#FCC020]/20 focus:border-transparent appearance-none";
+
+const PILL_DATE = PILL_INPUT;
+
+// Buttons EXACT same sizing as CompanyEdit/UserEdit pages
+const btnSmBase =
+  "h-8 px-3 rounded-full text-[11px] font-semibold shadow-sm hover:brightness-105 " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
+const BTN_SECONDARY =
+  `${btnSmBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 ` +
+  "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
+const BTN_PRIMARY = `${btnSmBase} bg-[#00379C] text-white hover:brightness-110 focus:ring-[#00379C]/35`;
+
+const ICON_BTN =
+  "inline-flex items-center justify-center h-8 w-8 rounded-full border border-slate-200 dark:border-white/10 " +
+  "bg-white dark:bg-neutral-950 hover:bg-slate-50 dark:hover:bg-white/5";
 
 export default function PmcAssignments() {
   const nav = useNavigate();
 
-  // --- Auth gate ---
+  // --- Auth gate only (keep Assignments page heading consistent) ---
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) nav("/login", { replace: true });
   }, [nav]);
 
+  // Common state
   const [err, setErr] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
-  // Tile 2 (role assignment)
-  const [picked, setPicked] = useState<UserLite[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Tile 2 (pmc assignment)
+  const [pmcs, setPmcs] = useState<UserLite[]>([]);
+  const [selectedPmcIds, setSelectedPmcIds] = useState<Set<string>>(new Set());
   const [validFrom, setValidFrom] = useState<string>(todayLocalISO());
   const [validTo, setValidTo] = useState<string>("");
 
-  const [movedIds, setMovedIds] = useState<Set<string>>(new Set());
+  const [movedPmcIds, setMovedPmcIds] = useState<Set<string>>(new Set());
   const [assignLoading, setAssignLoading] = useState(false);
 
   // Load projects
@@ -211,85 +296,37 @@ export default function PmcAssignments() {
         setProjects(minimal);
       } catch (e: any) {
         if (!alive) return;
-        setErr(
-          e?.response?.data?.error || e?.message || "Failed to load projects."
-        );
+        setErr(e?.response?.data?.error || e?.message || "Failed to load projects.");
       }
     })();
     return () => {
       alive = false;
     };
-  }, [selectedProjectId]);
+  }, []);
 
-  // Tile 3 (browse role users)
+  // Tile 3 (browse pmcs) data + refs
   const [allUsers, setAllUsers] = useState<UserLite[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
 
   const [statesRef, setStatesRef] = useState<StateRef[]>([]);
   const [districtsRef, setDistrictsRef] = useState<DistrictRef[]>([]);
-  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "Active" | "Inactive"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive">("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [districtFilter, setDistrictFilter] = useState<string>("");
 
   const [sortKey, setSortKey] = useState<
-    | "code"
-    | "name"
-    | "company"
-    | "projects"
-    | "mobile"
-    | "email"
-    | "state"
-    | "zone"
-    | "status"
-    | "updated"
+    "code" | "name" | "projects" | "mobile" | "email" | "state" | "zone" | "status" | "updated"
   >("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const companyOptions = useMemo<string[]>(() => {
-    const set = new Set<string>();
-    for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
-      for (const m of mems) {
-        if (String(m?.role || "").toLowerCase() !== "pmc") continue;
-        const name = (m?.company?.name || "").trim();
-        if (name) set.add(name);
-      }
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [allUsers]);
-
-  const hasActiveFilters =
-    q.trim() !== "" ||
-    statusFilter !== "all" ||
-    stateFilter !== "" ||
-    districtFilter !== "" ||
-    companyFilter !== "";
-
-  const clearFilters = () => {
-    setQ("");
-    setStatusFilter("all");
-    setStateFilter("");
-    setDistrictFilter("");
-    setCompanyFilter("");
-    setPage(1);
-  };
-
-  useEffect(() => {
-    if (companyFilter && !companyOptions.includes(companyFilter)) {
-      setCompanyFilter("");
-    }
-  }, [companyOptions, companyFilter]);
+  const [origFrom, setOrigFrom] = useState<string>("");
+  const [origTo, setOrigTo] = useState<string>("");
+  const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -305,9 +342,7 @@ export default function PmcAssignments() {
         setAllUsers(list);
       } catch (e: any) {
         if (!alive) return;
-        setUsersErr(
-          e?.response?.data?.error || e?.message || "Failed to load users."
-        );
+        setUsersErr(e?.response?.data?.error || e?.message || "Failed to load users.");
       } finally {
         if (alive) setUsersLoading(false);
       }
@@ -361,26 +396,23 @@ export default function PmcAssignments() {
     action: string;
     code: string;
     name: string;
-    company: string;
     projects: string;
     mobile: string;
     email: string;
     state: string;
     zone: string;
     status: string;
-    updated: string;
+    updated: string; // raw from API
     _id: string;
     _raw?: UserLite;
   };
 
-  const rowsAll = useMemo<Row[]>(() => {
-    const moved = movedIds;
+  const pmcRows = useMemo<Row[]>(() => {
+    const moved = movedPmcIds;
 
-    const onlyRole = allUsers
-      .filter((u) => isRoleUser(u, "PMC"))
-      .filter((u) => !moved.has(u.userId));
+    const onlyPmcs = allUsers.filter(isPmcUser).filter((u) => !moved.has(u.userId));
 
-    const filtered = onlyRole.filter((u) => {
+    const filtered = onlyPmcs.filter((u) => {
       if (statusFilter !== "all") {
         if (String(u.userStatus || "") !== statusFilter) return false;
       }
@@ -392,18 +424,6 @@ export default function PmcAssignments() {
         const dName = u?.district?.name || "";
         if (dName.trim() !== districtFilter.trim()) return false;
       }
-      if (companyFilter) {
-        const mems = Array.isArray(u.userRoleMemberships)
-          ? u.userRoleMemberships
-          : [];
-        const companyNames = new Set(
-          mems
-            .filter((m) => String(m?.role || "").toLowerCase() === "pmc")
-            .map((m) => (m?.company?.name || "").trim())
-            .filter(Boolean) as string[]
-        );
-        if (!companyNames.has(companyFilter.trim())) return false;
-      }
       return true;
     });
 
@@ -413,7 +433,6 @@ export default function PmcAssignments() {
           const hay = [
             u.code || "",
             displayName(u),
-            companiesLabel(u),
             projectsLabel(u),
             phoneDisplay(u),
             u.email || "",
@@ -433,14 +452,13 @@ export default function PmcAssignments() {
       action: "",
       code: u.code || "",
       name: displayName(u),
-      company: companiesLabel(u),
       projects: projectsLabel(u),
       mobile: phoneDisplay(u),
       email: u.email || "",
       state: u?.state?.name || "",
       zone: u.operatingZone || "",
       status: u.userStatus || "",
-      updated: u.updatedAt || "",
+      updated: u.updatedAt || "", // keep raw; format on render
       _id: u.userId,
       _raw: u,
     }));
@@ -449,8 +467,8 @@ export default function PmcAssignments() {
     const dir = sortDir;
     const cmp = (a: any, b: any) => {
       if (a === b) return 0;
-      if (a == null) return -1;
-      if (b == null) return 1;
+      if (a === null || a === undefined) return -1;
+      if (b === null || b === undefined) return 1;
       const aTime = Date.parse(String(a));
       const bTime = Date.parse(String(b));
       if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
@@ -465,47 +483,32 @@ export default function PmcAssignments() {
     });
 
     return rows;
-  }, [
-    allUsers,
-    statusFilter,
-    stateFilter,
-    districtFilter,
-    q,
-    sortKey,
-    sortDir,
-    movedIds,
-    companyFilter,
-  ]);
+  }, [allUsers, statusFilter, stateFilter, districtFilter, q, sortKey, sortDir, movedPmcIds]);
 
-  const total = rowsAll.length;
+  const total = pmcRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageSafe = Math.min(Math.max(1, page), totalPages);
   const rowsPaged = useMemo<Row[]>(() => {
     const start = (pageSafe - 1) * pageSize;
-    return rowsAll.slice(start, start + pageSize);
-  }, [rowsAll, pageSafe, pageSize]);
+    return pmcRows.slice(start, start + pageSize);
+  }, [pmcRows, pageSafe, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
-  }, [totalPages]);
+  }, [totalPages, page, setPage]);
 
   // Submit (assign)
   const canSubmit =
-    selectedProjectId &&
-    selectedIds.size > 0 &&
-    validFrom &&
-    validTo &&
-    !assignLoading;
+    selectedProjectId && selectedPmcIds.size > 0 && validFrom && validTo && !assignLoading;
 
   const onAssign = async () => {
     const project = projects.find((p) => p.projectId === selectedProjectId);
     const projectTitle = project?.title || "(Unknown Project)";
-    const selected = picked.filter((u) => selectedIds.has(u.userId));
+    const selected = pmcs.filter((u) => selectedPmcIds.has(u.userId));
     const names = selected.map(displayName).filter(Boolean);
 
-    const dupes = selected.filter((u) =>
-      alreadyAssignedToSelectedProject(u, selectedProjectId)
-    );
+    // duplicate guard
+    const dupes = selected.filter((u) => alreadyAssignedToSelectedProject(u, selectedProjectId));
     if (dupes.length > 0) {
       const lines = dupes.map((u) => {
         const name = displayName(u) || "(No name)";
@@ -515,23 +518,24 @@ export default function PmcAssignments() {
       return;
     }
 
-    const ok = window.confirm(
+    const summary =
       `Please Confirm your assignment:\n\n` +
-        `Project: ${projectTitle}\n` +
-        `PMCs: ${names.length ? names.join(", ") : "—"}\n` +
-        `Validity: From ${validFrom} To ${validTo}\n\n` +
-        `Press OK to assign, or Cancel to go back.`
-    );
+      `Project: ${projectTitle}\n` +
+      `PMCs: ${names.length ? names.join(", ") : "—"}\n` +
+      `Validity: From ${validFrom} To ${validTo}\n\n` +
+      `Press OK to assign, or Cancel to go back.`;
+
+    const ok = window.confirm(summary);
     if (!ok) return;
 
     const items = selected.map((u) => ({
       userId: u.userId,
-      role: "PMC",
+      role: "PMC", // server-side role string
       scopeType: "Project",
       projectId: selectedProjectId,
-      companyId: pmcCompanyId(u),
-      validFrom,
-      validTo,
+      companyId: null,
+      validFrom, // "YYYY-MM-DD" (local)
+      validTo, // "YYYY-MM-DD" (local)
       isDefault: false,
     }));
 
@@ -539,15 +543,16 @@ export default function PmcAssignments() {
       setAssignLoading(true);
       setErr(null);
       const { data } = await api.post("/admin/assignments/bulk", { items });
-      alert(
-        `Assigned ${data?.created ?? items.length} PMC(s) to "${projectTitle}".`
-      );
 
-      setSelectedIds(new Set());
-      setMovedIds(new Set());
+      alert(`Assigned ${data?.created ?? items.length} pmc(s) to "${projectTitle}".`);
+
+      // Reset Tile 2
+      setSelectedPmcIds(new Set());
+      setMovedPmcIds(new Set());
       setValidFrom("");
       setValidTo("");
 
+      // Refresh users list, so Tile 4 shows the new assignments immediately
       try {
         const { data: fresh } = await api.get("/admin/users", {
           params: { includeMemberships: "1" },
@@ -570,7 +575,7 @@ export default function PmcAssignments() {
     }
   };
 
-  // Move from Tile 3 to Tile 2
+  // Move user from Tile 3 to Tile 2
   const onMoveToTile2 = (user: UserLite) => {
     if (alreadyAssignedToSelectedProject(user, selectedProjectId)) {
       const projectTitle =
@@ -582,15 +587,14 @@ export default function PmcAssignments() {
       );
       return;
     }
-    setPicked((prev) =>
-      prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]
-    );
-    setMovedIds((prev) => {
+
+    setPmcs((prev) => (prev.some((u) => u.userId === user.userId) ? prev : [user, ...prev]));
+    setMovedPmcIds((prev) => {
       const next = new Set(prev);
       next.add(user.userId);
       return next;
     });
-    setSelectedIds((prev) => {
+    setSelectedPmcIds((prev) => {
       const next = new Set(prev);
       next.add(user.userId);
       return next;
@@ -599,13 +603,13 @@ export default function PmcAssignments() {
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const movedList = useMemo<UserLite[]>(() => {
-    if (movedIds.size === 0) return [];
-    return picked.filter((u) => movedIds.has(u.userId));
-  }, [picked, movedIds]);
+  const movedPmcList = useMemo<UserLite[]>(() => {
+    if (movedPmcIds.size === 0) return [];
+    return pmcs.filter((u) => movedPmcIds.has(u.userId));
+  }, [pmcs, movedPmcIds]);
 
-  const toggleChecked = (id: string) => {
-    setSelectedIds((prev) => {
+  const togglePmcChecked = (id: string) => {
+    setSelectedPmcIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -617,19 +621,37 @@ export default function PmcAssignments() {
     if (validFrom && validTo && validTo <= validFrom) setValidTo("");
   }, [validFrom, validTo]);
 
-  // ---- Tile 4 data: flatten PMC assignments
+  const onCancelTile2 = () => {
+    setValidFrom("");
+    setValidTo("");
+    setSelectedPmcIds(new Set());
+    setMovedPmcIds(new Set());
+    const el = document.querySelector('[data-tile-name="Browse PMCs"]');
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const hasActiveFilters =
+    q.trim() !== "" || statusFilter !== "all" || stateFilter !== "" || districtFilter !== "";
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setDistrictFilter("");
+    setPage(1);
+  };
+
+  // ---- Tile 4 data: flatten "PMC" memberships with a project
   type AssignmentRow = {
     userId: string;
     userName: string;
     projectId: string;
     projectTitle: string;
-    company: string;
-    projects: string;
     status: string;
-    validFrom: string;
-    validTo: string;
+    validFrom: string; // local YYYY-MM-DD
+    validTo: string; // local YYYY-MM-DD
     validity: string;
-    updated: string;
+    updated: string; // raw ISO/string from API; format on render
     membershipId?: string | null;
     _user?: UserLite;
     _mem?: MembershipLite;
@@ -638,42 +660,20 @@ export default function PmcAssignments() {
   const assignedRows = useMemo<AssignmentRow[]>(() => {
     const rows: AssignmentRow[] = [];
     for (const u of allUsers) {
-      const mems = Array.isArray(u.userRoleMemberships)
-        ? u.userRoleMemberships
-        : [];
+      const mems = Array.isArray(u.userRoleMemberships) ? u.userRoleMemberships : [];
       for (const m of mems) {
-        if (String(m?.role || "").toLowerCase() !== "pmc") continue;
+        if (String(m?.role || "").toLowerCase() !== ROLE_LC) continue;
         const pj = m?.project;
         if (!pj?.projectId || !pj?.title) continue;
 
-        const vf = fmtLocalDateOnly(
-          m.validFrom ??
-            (m as any).validFromDate ??
-            (m as any).from ??
-            (m as any).startDate ??
-            (m as any).end ??
-            (m as any).valid_from ??
-            (m as any).validFromAt ??
-            (m as any).valid_from_at
-        );
-        const vt = fmtLocalDateOnly(
-          m.validTo ??
-            (m as any).validToDate ??
-            (m as any).to ??
-            (m as any).endDate ??
-            (m as any).end ??
-            (m as any).valid_to ??
-            (m as any).validToAt ??
-            (m as any).valid_to_at
-        );
+        const vf = pickMembershipDate(m, "validFrom"); // local YYYY-MM-DD
+        const vt = pickMembershipDate(m, "validTo"); // local YYYY-MM-DD
 
         rows.push({
           userId: u.userId,
           userName: displayName(u) || "(No name)",
           projectId: pj.projectId,
           projectTitle: pj.title,
-          company: m?.company?.name || "",
-          projects: pj.title,
           status: u.userStatus || "",
           validFrom: vf,
           validTo: vt,
@@ -688,14 +688,9 @@ export default function PmcAssignments() {
     return rows;
   }, [allUsers]);
 
+  // ===== Tile 4 sort state + sorted rows =====
   const [aSortKey, setASortKey] = useState<
-    | "userName"
-    | "company"
-    | "projects"
-    | "status"
-    | "validFrom"
-    | "validTo"
-    | "updated"
+    "userName" | "projectTitle" | "status" | "validFrom" | "validTo" | "validity" | "updated"
   >("updated");
   const [aSortDir, setASortDir] = useState<"asc" | "desc">("desc");
 
@@ -722,96 +717,43 @@ export default function PmcAssignments() {
     return rows;
   }, [assignedRows, aSortKey, aSortDir]);
 
-  // ---- Helpers for refreshing and robust membership resolution (for delete) ----
-  const refetchUsers = async (): Promise<UserLite[]> => {
-    const { data } = await api.get("/admin/users", {
-      params: { includeMemberships: "1" },
-    });
-    const list = Array.isArray(data) ? data : data?.users ?? [];
-    setAllUsers(list as UserLite[]);
-    return list as UserLite[];
-  };
+  // ===== Tile 4 pagination =====
+  const [aPage, setAPage] = useState(1);
+  const aPageSize = pageSize; // use same selector value as Browse PMCs
+  const aTotal = assignedSortedRows.length;
+  const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
+  const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
+  const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
+    const start = (aPageSafe - 1) * aPageSize;
+    return assignedSortedRows.slice(start, start + aPageSize);
+  }, [assignedSortedRows, aPageSafe, aPageSize]);
+  useEffect(() => {
+    if (aPage > aTotalPages) setAPage(aTotalPages);
+  }, [aTotalPages, aPage]);
 
-  const normalizeId = (v: any) => String(v ?? "").trim();
-
-  const findCurrentMembershipId = async (userId: string, projectId: string) => {
-    const pickBest = (mems: any[]) => {
-      const candidates = mems
-        .filter((mem) => String(mem?.role || "").toLowerCase() === "pmc")
-        .filter(
-          (mem) =>
-            normalizeId(mem?.project?.projectId) === normalizeId(projectId)
-        );
-
-      if (candidates.length === 0) return null;
-
-      candidates.sort((a, b) => {
-        const au = Date.parse(a?.updatedAt ?? "") || 0;
-        const bu = Date.parse(b?.updatedAt ?? "") || 0;
-        if (au !== bu) return -(au - bu);
-        const af =
-          Date.parse(
-            a.validFrom ??
-              a.validFromDate ??
-              a.from ??
-              a.startDate ??
-              a.valid_from ??
-              a.validFromAt ??
-              a.valid_from_at ??
-              ""
-          ) || 0;
-        const bf =
-          Date.parse(
-            b.validFrom ??
-              b.validFromDate ??
-              b.from ??
-              b.startDate ??
-              b.valid_from ??
-              b.validFromAt ??
-              b.valid_from_at ??
-              ""
-          ) || 0;
-        if (af !== bf) return -(af - bf);
-        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
-      });
-
-      const best = candidates[0];
-      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as
-        | string
-        | null;
-    };
-
-    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
-
-    let id = match(allUsers.find((u) => u.userId === userId));
-    if (id) return id;
-
-    const users = await refetchUsers();
-    id = match(users.find((u) => u.userId === userId));
-    return id ?? null;
-  };
-
-  const [deleting, setDeleting] = useState(false);
+  // Companies-table style tiny controls (used for pagination)
+  const ctl =
+    "h-8 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neutral-950 active:scale-[0.98]";
+  const ctlLight =
+    "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
+    "dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 dark:hover:bg-white/5";
 
   // ===== Modals =====
   const [viewOpen, setViewOpen] = useState(false);
   const [viewRow, setViewRow] = useState<AssignmentRow | null>(null);
+
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState<AssignmentRow | null>(null);
   const [editFrom, setEditFrom] = useState<string>("");
   const [editTo, setEditTo] = useState<string>("");
-  const [origFrom, setOrigFrom] = useState<string>("");
-  const [origTo, setOrigTo] = useState<string>("");
-  const [pendingEditAlert, setPendingEditAlert] = useState<string | null>(
-    null
-  );
+  const [deleting, setDeleting] = useState(false);
 
   const openView = (row: AssignmentRow) => {
     setViewRow(row);
     setViewOpen(true);
   };
   const openEdit = (row: AssignmentRow) => {
-    setDeleting(false);
     setEditRow(row);
 
     const currentFrom = fmtLocalDateOnly(row.validFrom) || "";
@@ -836,11 +778,72 @@ export default function PmcAssignments() {
     }
   }, [editOpen, pendingEditAlert]);
 
+  useEffect(() => {
+    if (!editOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (deleting) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        setEditOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editOpen, deleting]);
+
+  // ---- Helpers for refreshing and robust membership resolution (for delete) ----
+  const refetchUsers = async (): Promise<UserLite[]> => {
+    const { data } = await api.get("/admin/users", {
+      params: { includeMemberships: "1" },
+    });
+    const list = Array.isArray(data) ? data : data?.users ?? [];
+    setAllUsers(list);
+    return list as UserLite[];
+  };
+
+  const normalizeId = (v: any) => String(v ?? "").trim();
+
+  /** Try to find the freshest membership id for (userId, projectId) */
+  const findCurrentMembershipId = async (userId: string, projectId: string) => {
+    const pickBest = (mems: any[]) => {
+      const candidates = mems
+        .filter((mem) => String(mem?.role || "").toLowerCase() === ROLE_LC)
+        .filter((mem) => normalizeId(mem?.project?.projectId) === normalizeId(projectId));
+
+      if (candidates.length === 0) return null;
+
+      candidates.sort((a, b) => {
+        const au = Date.parse(a?.updatedAt ?? "") || 0;
+        const bu = Date.parse(b?.updatedAt ?? "") || 0;
+        if (au !== bu) return bu - au;
+        const af = Date.parse(pickMembershipDate(a, "validFrom")) || 0;
+        const bf = Date.parse(pickMembershipDate(b, "validFrom")) || 0;
+        if (af !== bf) return bf - af;
+        return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
+      });
+
+      const best = candidates[0];
+      return (best?.id ?? best?._id ?? best?.membershipId ?? null) as string | null;
+    };
+
+    const match = (u?: UserLite | null) => pickBest(u?.userRoleMemberships || []);
+
+    let id = match(allUsers.find((u) => u.userId === userId));
+    if (id) return id;
+
+    const users = await refetchUsers();
+    id = match(users.find((u) => u.userId === userId));
+    return id ?? null;
+  };
+
   const onHardDeleteFromEdit = async () => {
     if (!editRow) return;
     const resolvedId =
-      editRow.membershipId ||
-      (await findCurrentMembershipId(editRow.userId, editRow.projectId));
+      editRow.membershipId || (await findCurrentMembershipId(editRow.userId, editRow.projectId));
 
     if (!resolvedId) {
       await refetchUsers();
@@ -864,9 +867,7 @@ export default function PmcAssignments() {
       await refetchUsers();
       setEditOpen(false);
       setEditRow(null);
-      setPendingEditAlert(
-        `Unassigned ${editRow.userName} from ${editRow.projectTitle}.`
-      );
+      setPendingEditAlert(`Unassigned ${editRow.userName} from ${editRow.projectTitle}.`);
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 404) {
@@ -887,142 +888,102 @@ export default function PmcAssignments() {
     }
   };
 
-  useEffect(() => {
-    if (!editOpen) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (deleting) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        setEditOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editOpen, deleting]);
-
-  // ===== Assignments pagination (shares same pageSize) =====
-  const [aPage, setAPage] = useState(1);
-  const aPageSize = pageSize;
-  const aTotal = assignedSortedRows.length;
-  const aTotalPages = Math.max(1, Math.ceil(aTotal / aPageSize));
-  const aPageSafe = Math.min(Math.max(1, aPage), aTotalPages);
-
-  const assignedRowsPaged = useMemo<AssignmentRow[]>(() => {
-    const start = (aPageSafe - 1) * aPageSize;
-    return assignedSortedRows.slice(start, start + aPageSize);
-  }, [assignedSortedRows, aPageSafe, aPageSize]);
-
-  useEffect(() => {
-    if (aPage > aTotalPages) setAPage(aTotalPages);
-  }, [aTotalPages, aPage]);
+  const existingFromForMin = fmtLocalDateOnly(editRow?.validFrom || "");
+  const _editFromMin = floorForEditFrom(existingFromForMin);
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold dark:text-white">
-          PMC Assignments
-        </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Projects · Roles & Options · <b>Browse PMCs</b> · PMC Assignments
-        </p>
-        {err && (
-          <p className="mt-2 text-sm text-red-700 dark:text-red-400">{err}</p>
-        )}
+    <div className="w-full">
+      {/* Page Heading */}
+      <div className="mb-4">
+        <div className="text-xl font-extrabold text-slate-900 dark:text-white">PMC Assignments</div>
+        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Assign PMCs to projects and manage validity.
+        </div>
+        <div className="mt-2 h-1 w-10 rounded-full bg-[#FCC020]" />
       </div>
 
-      {/* Tile 1 — Projects */}
-      <section
-        className={TILE_SHELL}
-        aria-label="Tile: Projects"
-        data-tile-name="Projects"
-      >
-        <TileHeader title="Projects" subtitle="Choose the project to assign." />
-        <div className="max-w-xl mt-2">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+      {err && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+          {err}
+        </div>
+      )}
+
+      {/* Section 1 — Projects */}
+      <section className={CARD + " mb-4"} aria-label="Projects" data-tile-name="Projects">
+        <SectionHeader title="Projects" subtitle="Choose the project to assign PMCs to." />
+
+        <div className="max-w-xl">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
             Project
           </label>
+
           <div className="relative">
             <select
-              className={SOFT_SELECT}
+              className={PILL_SELECT}
               value={selectedProjectId}
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
                 setPage(1);
-                setAPage(1);
               }}
               title="Select project"
             >
-              {projects.length === 0 ? (
-                <option value="">Loading…</option>
-              ) : (
-                <>
-                  <option value="">Select a project…</option>
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.title}
-                    </option>
-                  ))}
-                </>
-              )}
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.title}
+                </option>
+              ))}
             </select>
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
               ▼
             </span>
           </div>
         </div>
       </section>
 
-      {/* Tile 2 — Roles & Options (PMC) */}
-      <section
-        className={TILE_SHELL}
-        aria-label="Tile: Roles & Options"
-        data-tile-name="Roles & Options"
-      >
-        <TileHeader
-          title="Roles & Options"
-          subtitle="Pick from moved PMCs & set validity."
-        />
+      {/* Section 2 — Roles & Options */}
+      <section className={CARD + " mb-4"} aria-label="Roles & Options" data-tile-name="Roles & Options">
+        <SectionHeader title="Roles & Options" subtitle="Pick from moved PMCs and set validity." />
 
-        {/* IMPORTANT: stacked layout (Validity below moved list) */}
-        <div className="mt-3 space-y-4">
-          {/* Subtile: moved list */}
-          <div className="space-y-3" aria-label="Subtile: Moved PMCs">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
-              Moved PMCs (select with checkbox)
-            </label>
+        <div className="mt-2 space-y-5">
+          {/* Moved PMCs */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
+                Moved PMCs
+              </div>
 
-            <div
-              className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-auto bg-slate-50/40 dark:bg-neutral-900/60"
-              style={{ maxHeight: 300 }}
-            >
-              {movedIds.size === 0 ? (
-                <div className="p-3 text-sm text-gray-600 dark:text-gray-300">
-                  <b>Move PMCs</b> from list below to assign roles.
+              {movedPmcList.length > 0 && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {selectedPmcIds.size}/{movedPmcList.length} selected
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 overflow-auto bg-slate-50/60 dark:bg-white/5">
+              {movedPmcIds.size === 0 ? (
+                <div className="p-3 text-sm text-slate-600 dark:text-slate-300">
+                  <b>Move PMCs</b> from the list below to assign them for the selected project.
                 </div>
               ) : (
-                <ul className="divide-y dark:divide-neutral-800">
-                  {movedList.map((u: UserLite) => {
-                    const checked = selectedIds.has(u.userId);
+                <ul className="divide-y divide-slate-200 dark:divide-white/10">
+                  {movedPmcList.map((u) => {
+                    const checked = selectedPmcIds.has(u.userId);
                     return (
-                      <li
-                        key={u.userId}
-                        className="flex items-center justify-between gap-3 px-3 py-2"
-                      >
+                      <li key={u.userId} className="px-3 py-2 flex items-center justify-between gap-3">
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 dark:border-white/20 accent-[#00379C]"
                             checked={checked}
-                            onChange={() => toggleChecked(u.userId)}
+                            onChange={() => togglePmcChecked(u.userId)}
                           />
                           <div className="flex flex-col">
-                            <div className="font-medium dark:text-white">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
                               {displayName(u) || "(No name)"}
                             </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                               {u.code || ""}
                               {u.code ? " · " : ""}
                               {u.email || ""}
@@ -1031,7 +992,8 @@ export default function PmcAssignments() {
                             </div>
                           </div>
                         </label>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-neutral-700">
+
+                        <span className="inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-neutral-950">
                           {u.userStatus || "—"}
                         </span>
                       </li>
@@ -1041,89 +1003,71 @@ export default function PmcAssignments() {
               )}
             </div>
 
-            {movedList.length > 0 && (
-              <div className="flex gap-2">
+            {movedPmcList.length > 0 && (
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                  onClick={() =>
-                    setSelectedIds(new Set(movedList.map((m) => m.userId)))
-                  }
+                  className={BTN_SECONDARY}
+                  onClick={() => setSelectedPmcIds(new Set(movedPmcList.map((m) => m.userId)))}
                 >
                   Select All
                 </button>
-                <button
-                  className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear
+                <button className={BTN_SECONDARY} onClick={() => setSelectedPmcIds(new Set())}>
+                  Clear Selection
                 </button>
               </div>
             )}
           </div>
 
-          {/* Subtile: Validity */}
-          <div className="space-y-3" aria-label="Subtile: Validity">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
+          {/* Validity */}
+          <div className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300">
               Validity
-            </label>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid From
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid From</div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validFrom}
                   min={todayLocalISO()}
                   onChange={(e) => setValidFrom(e.target.value)}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid To
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid To</div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={validTo}
-                  min={validFrom || todayLocalISO()}
+                  min={validFrom || todayLocalISO() || undefined}
                   onChange={(e) => setValidTo(e.target.value)}
+                  title={validFrom ? `Choose a date on/after ${validFrom}` : "Choose end date"}
                 />
+                {validFrom && !validTo && (
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Choose a date on or after <b>{validFrom}</b>.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-2 flex items-center justify-end gap-2">
+            <div className="mt-1 flex items-center justify-end gap-2">
               <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => {
-                  setValidFrom("");
-                  setValidTo("");
-                  setSelectedIds(new Set());
-                  setMovedIds(new Set());
-                  const el = document.querySelector(
-                    '[data-tile-name="Browse PMCs"]'
-                  );
-                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
+                className={BTN_SECONDARY}
+                onClick={onCancelTile2}
+                title="Clear dates and move PMCs back to Browse PMCs"
               >
                 Cancel
               </button>
+
               <button
-                className={
-                  "h-9 px-4 rounded-full text-xs sm:text-sm text-white shadow-sm " +
-                  (canSubmit
-                    ? "bg-emerald-600 hover:bg-emerald-700"
-                    : "bg-emerald-600/50 cursor-not-allowed")
-                }
+                className={BTN_PRIMARY}
                 onClick={onAssign}
                 disabled={!canSubmit}
-                title={
-                  canSubmit
-                    ? "Assign selected PMCs to project"
-                    : "Select all required fields"
-                }
+                title={canSubmit ? "Assign selected PMCs to project" : "Select project, PMCs and validity dates"}
               >
                 {assignLoading ? "Assigning…" : "Assign"}
               </button>
@@ -1132,28 +1076,21 @@ export default function PmcAssignments() {
         </div>
       </section>
 
-      {/* Tile 3 — Browse PMCs */}
-      <section
-        className={TILE_SHELL}
-        aria-label="Tile: Browse PMCs"
-        data-tile-name="Browse PMCs"
-      >
-        <TileHeader
-          title="Browse PMCs"
-          subtitle="Search and filter; sort columns; paginate. Use the up arrow to move PMCs to Tile 2."
-        />
+      {/* Section 3 — Browse PMCs */}
+      <section className={CARD + " mb-4"} aria-label="Browse PMCs" data-tile-name="Browse PMCs">
+        <SectionHeader title="Browse PMCs" subtitle="Search, filter, sort and move PMCs into the selection." />
 
-        {/* === CONTROLS (match Consultant) === */}
-        <div className="mb-3">
-          {/* Line 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        {/* Controls */}
+        <div className="mb-4 space-y-3">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+            {/* Search */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Search
               </label>
               <input
-                className={SOFT_INPUT}
-                placeholder="Code, name, company, project, phone, email…"
+                className={PILL_INPUT}
+                placeholder="Code, name, project, phone, email…"
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
@@ -1162,13 +1099,14 @@ export default function PmcAssignments() {
               />
             </div>
 
+            {/* Status */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 Status
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as any);
@@ -1179,19 +1117,20 @@ export default function PmcAssignments() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* State */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 State
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={stateFilter}
                   onChange={(e) => {
                     setStateFilter(e.target.value);
@@ -1206,28 +1145,27 @@ export default function PmcAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
 
+            {/* District */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                 District
               </label>
               <div className="relative">
                 <select
-                  className={SOFT_SELECT}
+                  className={PILL_SELECT}
                   value={districtFilter}
                   onChange={(e) => {
                     setDistrictFilter(e.target.value);
                     setPage(1);
                   }}
                   disabled={!stateFilter}
-                  title={
-                    stateFilter ? "Filter by district" : "Select a state first"
-                  }
+                  title={stateFilter ? "Filter by district" : "Select a state first"}
                 >
                   <option value="">All Districts</option>
                   {districtsRef.map((d) => (
@@ -1236,85 +1174,58 @@ export default function PmcAssignments() {
                     </option>
                   ))}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
-                Company
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={companyFilter}
-                  onChange={(e) => {
-                    setCompanyFilter(e.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="">All Companies</option>
-                  {companyOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
                   ▼
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Line 2 */}
-          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div className="flex items-end gap-2">
+          {/* Bottom controls */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap items-end gap-2">
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block">
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
                   Sort By
                 </label>
-                <div className="relative">
-                  <select
-                    className={SOFT_SELECT}
-                    value={sortKey}
-                    onChange={(e) => {
-                      setSortKey(e.target.value as any);
-                      setPage(1);
-                    }}
+
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <select
+                      className={PILL_SELECT}
+                      value={sortKey}
+                      onChange={(e) => {
+                        setSortKey(e.target.value as any);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="code">Code</option>
+                      <option value="name">Name</option>
+                      <option value="projects">Projects</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="email">Email</option>
+                      <option value="state">State</option>
+                      <option value="zone">Zone</option>
+                      <option value="status">Status</option>
+                      <option value="updated">Updated</option>
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                      ▼
+                    </span>
+                  </div>
+
+                  <button
+                    className={ICON_BTN}
+                    onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                    title="Toggle sort direction"
                   >
-                    <option value="name">Name</option>
-                    <option value="code">Code</option>
-                    <option value="company">Company</option>
-                    <option value="projects">Projects</option>
-                    <option value="mobile">Mobile</option>
-                    <option value="email">Email</option>
-                    <option value="state">State</option>
-                    <option value="zone">Zone</option>
-                    <option value="status">Status</option>
-                    <option value="updated">Updated</option>
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                    ▼
-                  </span>
+                    <span className="text-[12px]">{sortDir === "asc" ? "▲" : "▼"}</span>
+                  </button>
                 </div>
               </div>
 
               <button
-                className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                onClick={() =>
-                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-                }
-                title="Toggle sort direction"
-                aria-label="Toggle sort direction"
-              >
-                {sortDir === "asc" ? "▲" : "▼"}
-              </button>
-
-              <button
-                className="h-9 px-3 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                className={BTN_SECONDARY}
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
                 title="Clear all filters"
@@ -1323,93 +1234,109 @@ export default function PmcAssignments() {
               </button>
             </div>
 
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1 block text-left md:text-right">
-                Rows per page
-              </label>
-              <div className="relative">
-                <select
-                  className={SOFT_SELECT}
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                    setAPage(1);
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-emerald-600/80">
-                  ▼
-                </span>
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-1 block">
+                  Rows per page
+                </label>
+                <div className="relative">
+                  <select
+                    className={PILL_SELECT}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                      setAPage(1);
+                    }}
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-slate-500 dark:text-slate-300">
+                    ▼
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Table shell */}
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
-            {usersErr && (
-              <div className="p-3 text-sm text-red-700 dark:text-red-400 border-b dark:border-neutral-800">
-                {usersErr}
-              </div>
-            )}
+        {/* Table */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          {usersErr && (
+            <div className="p-4 text-sm text-rose-700 dark:text-rose-300 border-b border-slate-200 dark:border-white/10">
+              {usersErr}
+            </div>
+          )}
+
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
             {usersLoading ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
-                Loading PMCs…
-              </div>
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">Loading PMCs…</div>
             ) : rowsPaged.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">
                 No PMCs match the selected criteria.
               </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
                     {[
                       { key: "action", label: "Action" },
                       { key: "code", label: "Code" },
                       { key: "name", label: "Name" },
-                      { key: "company", label: "Company" },
-                      { key: "projects", label: "Project" },
+                      { key: "projects", label: "Projects" },
                       { key: "mobile", label: "Mobile" },
                       { key: "email", label: "Email" },
                       { key: "state", label: "State" },
                       { key: "zone", label: "Zone" },
                       { key: "status", label: "Status" },
                       { key: "updated", label: "Updated" },
-                    ].map((h) => {
-                      const sortable = h.key !== "action";
-                      const active = sortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const sortable = key !== "action";
+                      const active = sortKey === (key as any);
+                      const dir = active ? sortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
+                          key={key}
                           className={
-                            "text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none " +
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none " +
                             (sortable ? "cursor-pointer" : "")
                           }
-                          title={sortable ? `Sort by ${h.label}` : undefined}
+                          title={sortable ? `Sort by ${label}` : undefined}
                           onClick={() => {
                             if (!sortable) return;
-                            if (sortKey !== (h.key as any)) {
-                              setSortKey(h.key as any);
+                            if (sortKey !== (key as any)) {
+                              setSortKey(key as any);
                               setSortDir("asc");
                             } else {
                               setSortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                             setPage(1);
                           }}
+                          aria-sort={
+                            sortable
+                              ? active
+                                ? dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
+                            {label}
                             {sortable && (
-                              <span className="text-xs opacity-70">
-                                {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                              <span
+                                className="text-[10px] opacity-70"
+                                style={{ color: active ? "#00379C" : undefined }}
+                              >
+                                {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                               </span>
                             )}
                           </span>
@@ -1418,73 +1345,96 @@ export default function PmcAssignments() {
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
-                  {rowsPaged.map((r) => (
+                  {rowsPaged.map((r, idx) => (
                     <tr
-                      key={r._id}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
+                      key={r._id ?? idx}
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      {/* Action */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
                         <button
                           type="button"
-                          aria-label="Move PMC"
-                          title="Move to selection"
-                          onClick={() => onMoveToTile2(r._raw!)}
-                          className="
-                            inline-flex items-center justify-center
-                            w-8 h-8 rounded-full
-                            border border-slate-200
-                            bg-white text-slate-700
-                            hover:bg-slate-50
-                            dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800
-                          "
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                          title="Move this PMC to selection"
+                          aria-label="Move this PMC to selection"
+                          onClick={() => r._raw && onMoveToTile2(r._raw)}
                         >
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-4 h-4"
+                            className="h-4 w-4"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="1.8"
+                            strokeWidth={1.7}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
                             <path d="M12 19V5" />
-                            <path d="M6.5 10.5L12 5l5.5 5.5" />
+                            <path d="M6.5 10.5 12 5l5.5 5.5" />
                           </svg>
                         </button>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      {/* Code */}
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
+                        title={r.code}
+                      >
                         {r.code}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      {/* Name */}
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100"
+                        title={r.name}
+                      >
                         {r.name}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[260px]">{r.company}</div>
+
+                      {/* Projects */}
+                      <td className="px-3 py-1.5 align-middle" title={r.projects}>
+                        <div className="truncate max-w-[360px]">{r.projects}</div>
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      {/* Mobile */}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.mobile}>
                         {r.mobile}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      {/* Email */}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.email}>
                         {r.email}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      {/* State */}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.state}>
                         {r.state}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      {/* Zone */}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.zone}>
                         {r.zone}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status}
+
+                      {/* Status */}
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.status}>
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          ""
+                        )}
                       </td>
+
+                      {/* Updated */}
                       <td
-                        className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap"
+                        className="px-3 py-1.5 whitespace-nowrap align-middle"
                         title={fmtLocalDateTime(r.updated)}
                       >
                         {fmtLocalDateTime(r.updated)}
@@ -1496,11 +1446,11 @@ export default function PmcAssignments() {
             )}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing{" "}
-              <b>{rowsPaged.length}</b> of <b>{total}</b> PMCs
+          {/* Pagination footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
+              Page <b>{pageSafe}</b> of <b>{totalPages}</b> · Showing <b>{rowsPaged.length}</b> of{" "}
+              <b>{total}</b> PMCs
               {stateFilter ? (
                 <>
                   {" "}
@@ -1519,16 +1469,11 @@ export default function PmcAssignments() {
                   · Status: <b>{statusFilter}</b>
                 </>
               ) : null}
-              {companyFilter ? (
-                <>
-                  {" "}
-                  · Company: <b>{companyFilter}</b>
-                </>
-              ) : null}
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(1)}
                 disabled={pageSafe <= 1}
                 title="First"
@@ -1536,7 +1481,7 @@ export default function PmcAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={pageSafe <= 1}
                 title="Previous"
@@ -1544,7 +1489,7 @@ export default function PmcAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={pageSafe >= totalPages}
                 title="Next"
@@ -1552,7 +1497,7 @@ export default function PmcAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setPage(totalPages)}
                 disabled={pageSafe >= totalPages}
                 title="Last"
@@ -1564,58 +1509,63 @@ export default function PmcAssignments() {
         </div>
       </section>
 
-      {/* Tile 4 — PMC Assignments */}
-      <section
-        className={TILE_SHELL.replace("mb-4", "")}
-        aria-label="Tile: PMC Assignments"
-        data-tile-name="PMC Assignments"
-      >
-        <TileHeader
-          title="PMC Assignments"
-          subtitle="All PMCs who have been assigned to projects."
-        />
+      {/* Section 4 — PMC Assignments */}
+      <section className={CARD + " mb-4"} aria-label="PMC Assignments" data-tile-name="PMC Assignments">
+        <SectionHeader title="PMC Assignments" subtitle="All PMCs who have been assigned to projects." />
 
-        <div className="border border-slate-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: "55vh" }}>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-neutral-950">
+          <div className="overflow-auto thin-scrollbar" style={{ maxHeight: "65vh" }}>
             {assignedSortedRows.length === 0 ? (
-              <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
-                No PMC assignments found.
-              </div>
+              <div className="p-6 text-sm text-slate-600 dark:text-slate-300">No PMC assignments found.</div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-neutral-800 sticky top-0 z-10">
+              <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-neutral-950/95">
                   <tr>
-                    <th className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap">
+                    <th
+                      className={
+                        "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                        "text-slate-600 dark:text-slate-200 " +
+                        "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none"
+                      }
+                    >
                       Action
                     </th>
+
                     {[
-                      { key: "userName", label: "Name" },
-                      { key: "company", label: "Company" },
-                      { key: "projects", label: "Projects" },
+                      { key: "userName", label: "PMC" },
+                      { key: "projectTitle", label: "Project" },
                       { key: "status", label: "Status" },
                       { key: "validFrom", label: "Valid From" },
                       { key: "validTo", label: "Valid To" },
+                      { key: "validity", label: "Validity" },
                       { key: "updated", label: "Last Updated" },
-                    ].map((h) => {
-                      const active = aSortKey === (h.key as any);
+                    ].map(({ key, label }) => {
+                      const active = aSortKey === (key as any);
+                      const dir = active ? aSortDir : undefined;
+
                       return (
                         <th
-                          key={h.key}
-                          className="text-left font-semibold px-3 py-2 border-b dark:border-neutral-700 whitespace-nowrap select-none cursor-pointer"
-                          title={`Sort by ${h.label}`}
+                          key={key}
+                          className={
+                            "text-left font-extrabold text-[11px] uppercase tracking-wide " +
+                            "text-slate-600 dark:text-slate-200 " +
+                            "px-3 py-2.5 border-b border-slate-200 dark:border-white/10 whitespace-nowrap select-none cursor-pointer"
+                          }
+                          title={`Sort by ${label}`}
                           onClick={() => {
-                            if (aSortKey !== (h.key as any)) {
-                              setASortKey(h.key as any);
+                            if (aSortKey !== (key as any)) {
+                              setASortKey(key as any);
                               setASortDir("asc");
                             } else {
                               setASortDir((d) => (d === "asc" ? "desc" : "asc"));
                             }
                           }}
+                          aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
                         >
                           <span className="inline-flex items-center gap-1">
-                            {h.label}
-                            <span className="text-xs opacity-70">
-                              {active ? (aSortDir === "asc" ? "▲" : "▼") : "↕"}
+                            {label}
+                            <span className="text-[10px] opacity-70" style={{ color: active ? "#00379C" : undefined }}>
+                              {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
                             </span>
                           </span>
                         </th>
@@ -1628,43 +1578,52 @@ export default function PmcAssignments() {
                   {assignedRowsPaged.map((r, i) => (
                     <tr
                       key={`${r.userId}-${r.projectId}-${i}`}
-                      className="odd:bg-gray-50/50 dark:odd:bg-neutral-900/60"
+                      className="border-b border-slate-100/80 dark:border-white/5 hover:bg-[#00379C]/[0.03] dark:hover:bg-white/[0.03]"
                     >
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      {/* Action icons */}
+                      <td className="px-2 py-1.5 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#23A192] hover:bg-[#23A192]/10 active:scale-[0.98] dark:hover:bg-[#23A192]/15"
+                            onClick={() => {
+                              setViewRow(r);
+                              setViewOpen(true);
+                            }}
+                            title="View assignment"
                             aria-label="View assignment"
-                            title="View"
-                            onClick={() => openView(r)}
-                            className="inline-flex items-center justify-center w-7 h-7 bg-transparent text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                           >
                             <svg
+                              xmlns="http://www.w3.org/2000/svg"
                               viewBox="0 0 24 24"
-                              className="w-4 h-4"
+                              className="h-4 w-4"
                               fill="none"
                               stroke="currentColor"
-                              strokeWidth={1.6}
+                              strokeWidth="1.7"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             >
-                              <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" />
-                              <circle cx="12" cy="12" r="2.5" />
+                              <path d="M2.5 12C4 8.5 7.6 6 12 6s8 2.5 9.5 6c-1.5 3.5-5.1 6-9.5 6s-8-2.5-9.5-6z" />
+                              <circle cx="12" cy="12" r="3.25" />
                             </svg>
                           </button>
 
                           <button
                             type="button"
-                            aria-label="Edit assignment"
-                            title="Edit"
+                            className={
+                              "inline-flex h-7 w-7 items-center justify-center rounded-full " +
+                              "text-[#00379C] hover:bg-[#00379C]/10 active:scale-[0.98] dark:hover:bg-[#00379C]/15 " +
+                              (!r.membershipId ? "opacity-50 cursor-not-allowed" : "")
+                            }
                             onClick={() => openEdit(r)}
                             disabled={!r.membershipId}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-rose-500 hover:text-rose-600 hover:bg-rose-50/70 dark:hover:bg-rose-900/40 disabled:opacity-50"
+                            title={r.membershipId ? "Edit validity dates" : "Missing membership id"}
+                            aria-label="Edit validity dates"
                           >
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               viewBox="0 0 24 24"
-                              className="w-4 h-4"
+                              className="h-4 w-4"
                               fill="none"
                               stroke="currentColor"
                               strokeWidth="1.7"
@@ -1678,27 +1637,47 @@ export default function PmcAssignments() {
                         </div>
                       </td>
 
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle text-slate-800 dark:text-slate-100 max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.userName}
+                      >
                         {r.userName}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.company || "—"}
+
+                      <td
+                        className="px-3 py-1.5 whitespace-nowrap align-middle max-w-[14rem] overflow-hidden text-ellipsis"
+                        title={r.projectTitle}
+                      >
+                        {r.projectTitle}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800">
-                        <div className="truncate max-w-[360px]">
-                          {r.projects || "—"}
-                        </div>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle" title={r.status}>
+                        {r.status ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(
+                              r.status
+                            )}`}
+                          >
+                            {r.status}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
-                        {r.status || "—"}
-                      </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validFrom) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateOnly(r.validTo) || "—"}
                       </td>
-                      <td className="px-3 py-2 border-b dark:border-neutral-800 whitespace-nowrap">
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
+                        <ValidityBadge value={r.validity || "—"} />
+                      </td>
+
+                      <td className="px-3 py-1.5 whitespace-nowrap align-middle">
                         {fmtLocalDateTime(r.updated) || "—"}
                       </td>
                     </tr>
@@ -1708,15 +1687,16 @@ export default function PmcAssignments() {
             )}
           </div>
 
-          <div className="flex items-center justify-between px-3 py-2 text-xs border-t dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="text-gray-600 dark:text-gray-300">
-              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing{" "}
-              <b>{assignedRowsPaged.length}</b> of <b>{aTotal}</b> PMC
-              assignments
+          {/* Pagination footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+            <div className="text-slate-600 dark:text-slate-300">
+              Page <b>{aPageSafe}</b> of <b>{aTotalPages}</b> · Showing <b>{assignedRowsPaged.length}</b> of{" "}
+              <b>{aTotal}</b> PMC assignments
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex flex-wrap items-center gap-1 justify-end">
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(1)}
                 disabled={aPageSafe <= 1}
                 title="First"
@@ -1724,7 +1704,7 @@ export default function PmcAssignments() {
                 « First
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.max(1, p - 1))}
                 disabled={aPageSafe <= 1}
                 title="Previous"
@@ -1732,7 +1712,7 @@ export default function PmcAssignments() {
                 ‹ Prev
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage((p) => Math.min(aTotalPages, p + 1))}
                 disabled={aPageSafe >= aTotalPages}
                 title="Next"
@@ -1740,7 +1720,7 @@ export default function PmcAssignments() {
                 Next ›
               </button>
               <button
-                className="px-3 py-1 rounded-full border border-slate-200 dark:border-neutral-800 disabled:opacity-50"
+                className={`${ctl} ${ctlLight} disabled:opacity-50`}
                 onClick={() => setAPage(aTotalPages)}
                 disabled={aPageSafe >= aTotalPages}
                 title="Last"
@@ -1752,81 +1732,49 @@ export default function PmcAssignments() {
         </div>
       </section>
 
-      {/* ===== View Modal ===== */}
+      {/* ===== View Modal (read-only) ===== */}
       {viewOpen && viewRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setViewOpen(false)}
-          />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            <div className="text-lg font-semibold mb-2 dark:text-white">
-              PMC Assignment
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setViewOpen(false)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">PMC Assignment</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {viewRow.userName} · {viewRow.projectTitle}
+                </div>
+              </div>
+
+              <button className={BTN_SECONDARY + " h-8 px-3 text-[11px]"} onClick={() => setViewOpen(false)}>
+                Close
+              </button>
             </div>
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {viewRow.userName} · {viewRow.projectTitle}
-            </div>
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      PMC
-                    </td>
-                    <td className="px-3 py-2">{viewRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">
-                      {viewRow.projectTitle || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{viewRow.status || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid From
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validFrom) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Valid To
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateOnly(viewRow.validTo) || "—"}
-                    </td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Validity
-                    </td>
-                    <td className="px-3 py-2">{viewRow.validity || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Updated
-                    </td>
-                    <td className="px-3 py-2">
-                      {fmtLocalDateTime(viewRow.updated) || "—"}
-                    </td>
-                  </tr>
+                  {[
+                    ["PMC", viewRow.userName || "—"],
+                    ["Project", viewRow.projectTitle || "—"],
+                    ["Status", viewRow.status || "—"],
+                    ["Valid From", fmtLocalDateOnly(viewRow.validFrom) || "—"],
+                    ["Valid To", fmtLocalDateOnly(viewRow.validTo) || "—"],
+                    ["Validity", viewRow.validity || "—"],
+                    ["Last Updated", fmtLocalDateTime(viewRow.updated) || "—"],
+                  ].map(([k, v]) => (
+                    <tr key={k} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-            <div className="mt-2 flex justify-end">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800"
-                onClick={() => setViewOpen(false)}
-              >
+
+            <div className="mt-4 flex justify-end">
+              <button className={BTN_PRIMARY} onClick={() => setViewOpen(false)}>
                 OK
               </button>
             </div>
@@ -1834,114 +1782,98 @@ export default function PmcAssignments() {
         </div>
       )}
 
-      {/* ===== Edit Modal ===== */}
+      {/* ===== Edit Modal (with date updates + hard delete button) ===== */}
       {editOpen && editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => {
               if (!deleting) setEditOpen(false);
             }}
           />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-lg border dark:border-neutral-800 w-full max-w-md p-4">
-            {deleting && (
-              <div className="absolute inset-0 rounded-2xl bg-white/40 dark:bg-black/30 backdrop-blur-[1px] cursor-wait" />
-            )}
 
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="text-lg font-semibold dark:text-white">
-                Edit Validity
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950 shadow-lg p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">Edit Validity</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  {editRow.userName} · {editRow.projectTitle}
+                </div>
               </div>
+
               <button
-                className="h-9 px-3 rounded-full text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                className={
+                  "h-8 px-3 rounded-full text-[11px] font-semibold text-white shadow-sm " +
+                  (deleting || !editRow?.membershipId
+                    ? "bg-rose-600/60 cursor-not-allowed"
+                    : "bg-rose-600 hover:bg-rose-700")
+                }
                 onClick={onHardDeleteFromEdit}
                 disabled={deleting || !editRow?.membershipId}
-                title={
-                  editRow?.membershipId
-                    ? "Permanently remove this assignment"
-                    : "Missing membership id"
-                }
+                title={editRow?.membershipId ? "Permanently remove this assignment" : "Missing membership id"}
               >
                 {deleting ? "Removing…" : "Remove"}
               </button>
             </div>
 
-            <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              {editRow.userName} · {editRow.projectTitle}
-            </div>
-
-            <div className="mb-4 overflow-hidden rounded-xl border dark:border-neutral-800">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
               <table className="min-w-full text-sm">
                 <tbody>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      PMC
-                    </td>
-                    <td className="px-3 py-2">{editRow.userName || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Project
-                    </td>
-                    <td className="px-3 py-2">{editRow.projectTitle || "—"}</td>
-                  </tr>
-                  <tr className="odd:bg-gray-50/60 dark:odd:bg-neutral-900/60">
-                    <td className="px-3 py-2 font-medium whitespace-nowrap">
-                      Status
-                    </td>
-                    <td className="px-3 py-2">{editRow.status || "—"}</td>
-                  </tr>
+                  {[
+                    ["PMC", editRow.userName || "—"],
+                    ["Project", editRow.projectTitle || "—"],
+                    ["Status", editRow.status || "—"],
+                  ].map(([k, v]) => (
+                    <tr key={k} className="odd:bg-slate-50/60 dark:odd:bg-white/[0.03]">
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 dark:text-slate-200">
+                        {k}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-slate-100">{v}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid From
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid From</div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editFrom}
                   min={todayLocalISO()}
+                  disabled={deleting}
                   onChange={(e) => {
                     const v = e.target.value;
                     setEditFrom(v);
                     if (editTo && editTo < v) setEditTo(v);
                   }}
-                  disabled={deleting}
                 />
               </div>
+
               <div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">
-                  Valid To
-                </div>
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Valid To</div>
                 <input
                   type="date"
-                  className={SOFT_DATE}
+                  className={PILL_DATE + " mt-1"}
                   value={editTo}
-                  min={
-                    editFrom && editFrom > todayLocalISO()
-                      ? editFrom
-                      : todayLocalISO()
-                  }
-                  onChange={(e) => setEditTo(e.target.value)}
+                  min={editFrom && editFrom > todayLocalISO() ? editFrom : todayLocalISO()}
                   disabled={deleting}
+                  onChange={(e) => setEditTo(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="h-9 px-4 rounded-full border border-slate-200/80 dark:border-neutral-800 text-xs sm:text-sm bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-50"
-                onClick={() => setEditOpen(false)}
-                disabled={deleting}
-              >
+            <div className="mt-5 flex justify-end gap-2">
+              <button className={BTN_SECONDARY} onClick={() => setEditOpen(false)} disabled={deleting}>
                 Cancel
               </button>
+
               <button
-                className="h-9 px-4 rounded-full text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                className={BTN_PRIMARY}
+                title="Update validity dates"
+                disabled={!editRow?.membershipId || deleting}
                 onClick={async () => {
                   const today = todayLocalISO();
                   if (!editFrom || !editTo) {
@@ -1962,24 +1894,19 @@ export default function PmcAssignments() {
                   }
 
                   try {
-                    const companyId =
-                      editRow?._mem?.company?.companyId ||
-                      (editRow?._user ? pmcCompanyId(editRow._user) : null);
-
                     const payload: any = {
                       validTo: editTo,
                       scopeType: "Project",
                       projectId: editRow.projectId,
-                      ...(companyId ? { companyId } : {}),
                     };
-                    if (!origFrom || editFrom !== origFrom) {
-                      payload.validFrom = editFrom;
-                    }
+                    if (!origFrom || editFrom !== origFrom) payload.validFrom = editFrom;
 
-                    await api.patch(
-                      `/admin/assignments/${editRow.membershipId}`,
-                      payload
-                    );
+                    await api.patch(`/admin/assignments/${editRow.membershipId}`, payload);
+
+                    const { data: fresh } = await api.get("/admin/users", {
+                      params: { includeMemberships: "1" },
+                    });
+                    setAllUsers(Array.isArray(fresh) ? fresh : fresh?.users ?? []);
 
                     const successMsg = [
                       `Updated validity`,
@@ -1990,13 +1917,6 @@ export default function PmcAssignments() {
                       `Valid From: ${origFrom || "—"} → ${editFrom}`,
                       `Valid To:   ${origTo || "—"} → ${editTo}`,
                     ].join("\n");
-
-                    const { data: fresh } = await api.get("/admin/users", {
-                      params: { includeMemberships: "1" },
-                    });
-                    setAllUsers(
-                      Array.isArray(fresh) ? fresh : fresh?.users ?? []
-                    );
 
                     setEditOpen(false);
                     setEditRow(null);
@@ -2010,8 +1930,6 @@ export default function PmcAssignments() {
                     alert(msg);
                   }
                 }}
-                title="Update validity dates"
-                disabled={!editRow?.membershipId || deleting}
               >
                 Update
               </button>
@@ -2019,6 +1937,20 @@ export default function PmcAssignments() {
           </div>
         </div>
       )}
+
+      <style>
+        {`
+          .thin-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+          .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .thin-scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(148, 163, 184, 0.7);
+            border-radius: 999px;
+          }
+          .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(100, 116, 139, 0.9);
+          }
+        `}
+      </style>
     </div>
   );
 }
