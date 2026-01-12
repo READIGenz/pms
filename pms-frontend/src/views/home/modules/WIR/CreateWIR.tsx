@@ -369,37 +369,37 @@ function normalizeArrayish(payload: any): any[] {
 function getRefId(m: any): string {
   return String(
     m?.id ??
-      m?.refChecklistId ??
-      m?.checklistId ??
-      m?.refId ??
-      m?.uuid ??
-      m?.code ??
-      ""
+    m?.refChecklistId ??
+    m?.checklistId ??
+    m?.refId ??
+    m?.uuid ??
+    m?.code ??
+    ""
   );
 }
 
 function getRefCode(m: any): string {
   return String(
     m?.code ??
-      m?.refCode ??
-      m?.refChecklistCode ??
-      m?.shortCode ??
-      m?.slug ??
-      ""
+    m?.refCode ??
+    m?.refChecklistCode ??
+    m?.shortCode ??
+    m?.slug ??
+    ""
   );
 }
 
 function getRefTitle(m: any): string {
   return String(
     m?.title ??
-      m?.name ??
-      m?.label ??
-      m?.refTitle ??
-      m?.refName ??
-      m?.refChecklistTitle ??
-      m?.displayName ??
-      m?.code ??
-      "Untitled"
+    m?.name ??
+    m?.label ??
+    m?.refTitle ??
+    m?.refName ??
+    m?.refChecklistTitle ??
+    m?.displayName ??
+    m?.code ??
+    "Untitled"
   );
 }
 
@@ -619,11 +619,11 @@ export default function CreateWIR() {
 
   const role = normalizeRole(
     (user as any)?.role ??
-      (claims as any)?.role ??
-      (claims as any)?.userRole ??
-      (claims as any)?.roleName ??
-      (loc.state as NavState | undefined)?.role ??
-      ""
+    (claims as any)?.role ??
+    (claims as any)?.userRole ??
+    (claims as any)?.roleName ??
+    (loc.state as NavState | undefined)?.role ??
+    ""
   );
 
   const activitySelectRef = useRef<HTMLSelectElement | null>(null);
@@ -666,18 +666,6 @@ export default function CreateWIR() {
   const [combinedItems, setCombinedItems] = useState<UiComplianceItem[]>([]);
   const [viewErr, setViewErr] = useState<string | null>(null);
   const [viewLoading, setViewLoading] = useState<boolean>(false);
-  // === Save-Confirm dialog state ===
-  const [saveDlgOpen, setSaveDlgOpen] = useState(false);
-  const [saveDlgBusy, setSaveDlgBusy] = useState(false);
-  const [saveDlgErr, setSaveDlgErr] = useState<string | null>(null);
-  const [saveDlgRows, setSaveDlgRows] = useState<
-    Array<{ label: string; apiKey: string; value: any }>
-  >([]);
-
-  // Refs to hold what we'll submit once user confirms
-  const savePayloadRef = useRef<any>(null);
-  const savePathRef = useRef<string>("");
-  const saveMethodRef = useRef<"POST" | "PATCH">("POST");
 
   // Activities (lazy)
   const [activityOpts, setActivityOpts] = useState<
@@ -738,24 +726,24 @@ export default function CreateWIR() {
       .map((r) => ({
         value: String(
           r.id ??
-            r.activityId ??
-            r.code ??
-            r.slug ??
-            r.uuid ??
-            r.refId ??
-            r.refCode ??
-            ""
+          r.activityId ??
+          r.code ??
+          r.slug ??
+          r.uuid ??
+          r.refId ??
+          r.refCode ??
+          ""
         ),
         label:
           (r.code ? `${r.code} • ` : "") +
           String(
             r.title ??
-              r.name ??
-              r.label ??
-              r.code ??
-              r.refTitle ??
-              r.refName ??
-              "Untitled"
+            r.name ??
+            r.label ??
+            r.code ??
+            r.refTitle ??
+            r.refName ??
+            "Untitled"
           ),
       }))
       .filter((o) => !!o.value && !!o.label)
@@ -850,7 +838,7 @@ export default function CreateWIR() {
         // ---- Infer follow-up from row ----
         const inferredFollowup =
           String(row?.mode || row?.meta?.mode || "").toLowerCase() ===
-            "followup" ||
+          "followup" ||
           row?.meta?.followup === true ||
           row?.followup === true ||
           row?.isFollowup === true ||
@@ -879,8 +867,8 @@ export default function CreateWIR() {
           rawForDate == null
             ? null
             : /^\d{4}-\d{2}-\d{2}/.test(String(rawForDate))
-            ? String(rawForDate).slice(0, 10)
-            : (() => {
+              ? String(rawForDate).slice(0, 10)
+              : (() => {
                 const d = new Date(rawForDate);
                 const y = d.getFullYear();
                 const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -1076,12 +1064,12 @@ export default function CreateWIR() {
       role === "Contractor"
         ? `/home/projects/${projectId}/wir`
         : role === "PMC"
-        ? `/home/pmc/projects/${projectId}/wir`
-        : role === "IH-PMT"
-        ? `/home/ihpmt/projects/${projectId}/wir`
-        : role === "Client"
-        ? `/home/client/projects/${projectId}/wir`
-        : `/home/projects/${projectId}/wir`;
+          ? `/home/pmc/projects/${projectId}/wir`
+          : role === "IH-PMT"
+            ? `/home/ihpmt/projects/${projectId}/wir`
+            : role === "Client"
+              ? `/home/client/projects/${projectId}/wir`
+              : `/home/projects/${projectId}/wir`;
 
     navigate(base, {
       state: { role, project: projectFromState || { projectId } },
@@ -1133,8 +1121,8 @@ export default function CreateWIR() {
     } catch (e: any) {
       setRefErr(
         e?.response?.data?.error ||
-          e?.message ||
-          "Failed to load reference checklists."
+        e?.message ||
+        "Failed to load reference checklists."
       );
       setRefMeta([]);
     } finally {
@@ -1306,8 +1294,8 @@ export default function CreateWIR() {
                 (it.required === true
                   ? "Mandatory"
                   : it.required === false
-                  ? "Optional"
-                  : null),
+                    ? "Optional"
+                    : null),
               required: typeof it.required === "boolean" ? it.required : null,
               critical: typeof it.critical === "boolean" ? it.critical : null,
               tags: Array.isArray(it.tags) ? it.tags : [],
@@ -1330,8 +1318,8 @@ export default function CreateWIR() {
     } catch (e: any) {
       setViewErr(
         e?.response?.data?.error ||
-          e?.message ||
-          "Failed to load checklist items."
+        e?.message ||
+        "Failed to load checklist items."
       );
     } finally {
       setViewLoading(false);
@@ -1386,8 +1374,8 @@ export default function CreateWIR() {
     } catch (e: any) {
       setFuErr(
         e?.response?.data?.error ||
-          e?.message ||
-          "Failed to load follow-up items."
+        e?.message ||
+        "Failed to load follow-up items."
       );
     } finally {
       setFuLoading(false);
@@ -1439,8 +1427,8 @@ export default function CreateWIR() {
       refChecklistIds: isFollowupMode
         ? undefined
         : selectedRefIds.length
-        ? selectedRefIds
-        : undefined,
+          ? selectedRefIds
+          : undefined,
       materializeItemsFromRef: isFollowupMode ? false : false,
       assignCode: false,
       clientHints: {
@@ -1462,66 +1450,6 @@ export default function CreateWIR() {
     return payload;
   }
 
-  function buildPreviewRows(payload: any) {
-    return [
-      { label: "Status", apiKey: "status", value: payload.status },
-      {
-        label: "Discipline",
-        apiKey: "discipline",
-        value: payload.discipline ?? "—",
-      },
-      {
-        label: "Activity ID",
-        apiKey: "activityId",
-        value: payload.activityId ?? "—",
-      },
-      {
-        label: "Title (Activity)",
-        apiKey: "title",
-        value: payload.title ?? "—",
-      },
-      {
-        label: "Planned At (ISO)",
-        apiKey: "plannedAt",
-        value: payload.plannedAt ?? "—",
-      },
-      { label: "forDate", apiKey: "forDate", value: payload.forDate ?? "—" },
-      { label: "forTime", apiKey: "forTime", value: payload.forTime ?? "—" },
-      {
-        label: "City/Town",
-        apiKey: "cityTown",
-        value: payload.cityTown ?? "—",
-      },
-      {
-        label: "Description (WI)",
-        apiKey: "description",
-        value: payload.description ?? "—",
-      },
-      {
-        label: "Checklists Count",
-        apiKey: "refChecklistIds",
-        value: Array.isArray(payload.refChecklistIds)
-          ? payload.refChecklistIds.length
-          : 0,
-      },
-      {
-        label: "Materialize Items",
-        apiKey: "materializeItemsFromRef",
-        value: String(payload.materializeItemsFromRef),
-      },
-      {
-        label: "UI Date Text",
-        apiKey: "clientHints.dateText",
-        value: payload.clientHints?.dateText ?? "—",
-      },
-      {
-        label: "UI Time Text",
-        apiKey: "clientHints.timeText",
-        value: payload.clientHints?.timeText ?? "—",
-      },
-    ];
-  }
-
   function tolPillOf(it: UiComplianceItem): string | null {
     const op = (it.tolOp || "").toString().trim();
     const base = it.base != null ? String(it.base) : "";
@@ -1531,30 +1459,46 @@ export default function CreateWIR() {
   }
 
   /* ---------------- submit handlers ---------------- */
-  async function uploadHeaderDocs(projectId: string, wirId: string, docs: any) {
+  // ---------------- upload header docs (hardened) ----------------
+  async function uploadHeaderDocs(
+    projectId: string,
+    wirId: string,
+    docs: HeaderDocsState
+  ) {
+    console.log("[WIR] uploadHeaderDocs: start", { projectId, wirId, docs });
+
     const form = new FormData();
 
     const categories: string[] = [];
     const tags: string[] = [];
 
     for (const key of Object.keys(docs || {})) {
-      const arr = docs[key];
+      const arr = (docs as any)[key] as WirFile[] | undefined;
       if (!arr || !arr.length) continue;
 
       for (const f of arr) {
-        // Skip backend (existing) files
-        if ((f as any).existing) continue;
+        // Skip backend (existing) files – they are already stored
+        if (f.existing) continue;
 
-        // IMPORTANT: field name must match backend (see section B)
+        console.log("[WIR] attaching new file", {
+          key,
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          category: f.category,
+          tag: f.tag,
+        });
+
+        // IMPORTANT: field name must match backend
         form.append("files", f);
 
-        categories.push((f as any).category || key);
-        tags.push((f as any).tag || ""); // avoid null -> "null"
+        categories.push(f.category || key);
+        tags.push(f.tag || "");
       }
     }
 
     if (!form.has("files")) {
-      console.log("[WIR] No NEW files to upload.");
+      console.log("[WIR] uploadHeaderDocs: No NEW files to upload.");
       return;
     }
 
@@ -1562,8 +1506,38 @@ export default function CreateWIR() {
     categories.forEach((c) => form.append("categories", c));
     tags.forEach((t) => form.append("tags", t));
 
-    // IMPORTANT: DO NOT set Content-Type manually (axios/browser adds boundary)
-    return api.post(`/projects/${projectId}/wir/${wirId}/documents`, form);
+    console.log("[WIR] uploadHeaderDocs: final FormData", {
+      fileCount: categories.length,
+      categories,
+      tags,
+    });
+
+    // IMPORTANT:
+    // 1) Do NOT JSON-stringify this
+    // 2) Let browser set the multipart boundary
+    try {
+      const url = `/projects/${projectId}/wir/${wirId}/documents`;
+
+      const res = await api.post(url, form, {
+        headers: {
+          // This will be refined by the browser with a boundary
+          "Content-Type": "multipart/form-data",
+        },
+        // If your api client uses withCredentials by default, this is optional
+        withCredentials: true,
+        // Make sure no custom transformRequest kills FormData
+        transformRequest: [(data) => data],
+      });
+
+      console.log("[WIR] uploadHeaderDocs: success", res?.data);
+      return res;
+    } catch (e: any) {
+      console.error(
+        "[WIR] uploadHeaderDocs: error",
+        e?.response?.data || e?.message || e
+      );
+      throw e;
+    }
   }
 
   const saveDraft = async () => {
@@ -1797,1018 +1771,892 @@ export default function CreateWIR() {
   return (
     <div className={`min-h-[100svh] ${SOFT_BG}`}>
       {/* <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:px-14 py-6"> */}
-        <div className={`${CARD} p-4 sm:p-5 md:p-6`}>
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white">
-                {isEdit
-                  ? "Edit Work Inspection Request"
-                  : "Create Work Inspection Request"}
-              </div>
-              <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate">
-                {projectFromState?.code ? `${projectFromState.code} — ` : ""}
-                {projectFromState?.title || `Project: ${projectId}`}
-              </div>
+      <div className={`${CARD} p-4 sm:p-5 md:p-6`}>
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white">
+              {isEdit
+                ? "Edit Work Inspection Request"
+                : "Create Work Inspection Request"}
+            </div>
+            <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate">
+              {projectFromState?.code ? `${projectFromState.code} — ` : ""}
+              {projectFromState?.title || `Project: ${projectId}`}
+            </div>
 
-              {isFollowupMode && (
-                <div className="mt-3">
-                  <div className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border border-[#23A192]/30 bg-[#23A192]/10 text-[#23A192] dark:border-[#23A192]/30 dark:bg-[#23A192]/10">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#23A192]" />
-                    Follow-up mode: existing failed items preserved; Library
-                    disabled.
-                  </div>
+            {isFollowupMode && (
+              <div className="mt-3">
+                <div className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border border-[#23A192]/30 bg-[#23A192]/10 text-[#23A192] dark:border-[#23A192]/30 dark:bg-[#23A192]/10">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#23A192]" />
+                  Follow-up mode: existing failed items preserved; Library
+                  disabled.
                 </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={backToWirList}
-                className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border
-             border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-[0.99]
-             dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30"
-              >
-                Cancel
-              </button>
-            </div>
+              </div>
+            )}
           </div>
 
-          {/* Body */}
-          <div className="mt-6 space-y-4 sm:space-y-5">
-            {/* ===== Section 1 — Project & Reference ===== */}
-            <section className={`${CARD} p-3 sm:p-5`}>
-              <SectionTitle>Project & Reference</SectionTitle>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={backToWirList}
+              className="text-sm w-full sm:w-auto px-4 py-2 rounded-full border
+             border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-[0.99]
+             dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                {/* Project */}
-                <div className="sm:col-span-3">
-                  <FieldLabel>Project</FieldLabel>
-                  <div className="h-10 flex items-center rounded-full border border-slate-200 dark:border-white/10 px-4 text-sm text-slate-800 dark:text-white bg-slate-50/60 dark:bg-white/5">
-                    {(projectFromState?.code
-                      ? projectFromState.code + " — "
-                      : "") +
-                      (projectFromState?.title || `Project: ${projectId}`)}
-                  </div>
+        {/* Body */}
+        <div className="mt-6 space-y-4 sm:space-y-5">
+          {/* ===== Section 1 — Project & Reference ===== */}
+          <section className={`${CARD} p-3 sm:p-5`}>
+            <SectionTitle>Project & Reference</SectionTitle>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              {/* Project */}
+              <div className="sm:col-span-3">
+                <FieldLabel>Project</FieldLabel>
+                <div className="h-10 flex items-center rounded-full border border-slate-200 dark:border-white/10 px-4 text-sm text-slate-800 dark:text-white bg-slate-50/60 dark:bg-white/5">
+                  {(projectFromState?.code
+                    ? projectFromState.code + " — "
+                    : "") +
+                    (projectFromState?.title || `Project: ${projectId}`)}
                 </div>
+              </div>
 
-                {/* Discipline */}
-                <SelectStrict
-                  label="Discipline"
-                  value={discipline}
-                  disabled={isFollowupMode}
-                  onChange={(v: string) => {
-                    if (isFollowupMode) return;
-                    setDiscipline(v as Discipline | "");
-                    setActivityId("");
-                    setActivityOpts([]);
-                    lastLoadedFor.current = null;
-                    if (v) ensureActivities(true, v);
-                  }}
-                  options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
-                  placeholder={
-                    isFollowupMode ? "Locked (follow-up)" : "Select…"
-                  }
-                />
+              {/* Discipline */}
+              <SelectStrict
+                label="Discipline"
+                value={discipline}
+                disabled={isFollowupMode}
+                onChange={(v: string) => {
+                  if (isFollowupMode) return;
+                  setDiscipline(v as Discipline | "");
+                  setActivityId("");
+                  setActivityOpts([]);
+                  lastLoadedFor.current = null;
+                  if (v) ensureActivities(true, v);
+                }}
+                options={DISCIPLINES.map((d) => ({ value: d, label: d }))}
+                placeholder={
+                  isFollowupMode ? "Locked (follow-up)" : "Select…"
+                }
+              />
 
-                {/* Activity */}
-                <label className="block sm:col-span-2">
-                  <FieldLabel>Activity</FieldLabel>
+              {/* Activity */}
+              <label className="block sm:col-span-2">
+                <FieldLabel>Activity</FieldLabel>
 
-                  <div className="flex items-center gap-2">
-                    <select
-                      ref={activitySelectRef}
-                      className={PILL_SELECT}
-                      value={activityId}
-                      onChange={(e) => {
-                        if (isFollowupMode) return;
-                        setActivityId(e.target.value);
-                      }}
-                      onPointerDownCapture={() => {
-                        if (!discipline || isFollowupMode) return;
-                        ensureActivities(false, discipline);
-                      }}
-                      disabled={!discipline || isFollowupMode}
-                    >
-                      <option value="">
-                        {!discipline
-                          ? "Select Discipline first"
-                          : activityLoading && !activityOpts.length
+                <div className="flex items-center gap-2">
+                  <select
+                    ref={activitySelectRef}
+                    className={PILL_SELECT}
+                    value={activityId}
+                    onChange={(e) => {
+                      if (isFollowupMode) return;
+                      setActivityId(e.target.value);
+                    }}
+                    onPointerDownCapture={() => {
+                      if (!discipline || isFollowupMode) return;
+                      ensureActivities(false, discipline);
+                    }}
+                    disabled={!discipline || isFollowupMode}
+                  >
+                    <option value="">
+                      {!discipline
+                        ? "Select Discipline first"
+                        : activityLoading && !activityOpts.length
                           ? "Loading…"
                           : activityOpts.length
-                          ? "Select…"
-                          : "Tap again after loading…"}
+                            ? "Select…"
+                            : "Tap again after loading…"}
+                    </option>
+                    {activityOpts.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
-                      {activityOpts.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                    ))}
+                  </select>
 
-                    <button
-                      type="button"
-                      className="shrink-0 h-10 w-10 rounded-full border border-slate-200 dark:border-white/10 text-[#23A192]
+                  <button
+                    type="button"
+                    className="shrink-0 h-10 w-10 rounded-full border border-slate-200 dark:border-white/10 text-[#23A192]
                                  hover:bg-slate-50 dark:hover:bg-white/5 active:scale-[0.99]
                                  disabled:opacity-60 disabled:cursor-not-allowed
                                  inline-flex items-center justify-center"
-                      disabled={
-                        !discipline || activityLoading || isFollowupMode
-                      }
-                      onClick={() => {
-                        if (isFollowupMode) return;
-                        ensureActivities(true, discipline);
-                      }}
-                      title="Reload activities"
-                      aria-label="Reload activities"
-                    >
-                      <IconRefresh
-                        className={`h-4 w-4 ${
-                          activityLoading ? "animate-spin" : ""
+                    disabled={
+                      !discipline || activityLoading || isFollowupMode
+                    }
+                    onClick={() => {
+                      if (isFollowupMode) return;
+                      ensureActivities(true, discipline);
+                    }}
+                    title="Reload activities"
+                    aria-label="Reload activities"
+                  >
+                    <IconRefresh
+                      className={`h-4 w-4 ${activityLoading ? "animate-spin" : ""
                         }`}
-                      />
-                    </button>
-                  </div>
-
-                  {activityErr && (
-                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                      {activityErr}
-                    </div>
-                  )}
-                </label>
-
-                {/* Location */}
-                <div className="sm:col-span-3">
-                  <FieldLabel>Location</FieldLabel>
-                  <input
-                    value={locationText}
-                    onChange={(e) => setLocationText(e.target.value)}
-                    placeholder="e.g., Block A, Podium Level"
-                    className={PILL_INPUT}
-                  />
+                    />
+                  </button>
                 </div>
 
-                {/* Date */}
-                <div>
-                  <FieldLabel>Date *</FieldLabel>
-                  <input
-                    type="date"
-                    value={dateISO ?? ""}
-                    onChange={(e) => onNativeDateChange(e.target.value)}
-                    className={PILL_INPUT}
-                  />
-                </div>
-
-                {/* Time */}
-                <div className="sm:col-span-2">
-                  <FieldLabel>Time *</FieldLabel>
-                  <div className="grid grid-cols-3 gap-2">
-                    <select
-                      value={hh}
-                      onChange={(e) => setHH(e.target.value)}
-                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                    >
-                      {HOURS_12.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
-                        </option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={mm}
-                      onChange={(e) => setMM(e.target.value)}
-                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                    >
-                      {MINUTES.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={ampm}
-                      onChange={(e) => setAMPM(e.target.value as "AM" | "PM")}
-                      className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
-                    >
-                      <option>AM</option>
-                      <option>PM</option>
-                    </select>
+                {activityErr && (
+                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                    {activityErr}
                   </div>
+                )}
+              </label>
+
+              {/* Location */}
+              <div className="sm:col-span-3">
+                <FieldLabel>Location</FieldLabel>
+                <input
+                  value={locationText}
+                  onChange={(e) => setLocationText(e.target.value)}
+                  placeholder="e.g., Block A, Podium Level"
+                  className={PILL_INPUT}
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <FieldLabel>Date *</FieldLabel>
+                <input
+                  type="date"
+                  value={dateISO ?? ""}
+                  onChange={(e) => onNativeDateChange(e.target.value)}
+                  className={PILL_INPUT}
+                />
+              </div>
+
+              {/* Time */}
+              <div className="sm:col-span-2">
+                <FieldLabel>Time *</FieldLabel>
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={hh}
+                    onChange={(e) => setHH(e.target.value)}
+                    className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  >
+                    {HOURS_12.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={mm}
+                    onChange={(e) => setMM(e.target.value)}
+                    className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  >
+                    {MINUTES.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={ampm}
+                    onChange={(e) => setAMPM(e.target.value as "AM" | "PM")}
+                    className="w-full text-[15px] sm:text-sm border rounded-full px-3 py-2 dark:bg-neutral-900 dark:text-white dark:border-neutral-800"
+                  >
+                    <option>AM</option>
+                    <option>PM</option>
+                  </select>
                 </div>
               </div>
-            </section>
+            </div>
+          </section>
 
-            {/* Section 2 — Work Inspection */}
-            <section className={`${CARD} p-3 sm:p-5`}>
-              <SectionTitle>Work Inspection</SectionTitle>
-              <textarea
-                value={workInspection}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v.length <= 200) setWorkInspection(v);
-                }}
-                rows={4}
-                placeholder="Describe the work to be inspected (max 200 chars)…"
-                className={TEXTAREA}
-              />
-              <div className="mt-1 text-right text-[12px] text-slate-500 dark:text-slate-400">
-                {workInspection.length}/200
-              </div>
-            </section>
+          {/* Section 2 — Work Inspection */}
+          <section className={`${CARD} p-3 sm:p-5`}>
+            <SectionTitle>Work Inspection</SectionTitle>
+            <textarea
+              value={workInspection}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v.length <= 200) setWorkInspection(v);
+              }}
+              rows={4}
+              placeholder="Describe the work to be inspected (max 200 chars)…"
+              className={TEXTAREA}
+            />
+            <div className="mt-1 text-right text-[12px] text-slate-500 dark:text-slate-400">
+              {workInspection.length}/200
+            </div>
+          </section>
 
-            {/* Section 3 — Documents & Evidence */}
-            <section className={`${CARD} p-3 sm:p-5`}>
-              <SectionTitle>Documents & Evidence</SectionTitle>
+          {/* Section 3 — Documents & Evidence */}
+          <section className={`${CARD} p-3 sm:p-5`}>
+            <SectionTitle>Documents & Evidence</SectionTitle>
 
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-                {docTiles.map((tile) => {
-                  const files = (docs as any)[tile.key] as
-                    | WirFile[]
-                    | undefined;
-                  const has = !!files?.length;
-                  const Icon = tile.Icon;
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+              {docTiles.map((tile) => {
+                const files = (docs as any)[tile.key] as
+                  | WirFile[]
+                  | undefined;
+                const has = !!files?.length;
+                const Icon = tile.Icon;
 
-                  return (
-                    <label
-                      key={tile.key}
-                      className={[
-                        "cursor-pointer rounded-2xl border p-3 transition",
-                        "hover:bg-slate-50 dark:hover:bg-white/5",
-                        "min-h-[120px]",
-                        has
-                          ? "border-[#23A192]/30 bg-[#23A192]/10"
-                          : "border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <span
-                            className={[
-                              "h-10 w-10 rounded-2xl border flex items-center justify-center shrink-0",
-                              has
-                                ? "border-[#23A192]/30 text-[#23A192] bg-white dark:bg-neutral-950 dark:border-[#23A192]/30"
-                                : "border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-white dark:bg-neutral-950",
-                            ].join(" ")}
-                          >
-                            <Icon className="h-5 w-5" />
-                          </span>
-
-                          <div className="min-w-0">
-                            <div
-                              className="text-sm font-semibold leading-snug text-slate-900 dark:text-white truncate"
-                              title={tile.label}
-                            >
-                              {tile.label}
-                            </div>
-                            <div
-                              className="mt-0.5 text-[12px] text-slate-600 dark:text-slate-300 leading-snug truncate"
-                              title={tile.hint}
-                            >
-                              Upload:{" "}
-                              <span className="font-medium">{tile.hint}</span>
-                            </div>
-
-                            <div
-                              className="mt-2 text-[11px] text-slate-500 dark:text-slate-400"
-                              title={
-                                has ? fileSummary(files) : "Tap to choose files"
-                              }
-                            >
-                              {has
-                                ? `${files!.length} file${
-                                    files!.length === 1 ? "" : "s"
-                                  } selected`
-                                : "Tap to choose files"}
-                            </div>
-
-                            {has && (
-                              <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
-                                {files!.map((f, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between gap-2 text-[11px]
-                                               text-slate-700 dark:text-slate-200
-                                               bg-slate-50 dark:bg-white/5 rounded-full px-2 py-1"
-                                  >
-                                    <span className="truncate" title={f.name}>
-                                      {f.name}
-                                    </span>
-
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setDocs((prev) => {
-                                          const current = (prev as any)[
-                                            tile.key
-                                          ] as File[] | undefined;
-                                          if (!current) return prev;
-
-                                          const next = current.filter(
-                                            (_, i) => i !== idx
-                                          );
-                                          return {
-                                            ...prev,
-                                            [tile.key]: next.length
-                                              ? next
-                                              : undefined,
-                                          };
-                                        });
-                                      }}
-                                      className="ml-1 shrink-0 text-[10px] px-2 py-0.5 rounded-full border
-                                                 border-slate-300 text-slate-600 hover:bg-slate-200
-                                                 dark:border-white/15 dark:text-slate-200 dark:hover:bg-white/10"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
+                return (
+                  <label
+                    key={tile.key}
+                    className={[
+                      "cursor-pointer rounded-2xl border p-3 transition",
+                      "hover:bg-slate-50 dark:hover:bg-white/5",
+                      "min-h-[120px]",
+                      has
+                        ? "border-[#23A192]/30 bg-[#23A192]/10"
+                        : "border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-950",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
                         <span
                           className={[
-                            "text-[11px] px-2 py-0.5 rounded-full border shrink-0",
+                            "h-10 w-10 rounded-2xl border flex items-center justify-center shrink-0",
                             has
                               ? "border-[#23A192]/30 text-[#23A192] bg-white dark:bg-neutral-950 dark:border-[#23A192]/30"
-                              : "border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 bg-white dark:bg-neutral-950",
+                              : "border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-white dark:bg-neutral-950",
                           ].join(" ")}
                         >
-                          {has ? `${files!.length}` : "0"}
+                          <Icon className="h-5 w-5" />
                         </span>
+
+                        <div className="min-w-0">
+                          <div
+                            className="text-sm font-semibold leading-snug text-slate-900 dark:text-white truncate"
+                            title={tile.label}
+                          >
+                            {tile.label}
+                          </div>
+                          <div
+                            className="mt-0.5 text-[12px] text-slate-600 dark:text-slate-300 leading-snug truncate"
+                            title={tile.hint}
+                          >
+                            Upload:{" "}
+                            <span className="font-medium">{tile.hint}</span>
+                          </div>
+
+                          <div
+                            className="mt-2 text-[11px] text-slate-500 dark:text-slate-400"
+                            title={
+                              has ? fileSummary(files) : "Tap to choose files"
+                            }
+                          >
+                            {has
+                              ? `${files!.length} file${files!.length === 1 ? "" : "s"
+                              } selected`
+                              : "Tap to choose files"}
+                          </div>
+
+                          {has && (
+                            <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
+                              {files!.map((f, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between gap-2 text-[11px]
+                                               text-slate-700 dark:text-slate-200
+                                               bg-slate-50 dark:bg-white/5 rounded-full px-2 py-1"
+                                >
+                                  <span className="truncate" title={f.name}>
+                                    {f.name}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setDocs((prev) => {
+                                        const current = (prev as any)[
+                                          tile.key
+                                        ] as File[] | undefined;
+                                        if (!current) return prev;
+
+                                        const next = current.filter(
+                                          (_, i) => i !== idx
+                                        );
+                                        return {
+                                          ...prev,
+                                          [tile.key]: next.length
+                                            ? next
+                                            : undefined,
+                                        };
+                                      });
+                                    }}
+                                    className="ml-1 shrink-0 text-[10px] px-2 py-0.5 rounded-full border
+                                                 border-slate-300 text-slate-600 hover:bg-slate-200
+                                                 dark:border-white/15 dark:text-slate-200 dark:hover:bg-white/10"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      <input
-                        type="file"
-                        className="hidden"
-                        multiple
-                        accept={tile.accept}
-                        onChange={(e) => {
-                          const picked = e.target.files
-                            ? Array.from(e.target.files)
+                      <span
+                        className={[
+                          "text-[11px] px-2 py-0.5 rounded-full border shrink-0",
+                          has
+                            ? "border-[#23A192]/30 text-[#23A192] bg-white dark:bg-neutral-950 dark:border-[#23A192]/30"
+                            : "border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 bg-white dark:bg-neutral-950",
+                        ].join(" ")}
+                      >
+                        {has ? `${files!.length}` : "0"}
+                      </span>
+                    </div>
+
+                    <input
+                      type="file"
+                      className="hidden"
+                      multiple
+                      accept={tile.accept}
+                      onChange={(e) => {
+                        const picked = e.target.files
+                          ? Array.from(e.target.files)
+                          : [];
+                        if (!picked.length) return;
+
+                        const enhanced = picked.map((file) =>
+                          Object.assign(file, {
+                            existing: false,
+                            category: tile.key,
+                            tag: {
+                              drawings: "dwg",
+                              itp: "itp",
+                              photos: "pic",
+                              material: "mat",
+                              safety: "sft",
+                              other: "doc",
+                            }[tile.key],
+                          } as Partial<WirFile>)
+                        ) as WirFile[];
+
+                        setDocs((prev) => {
+                          const existing = (prev as any)[tile.key] as
+                            | WirFile[]
+                            | undefined;
+                          const base: WirFile[] = existing
+                            ? [...existing]
                             : [];
-                          if (!picked.length) return;
 
-                          const enhanced = picked.map((file) =>
-                            Object.assign(file, {
-                              existing: false,
-                              category: tile.key,
-                              tag: {
-                                drawings: "dwg",
-                                itp: "itp",
-                                photos: "pic",
-                                material: "mat",
-                                safety: "sft",
-                                other: "doc",
-                              }[tile.key],
-                            } as Partial<WirFile>)
-                          ) as WirFile[];
-
-                          setDocs((prev) => {
-                            const existing = (prev as any)[tile.key] as
-                              | WirFile[]
-                              | undefined;
-                            const base: WirFile[] = existing
-                              ? [...existing]
-                              : [];
-
-                            for (const f of enhanced) {
-                              if (
-                                !base.some(
-                                  (g) =>
-                                    g.name === f.name &&
-                                    g.size === f.size &&
-                                    g.lastModified === f.lastModified
-                                )
-                              ) {
-                                base.push(f);
-                              }
+                          for (const f of enhanced) {
+                            if (
+                              !base.some(
+                                (g) =>
+                                  g.name === f.name &&
+                                  g.size === f.size &&
+                                  g.lastModified === f.lastModified
+                              )
+                            ) {
+                              base.push(f);
                             }
+                          }
 
-                            return { ...prev, [tile.key]: base };
-                          });
-                        }}
-                      />
-                    </label>
-                  );
-                })}
+                          return { ...prev, [tile.key]: base };
+                        });
+                      }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <Note className="mt-2">
+              Selected documents and photos will be uploaded when you save or
+              submit this WIR.
+            </Note>
+          </section>
+
+          {/* Section 4 — Checklist Library */}
+          <section className={`${CARD} p-3 sm:p-5`}>
+            <SectionTitle
+              right={
+                <button
+                  onClick={() => !isFollowupMode && setLibOpen(true)}
+                  disabled={isFollowupMode}
+                  title={
+                    isFollowupMode
+                      ? "Disabled in follow-up: items already carried over"
+                      : "Add from Library"
+                  }
+                  className={BTN_SECONDARY}
+                >
+                  {isFollowupMode
+                    ? "Add from Library (disabled)"
+                    : "Add from Library"}
+                </button>
+              }
+            >
+              Checklist Library
+            </SectionTitle>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                Selected: <b>{combinedSelectedCount}</b> checklists
+                {combinedItemsCount ? (
+                  <>
+                    {" "}
+                    · <b>{combinedItemsCount}</b> items
+                  </>
+                ) : null}
+                {isFollowupMode && (
+                  <span className="ml-2 text-[12px] text-[#23A192]">
+                    (Follow-up: library is disabled)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {refErr && (
+              <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                {refErr}
+              </div>
+            )}
+          </section>
+
+          {/* Section 5 — Compliance Checklist */}
+          <section className={`${CARD} p-3 sm:p-5`}>
+            <SectionTitle>
+              {isFollowupMode
+                ? "Follow-up Items (Failed from previous)"
+                : "Compliance Checklist"}
+            </SectionTitle>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-sm text-slate-600 dark:text-slate-300">
+                {isFollowupMode
+                  ? "View the carried failed items that will be included in this follow-up."
+                  : "View the combined list of items from your selected checklists."}
               </div>
 
-              <Note className="mt-2">
-                Selected documents and photos will be uploaded when you save or
-                submit this WIR.
-              </Note>
-            </section>
-
-            {/* Section 4 — Checklist Library */}
-            <section className={`${CARD} p-3 sm:p-5`}>
-              <SectionTitle
-                right={
-                  <button
-                    onClick={() => !isFollowupMode && setLibOpen(true)}
-                    disabled={isFollowupMode}
-                    title={
-                      isFollowupMode
-                        ? "Disabled in follow-up: items already carried over"
-                        : "Add from Library"
-                    }
-                    className={BTN_SECONDARY}
-                  >
-                    {isFollowupMode
-                      ? "Add from Library (disabled)"
-                      : "Add from Library"}
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                {hasCarriedFailed && (
+                  <button onClick={openViewFailed} className={BTN_SECONDARY}>
+                    View Failed Items
                   </button>
-                }
-              >
-                Checklist Library
-              </SectionTitle>
+                )}
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="text-sm text-slate-700 dark:text-slate-200">
-                  Selected: <b>{combinedSelectedCount}</b> checklists
+                <button
+                  onClick={openViewCompliance}
+                  disabled={!selectedRefIds.length || isFollowupMode}
+                  className={BTN_SECONDARY}
+                  title={isFollowupMode ? "Disabled in follow-up mode" : ""}
+                >
+                  View Combined Items
+                </button>
+              </div>
+            </div>
+
+            {!isFollowupMode && viewErr && (
+              <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                {viewErr}
+              </div>
+            )}
+          </section>
+
+          {/* Actions (NOT sticky — normal footer like other form pages) */}
+          <div className="pt-2">
+            <div className="h-px bg-slate-200 dark:bg-white/10 mb-4" />
+
+            {submitErr && (
+              <div className="mb-3 text-sm text-rose-600 dark:text-rose-400">
+                {submitErr}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-end">
+              <button
+                onClick={saveDraft}
+                disabled={!roleCanCreate || submitting}
+                className={BTN_SECONDARY + " w-full sm:w-auto"}
+              >
+                Save Draft
+              </button>
+
+              <button
+                onClick={saveDraftBeforeDispatch}
+                disabled={
+                  !roleCanCreate || submitting || !hasRequiredForSubmit
+                }
+                className={BTN_PRIMARY + " w-full sm:w-auto"}
+                title="Discipline, Activity, Date/Time, and at least one Checklist are required"
+              >
+                Submit
+              </button>
+            </div>
+
+            <div className="mt-2">
+              <Note>* Required for submit. Draft can be saved anytime.</Note>
+            </div>
+          </div>
+        </div>
+
+        {/* ---------- Modals ---------- */}
+        {/* Add from Library Modal */}
+        {libOpen && (
+          <div className="fixed inset-0 z-40 bg-black/40">
+            <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="flex items-center justify-between">
+                <div className="text-base font-semibold text-slate-900 dark:text-white">
+                  Checklist Library
+                </div>
+                <button
+                  onClick={() => setLibOpen(false)}
+                  className={BTN_SECONDARY}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
+                {discipline ? (
+                  <>
+                    Filtered by discipline <b>{discipline}</b>
+                  </>
+                ) : (
+                  "All disciplines"
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  value={libSearch}
+                  onChange={(e) => setLibSearch(e.target.value)}
+                  placeholder="Search by code or title…"
+                  className={PILL_INPUT}
+                />
+                <button
+                  type="button"
+                  onClick={toggleSelectAllVisible}
+                  className={BTN_SECONDARY + " whitespace-nowrap"}
+                  disabled={!libVisible.length}
+                  title={
+                    allVisibleSelected
+                      ? "Clear all (visible)"
+                      : "Select all (visible)"
+                  }
+                >
+                  {allVisibleSelected ? "Clear" : "Select all"}
+                </button>
+              </div>
+
+              {refLoading ? (
+                <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                  Loading…
+                </div>
+              ) : (
+                <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
+                  {libVisible.length === 0 ? (
+                    <div className="text-sm text-slate-600 dark:text-slate-400 p-2">
+                      No checklists found.
+                    </div>
+                  ) : (
+                    libVisible.map((m) => {
+                      const id = getRefId(m);
+                      const code = getRefCode(m);
+                      const title = getRefTitle(m);
+                      const checked = selectedRefIds.includes(id);
+                      const anyM = m as any;
+                      const tol = anyM?.tolerance;
+                      const itemsCnt =
+                        anyM?.itemsCount ??
+                        (Array.isArray(anyM?.items)
+                          ? anyM.items.length
+                          : undefined) ??
+                        anyM?.count ??
+                        anyM?.totalItems ??
+                        anyM?.recordsCount ??
+                        null;
+
+                      const metaLine = [
+                        anyM?.version ? `v${anyM.version}` : null,
+                        anyM?.discipline ?? anyM?.category ?? null,
+                        tol != null ? `Tol: ${formatTolerance(tol)}` : null,
+                        itemsCnt ? `${itemsCnt} items` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+
+                      return (
+                        <label
+                          key={id}
+                          className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
+                            checked={checked}
+                            onChange={() => toggleSelectChecklist(id)}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-sm text-slate-900 dark:text-white truncate">
+                              {code ? (
+                                <span className="font-medium text-[#00379C] dark:text-[#FCC020]">
+                                  #{code} •{" "}
+                                </span>
+                              ) : null}
+                              {title}
+                            </div>
+                            {metaLine ? (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                {metaLine}
+                              </div>
+                            ) : null}
+                          </div>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                <div className="text-slate-700 dark:text-slate-300">
+                  Selected <b>{combinedSelectedCount}</b>
                   {combinedItemsCount ? (
                     <>
                       {" "}
-                      · <b>{combinedItemsCount}</b> items
+                      · Items <b>{combinedItemsCount}</b>
                     </>
                   ) : null}
-                  {isFollowupMode && (
-                    <span className="ml-2 text-[12px] text-[#23A192]">
-                      (Follow-up: library is disabled)
-                    </span>
-                  )}
                 </div>
+                <button
+                  onClick={() => setLibOpen(false)}
+                  className={BTN_PRIMARY + " w-full sm:w-auto"}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Compliance View Modal */}
+        {viewOpen && (
+          <div className="fixed inset-0 z-40 bg-black/40">
+            <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="flex items-center justify-between">
+                <div className="text-base font-semibold text-slate-900 dark:text-white">
+                  Compliance Checklist
+                </div>
+                <button
+                  onClick={() => setViewOpen(false)}
+                  className={BTN_SECONDARY}
+                >
+                  Close
+                </button>
               </div>
 
-              {refErr && (
-                <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-                  {refErr}
-                </div>
-              )}
-            </section>
+              <div className="mt-3">
+                {viewLoading ? (
+                  <div className="text-sm text-slate-600 dark:text-slate-300">
+                    Loading…
+                  </div>
+                ) : viewErr ? (
+                  <div className="text-sm text-rose-600 dark:text-rose-400">
+                    {viewErr}
+                  </div>
+                ) : combinedItems.length === 0 ? (
+                  <div className="text-sm text-slate-600 dark:text-slate-300">
+                    No checklist items.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {combinedItems.map((it) => {
+                      const tol = tolPillOf(it);
+                      const codeLine = [it.refCode, it.code]
+                        .filter(Boolean)
+                        .join(" - ");
+                      const req = (it.requirement || "").toString().trim();
+                      const isMandatory =
+                        it.required === true || /^mandatory$/i.test(req);
+                      const isOptional =
+                        it.required === false || /^optional$/i.test(req);
 
-            {/* Section 5 — Compliance Checklist */}
-            <section className={`${CARD} p-3 sm:p-5`}>
-              <SectionTitle>
-                {isFollowupMode
-                  ? "Follow-up Items (Failed from previous)"
-                  : "Compliance Checklist"}
-              </SectionTitle>
+                      return (
+                        <div key={it.id} className={`${CARD} p-3`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {it.text || "Untitled"}
+                                {tol ? ` — ${tol}` : ""}
+                              </div>
+                              {codeLine && (
+                                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {codeLine}
+                                </div>
+                              )}
+                            </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="text-sm text-slate-600 dark:text-slate-300">
-                  {isFollowupMode
-                    ? "View the carried failed items that will be included in this follow-up."
-                    : "View the combined list of items from your selected checklists."}
-                </div>
+                            {it.critical ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-800">
+                                Critical
+                              </span>
+                            ) : null}
+                          </div>
 
-                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                  {hasCarriedFailed && (
-                    <button onClick={openViewFailed} className={BTN_SECONDARY}>
-                      View Failed Items
-                    </button>
-                  )}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {isMandatory && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Mandatory
+                              </span>
+                            )}
+                            {isOptional && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Optional
+                              </span>
+                            )}
+                            {it.units && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Unit: {it.units}
+                              </span>
+                            )}
+                            {tol && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Tolerance: {tol}
+                              </span>
+                            )}
+                          </div>
 
-                  <button
-                    onClick={openViewCompliance}
-                    disabled={!selectedRefIds.length || isFollowupMode}
-                    className={BTN_SECONDARY}
-                    title={isFollowupMode ? "Disabled in follow-up mode" : ""}
-                  >
-                    View Combined Items
-                  </button>
-                </div>
+                          {(it.tags?.length || 0) > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {it.tags!.map((t, i) => (
+                                <span
+                                  key={i}
+                                  className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-white/10"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {!isFollowupMode && viewErr && (
+              {viewErr && (
                 <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
                   {viewErr}
                 </div>
               )}
-            </section>
+            </div>
+          </div>
+        )}
 
-            {/* Actions (NOT sticky — normal footer like other form pages) */}
-            <div className="pt-2">
-              <div className="h-px bg-slate-200 dark:bg-white/10 mb-4" />
+        {/* PATCH: Follow-up Failed Items Modal */}
+        {fuOpen && (
+          <div className="fixed inset-0 z-40 bg-black/40">
+            <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
+              <div className="flex items-center justify-between">
+                <div className="text-base font-semibold text-slate-900 dark:text-white">
+                  Follow-up Items
+                </div>
+                <button
+                  onClick={() => setFuOpen(false)}
+                  className={BTN_SECONDARY}
+                >
+                  Close
+                </button>
+              </div>
 
-              {submitErr && (
-                <div className="mb-3 text-sm text-rose-600 dark:text-rose-400">
-                  {submitErr}
+              {fuLoading ? (
+                <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                  Loading…
+                </div>
+              ) : fuItems.length === 0 ? (
+                <div className="mt-4 text-sm text-slate-600 dark:text-slate-400">
+                  No items to display. This follow-up does not have carried
+                  failed items.
+                </div>
+              ) : (
+                <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {fuItems.map((it) => {
+                      const op = it.tolOp === "+-" ? "±" : it.tolOp;
+                      const tol =
+                        formatTolerance(
+                          op,
+                          it.base,
+                          it.minus,
+                          it.plus,
+                          it.units
+                        ) || null;
+                      const codeLine = [it.refCode, it.code]
+                        .filter(Boolean)
+                        .join(" - ");
+
+                      return (
+                        <div key={it.id} className={`${CARD} p-3`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {it.text || "Untitled"}
+                                {tol ? ` — ${tol}` : ""}
+                              </div>
+                              {codeLine && (
+                                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {codeLine}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {it.units && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Unit: {it.units}
+                              </span>
+                            )}
+                            {tol && (
+                              <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
+                                Tolerance: {tol}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-end">
-                <button
-                  onClick={() => {
-                    const isPatch = isEdit && !!editId;
-                    const payload = buildDraftPayload(isPatch);
-                    if (isPatch) delete payload.plannedAt;
-
-                    const path = isPatch
-                      ? `/projects/${projectId}/wir/${editId}`
-                      : `/projects/${projectId}/wir`;
-                    const method: "POST" | "PATCH" = isPatch ? "PATCH" : "POST";
-
-                    savePayloadRef.current = payload;
-                    savePathRef.current = path;
-                    saveMethodRef.current = method;
-
-                    setSaveDlgErr(null);
-                    setSaveDlgRows(buildPreviewRows(payload));
-                    setSaveDlgOpen(true);
-                  }}
-                  disabled={!roleCanCreate || submitting}
-                  className={BTN_SECONDARY + " w-full sm:w-auto"}
-                >
-                  Save Draft
-                </button>
-
-                <button
-                  onClick={saveDraftBeforeDispatch}
-                  disabled={
-                    !roleCanCreate || submitting || !hasRequiredForSubmit
-                  }
-                  className={BTN_PRIMARY + " w-full sm:w-auto"}
-                  title="Discipline, Activity, Date/Time, and at least one Checklist are required"
-                >
-                  Submit
-                </button>
-              </div>
-
-              <div className="mt-2">
-                <Note>* Required for submit. Draft can be saved anytime.</Note>
-              </div>
+              {fuErr && (
+                <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                  {fuErr}
+                </div>
+              )}
             </div>
           </div>
+        )}
 
-          {/* Save Draft – Confirm Dialog */}
-          {saveDlgOpen && (
-            <div className="fixed inset-0 z-50 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-                <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold text-slate-900 dark:text-white">
-                    Review Draft Save
-                  </div>
-                  <button
-                    onClick={() => !saveDlgBusy && setSaveDlgOpen(false)}
-                    className={BTN_SECONDARY}
-                    disabled={saveDlgBusy}
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
-                  This is exactly what will be saved to the WIR draft.
-                </div>
-
-                <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1 divide-y divide-slate-200 dark:divide-white/10">
-                  {saveDlgRows.map((r, i) => (
-                    <div key={i} className="py-2">
-                      <div className="text-[12px] text-slate-500 dark:text-slate-400">
-                        {r.label}
-                      </div>
-                      <div className="text-[13px] sm:text-sm text-slate-900 dark:text-white break-all">
-                        {String(r.value)}
-                      </div>
-                      <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-                        API key: <span className="font-mono">{r.apiKey}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {saveDlgErr && (
-                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-                    {saveDlgErr}
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-2">
-                  <button
-                    onClick={() => setSaveDlgOpen(false)}
-                    className={BTN_SECONDARY + " w-full sm:w-auto"}
-                    disabled={saveDlgBusy}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (saveDlgBusy) return;
-                      setSaveDlgBusy(true);
-                      setSaveDlgErr(null);
-                      try {
-                        const payload = savePayloadRef.current;
-                        const path = savePathRef.current;
-                        const method = saveMethodRef.current;
-                        logWir(
-                          `saveDraft(confirm) -> ${method} ${path}`,
-                          payload
-                        );
-
-                        const res =
-                          method === "PATCH"
-                            ? await api.patch(path, payload)
-                            : await api.post(path, payload);
-                        logWir("saveDraft(confirm) <- response", res?.data);
-
-                        const wirId =
-                          extractWirIdFromResponse(res) ||
-                          (method === "PATCH" ? editId || "" : "");
-                        if (wirId) {
-                          try {
-                            await uploadHeaderDocs(projectId, wirId, docs);
-                          } catch (e: any) {
-                            console.warn(
-                              "[WIR] documents upload failed (draft still saved):",
-                              e?.response?.data || e?.message || e
-                            );
-                          }
-                        }
-
-                        setSaveDlgBusy(false);
-                        setSaveDlgOpen(false);
-                        backToWirList();
-                      } catch (e: any) {
-                        const err = e?.response?.data || e?.message || e;
-                        console.error("[WIR] saveDraft(confirm) error:", err);
-                        setSaveDlgErr(
-                          err?.error || err?.message || "Failed to save draft."
-                        );
-                        setSaveDlgBusy(false);
-                      }
-                    }}
-                    className={BTN_PRIMARY + " w-full sm:w-auto"}
-                    disabled={saveDlgBusy}
-                  >
-                    {saveDlgBusy ? "Saving…" : "Confirm & Save"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ---------- Modals ---------- */}
-          {/* Add from Library Modal */}
-          {libOpen && (
-            <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-                <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold text-slate-900 dark:text-white">
-                    Checklist Library
-                  </div>
-                  <button
-                    onClick={() => setLibOpen(false)}
-                    className={BTN_SECONDARY}
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
-                  {discipline ? (
-                    <>
-                      Filtered by discipline <b>{discipline}</b>
-                    </>
-                  ) : (
-                    "All disciplines"
-                  )}
-                </div>
-
-                <div className="mt-3 flex items-center gap-2">
-                  <input
-                    value={libSearch}
-                    onChange={(e) => setLibSearch(e.target.value)}
-                    placeholder="Search by code or title…"
-                    className={PILL_INPUT}
-                  />
-                  <button
-                    type="button"
-                    onClick={toggleSelectAllVisible}
-                    className={BTN_SECONDARY + " whitespace-nowrap"}
-                    disabled={!libVisible.length}
-                    title={
-                      allVisibleSelected
-                        ? "Clear all (visible)"
-                        : "Select all (visible)"
-                    }
-                  >
-                    {allVisibleSelected ? "Clear" : "Select all"}
-                  </button>
-                </div>
-
-                {refLoading ? (
-                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-                    Loading…
-                  </div>
-                ) : (
-                  <div className="mt-4 h-[65vh] sm:max-h-[50vh] overflow-auto space-y-2 pr-1">
-                    {libVisible.length === 0 ? (
-                      <div className="text-sm text-slate-600 dark:text-slate-400 p-2">
-                        No checklists found.
-                      </div>
-                    ) : (
-                      libVisible.map((m) => {
-                        const id = getRefId(m);
-                        const code = getRefCode(m);
-                        const title = getRefTitle(m);
-                        const checked = selectedRefIds.includes(id);
-                        const anyM = m as any;
-                        const tol = anyM?.tolerance;
-                        const itemsCnt =
-                          anyM?.itemsCount ??
-                          (Array.isArray(anyM?.items)
-                            ? anyM.items.length
-                            : undefined) ??
-                          anyM?.count ??
-                          anyM?.totalItems ??
-                          anyM?.recordsCount ??
-                          null;
-
-                        const metaLine = [
-                          anyM?.version ? `v${anyM.version}` : null,
-                          anyM?.discipline ?? anyM?.category ?? null,
-                          tol != null ? `Tol: ${formatTolerance(tol)}` : null,
-                          itemsCnt ? `${itemsCnt} items` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ");
-
-                        return (
-                          <label
-                            key={id}
-                            className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4"
-                              checked={checked}
-                              onChange={() => toggleSelectChecklist(id)}
-                            />
-                            <div className="min-w-0">
-                              <div className="text-sm text-slate-900 dark:text-white truncate">
-                                {code ? (
-                                  <span className="font-medium text-[#00379C] dark:text-[#FCC020]">
-                                    #{code} •{" "}
-                                  </span>
-                                ) : null}
-                                {title}
-                              </div>
-                              {metaLine ? (
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                                  {metaLine}
-                                </div>
-                              ) : null}
-                            </div>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
-                  <div className="text-slate-700 dark:text-slate-300">
-                    Selected <b>{combinedSelectedCount}</b>
-                    {combinedItemsCount ? (
-                      <>
-                        {" "}
-                        · Items <b>{combinedItemsCount}</b>
-                      </>
-                    ) : null}
-                  </div>
-                  <button
-                    onClick={() => setLibOpen(false)}
-                    className={BTN_PRIMARY + " w-full sm:w-auto"}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Compliance View Modal */}
-          {viewOpen && (
-            <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-                <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold text-slate-900 dark:text-white">
-                    Compliance Checklist
-                  </div>
-                  <button
-                    onClick={() => setViewOpen(false)}
-                    className={BTN_SECONDARY}
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="mt-3">
-                  {viewLoading ? (
-                    <div className="text-sm text-slate-600 dark:text-slate-300">
-                      Loading…
-                    </div>
-                  ) : viewErr ? (
-                    <div className="text-sm text-rose-600 dark:text-rose-400">
-                      {viewErr}
-                    </div>
-                  ) : combinedItems.length === 0 ? (
-                    <div className="text-sm text-slate-600 dark:text-slate-300">
-                      No checklist items.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {combinedItems.map((it) => {
-                        const tol = tolPillOf(it);
-                        const codeLine = [it.refCode, it.code]
-                          .filter(Boolean)
-                          .join(" - ");
-                        const req = (it.requirement || "").toString().trim();
-                        const isMandatory =
-                          it.required === true || /^mandatory$/i.test(req);
-                        const isOptional =
-                          it.required === false || /^optional$/i.test(req);
-
-                        return (
-                          <div key={it.id} className={`${CARD} p-3`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                  {it.text || "Untitled"}
-                                  {tol ? ` — ${tol}` : ""}
-                                </div>
-                                {codeLine && (
-                                  <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    {codeLine}
-                                  </div>
-                                )}
-                              </div>
-
-                              {it.critical ? (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/25 dark:text-rose-200 dark:border-rose-800">
-                                  Critical
-                                </span>
-                              ) : null}
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {isMandatory && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Mandatory
-                                </span>
-                              )}
-                              {isOptional && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Optional
-                                </span>
-                              )}
-                              {it.units && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Unit: {it.units}
-                                </span>
-                              )}
-                              {tol && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Tolerance: {tol}
-                                </span>
-                              )}
-                            </div>
-
-                            {(it.tags?.length || 0) > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {it.tags!.map((t, i) => (
-                                  <span
-                                    key={i}
-                                    className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-white/10"
-                                  >
-                                    {t}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {viewErr && (
-                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-                    {viewErr}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* PATCH: Follow-up Failed Items Modal */}
-          {fuOpen && (
-            <div className="fixed inset-0 z-40 bg-black/40">
-              <div className="absolute inset-x-0 bottom-0 sm:static sm:mx-auto w-full sm:w-auto sm:max-w-xl sm:rounded-2xl bg-white dark:bg-neutral-950 border-t sm:border border-slate-200 dark:border-white/10 p-4 sm:p-5 h-[75vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-auto flex flex-col">
-                <div className="flex items-center justify-between">
-                  <div className="text-base font-semibold text-slate-900 dark:text-white">
-                    Follow-up Items
-                  </div>
-                  <button
-                    onClick={() => setFuOpen(false)}
-                    className={BTN_SECONDARY}
-                  >
-                    Close
-                  </button>
-                </div>
-
-                {fuLoading ? (
-                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-                    Loading…
-                  </div>
-                ) : fuItems.length === 0 ? (
-                  <div className="mt-4 text-sm text-slate-600 dark:text-slate-400">
-                    No items to display. This follow-up does not have carried
-                    failed items.
-                  </div>
-                ) : (
-                  <div className="mt-3 h-[65vh] sm:max-h-[50vh] overflow-auto pr-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {fuItems.map((it) => {
-                        const op = it.tolOp === "+-" ? "±" : it.tolOp;
-                        const tol =
-                          formatTolerance(
-                            op,
-                            it.base,
-                            it.minus,
-                            it.plus,
-                            it.units
-                          ) || null;
-                        const codeLine = [it.refCode, it.code]
-                          .filter(Boolean)
-                          .join(" - ");
-
-                        return (
-                          <div key={it.id} className={`${CARD} p-3`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                  {it.text || "Untitled"}
-                                  {tol ? ` — ${tol}` : ""}
-                                </div>
-                                {codeLine && (
-                                  <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    {codeLine}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {it.units && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Unit: {it.units}
-                                </span>
-                              )}
-                              {tol && (
-                                <span className="text-[11px] px-2 py-1 rounded-full border border-slate-200 dark:border-white/10">
-                                  Tolerance: {tol}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {fuErr && (
-                  <div className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-                    {fuErr}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <DispatchWIRModal
-            open={dispatchOpen}
-            onClose={() => setDispatchOpen(false)}
-            creatorName={creatorName}
-            role={role}
-            projectCaption={
-              projectFromState?.code
-                ? `${projectFromState.code} — ${
-                    projectFromState.title || `Project: ${projectId}`
-                  }`
-                : projectFromState?.title || `Project: ${projectId}`
-            }
-            projectId={projectId}
-            wirId={wirIdForModal || ""}
-          />
-        </div>
+        <DispatchWIRModal
+          open={dispatchOpen}
+          onClose={() => setDispatchOpen(false)}
+          creatorName={creatorName}
+          role={role}
+          projectCaption={
+            projectFromState?.code
+              ? `${projectFromState.code} — ${projectFromState.title || `Project: ${projectId}`
+              }`
+              : projectFromState?.title || `Project: ${projectId}`
+          }
+          projectId={projectId}
+          wirId={wirIdForModal || ""}
+        />
+      </div>
       {/* </div> */}
     </div>
   );

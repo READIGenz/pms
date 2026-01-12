@@ -1,3 +1,4 @@
+// pms-backend/src/common/storage/s3-files.service.ts
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
@@ -8,30 +9,11 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-
-/* ====================== types ====================== */
-
-export type SaveOpts = {
-  subdir?: string;
-  baseName?: string;
-};
-
-export interface SaveManyOpts extends SaveOpts {
-  makeThumbs?: boolean;
-}
-
-export type SavedFileInfo = {
-  originalName: string;
-  fileName: string;
-  ext: string;
-  size: number;
-  mimeType?: string;
-  relPath: string; // S3 key (store in DB)
-
-  // For compatibility with WIR services:
-  url?: string;
-  thumbUrl?: string | null;
-};
+import {
+  FilesServiceInterface,
+  SavedFileInfo,
+  SaveOpts,
+} from './files.interface'; // NOTE: matches your actual file name
 
 /* ====================== helpers ====================== */
 
@@ -60,7 +42,7 @@ function buildFinalName(
 /* ====================== service ====================== */
 
 @Injectable()
-export class FilesService {
+export class S3FilesService implements FilesServiceInterface {
   private readonly bucket: string;
   private readonly region: string;
   private readonly s3: S3Client;
@@ -133,7 +115,7 @@ export class FilesService {
 
   async saveMany(
     files: Express.Multer.File[],
-    opts: SaveManyOpts = {},
+    opts: SaveOpts = {},
   ): Promise<SavedFileInfo[]> {
     if (!files || !files.length) {
       return [];

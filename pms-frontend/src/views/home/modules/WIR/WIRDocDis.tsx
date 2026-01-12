@@ -33,6 +33,11 @@ type WirItemEvidence = {
     mimeType?: string | null;
     capturedAt?: string | null;
     createdAt?: string | null;
+    meta?: {
+        tag?: string | null;
+        category?: string | null;
+        // add more fields from BE in future if needed
+    } | null;
 };
 
 type WirItem = {
@@ -210,155 +215,155 @@ const baseName = (s?: string | null) => {
 };
 
 type ComplianceGridItem = {
-  id: string;
-  text?: string | null;
-  code?: string | null;
-  requirement?: string | null;
-  required?: boolean | null;
-  critical?: boolean | null;
-  tags?: string[];
-  units?: string | null;
+    id: string;
+    text?: string | null;
+    code?: string | null;
+    requirement?: string | null;
+    required?: boolean | null;
+    critical?: boolean | null;
+    tags?: string[];
+    units?: string | null;
 
-  // checklist meta
-  refCode?: string | null;
-  refTitle?: string | null;
+    // checklist meta
+    refCode?: string | null;
+    refTitle?: string | null;
 
-  // tolerance-ish fields (optional)
-  tolOp?: string | null;
-  base?: number | string | null;
-  plus?: number | string | null;
-  minus?: number | string | null;
+    // tolerance-ish fields (optional)
+    tolOp?: string | null;
+    base?: number | string | null;
+    plus?: number | string | null;
+    minus?: number | string | null;
 };
 
 function ComplianceItemsGrid({ items }: { items: ComplianceGridItem[] }) {
-  if (!items || items.length === 0) {
-    return (
-      <div className="text-[12px] text-gray-600 dark:text-gray-300">
-        No items to show.
-      </div>
-    );
-  }
-
-  const reqPill = (it: ComplianceGridItem) => {
-    const r = (it.requirement || "").trim().toLowerCase();
-    if (r === "mandatory") {
-      return (
-        <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-          Mandatory
-        </span>
-      );
+    if (!items || items.length === 0) {
+        return (
+            <div className="text-[12px] text-gray-600 dark:text-gray-300">
+                No items to show.
+            </div>
+        );
     }
-    if (r === "optional") {
-      return (
-        <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-gray-200">
-          Optional
-        </span>
-      );
-    }
-    return null;
-  };
 
-  const tolText = (it: ComplianceGridItem) => {
-    // show a compact string if present
-    const op = (it.tolOp || "").toString().trim();
-    const b = it.base != null ? String(it.base) : "";
-    const p = it.plus != null ? `+${it.plus}` : "";
-    const m = it.minus != null ? `-${it.minus}` : "";
-    const pm = p || m ? `(${[p, m].filter(Boolean).join(" / ")})` : "";
-    const u = (it.units || "").toString().trim();
-
-    const parts = [op, b, pm, u].filter(Boolean);
-    return parts.length ? parts.join(" ") : null;
-  };
-
-  return (
-    <div className="overflow-auto rounded-xl border border-gray-200/70 dark:border-neutral-800/60">
-      <table className="min-w-[900px] w-full text-[12px]">
-        <thead className="bg-gray-50/70 dark:bg-neutral-800/60">
-          <tr className="text-left">
-            <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Checklist</th>
-            <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Item</th>
-            <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Requirement</th>
-            <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Tolerance / Unit</th>
-            <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Tags</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => {
-            const checklistLabel =
-              (it.refCode ? `#${it.refCode} ` : "") + (it.refTitle || "—");
-            const tol = tolText(it);
-
+    const reqPill = (it: ComplianceGridItem) => {
+        const r = (it.requirement || "").trim().toLowerCase();
+        if (r === "mandatory") {
             return (
-              <tr key={it.id} className="border-t border-gray-200/70 dark:border-neutral-800/60">
-                <td className="px-3 py-2 align-top text-gray-700 dark:text-gray-200">
-                  <div className="min-w-[220px]">{checklistLabel}</div>
-                </td>
-
-                <td className="px-3 py-2 align-top">
-                  <div className="flex items-start gap-2">
-                    {it.critical ? (
-                      <span className="mt-0.5 text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
-                        Critical
-                      </span>
-                    ) : null}
-
-                    <div className="min-w-0">
-                      <div className="text-gray-900 dark:text-white font-medium">
-                        {it.text || "—"}
-                      </div>
-                      {it.code ? (
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                          {it.code}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </td>
-
-                <td className="px-3 py-2 align-top">
-                  <div className="flex items-center gap-2">
-                    {reqPill(it)}
-                    {!reqPill(it) ? (
-                      <span className="text-gray-600 dark:text-gray-300">
-                        {it.requirement || "—"}
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-
-                <td className="px-3 py-2 align-top text-gray-700 dark:text-gray-200">
-                  {tol ? tol : (it.units ? `Unit: ${it.units}` : "—")}
-                </td>
-
-                <td className="px-3 py-2 align-top">
-                  {(it.tags?.length || 0) === 0 ? (
-                    <span className="text-gray-500 dark:text-gray-400">—</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {it.tags!.slice(0, 6).map((t, idx) => (
-                        <span
-                          key={`${t}-${idx}`}
-                          className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200/70 dark:border-neutral-700 dark:text-gray-200"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                      {it.tags!.length > 6 ? (
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                          +{it.tags!.length - 6}
-                        </span>
-                      ) : null}
-                    </div>
-                  )}
-                </td>
-              </tr>
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+                    Mandatory
+                </span>
             );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
+        }
+        if (r === "optional") {
+            return (
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-gray-200">
+                    Optional
+                </span>
+            );
+        }
+        return null;
+    };
+
+    const tolText = (it: ComplianceGridItem) => {
+        // show a compact string if present
+        const op = (it.tolOp || "").toString().trim();
+        const b = it.base != null ? String(it.base) : "";
+        const p = it.plus != null ? `+${it.plus}` : "";
+        const m = it.minus != null ? `-${it.minus}` : "";
+        const pm = p || m ? `(${[p, m].filter(Boolean).join(" / ")})` : "";
+        const u = (it.units || "").toString().trim();
+
+        const parts = [op, b, pm, u].filter(Boolean);
+        return parts.length ? parts.join(" ") : null;
+    };
+
+    return (
+        <div className="overflow-auto rounded-xl border border-gray-200/70 dark:border-neutral-800/60">
+            <table className="min-w-[900px] w-full text-[12px]">
+                <thead className="bg-gray-50/70 dark:bg-neutral-800/60">
+                    <tr className="text-left">
+                        <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Checklist</th>
+                        <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Item</th>
+                        <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Requirement</th>
+                        <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Tolerance / Unit</th>
+                        <th className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-200">Tags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items.map((it) => {
+                        const checklistLabel =
+                            (it.refCode ? `#${it.refCode} ` : "") + (it.refTitle || "—");
+                        const tol = tolText(it);
+
+                        return (
+                            <tr key={it.id} className="border-t border-gray-200/70 dark:border-neutral-800/60">
+                                <td className="px-3 py-2 align-top text-gray-700 dark:text-gray-200">
+                                    <div className="min-w-[220px]">{checklistLabel}</div>
+                                </td>
+
+                                <td className="px-3 py-2 align-top">
+                                    <div className="flex items-start gap-2">
+                                        {it.critical ? (
+                                            <span className="mt-0.5 text-[10px] px-2 py-0.5 rounded-full border border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
+                                                Critical
+                                            </span>
+                                        ) : null}
+
+                                        <div className="min-w-0">
+                                            <div className="text-gray-900 dark:text-white font-medium">
+                                                {it.text || "—"}
+                                            </div>
+                                            {it.code ? (
+                                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                                    {it.code}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <td className="px-3 py-2 align-top">
+                                    <div className="flex items-center gap-2">
+                                        {reqPill(it)}
+                                        {!reqPill(it) ? (
+                                            <span className="text-gray-600 dark:text-gray-300">
+                                                {it.requirement || "—"}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                </td>
+
+                                <td className="px-3 py-2 align-top text-gray-700 dark:text-gray-200">
+                                    {tol ? tol : (it.units ? `Unit: ${it.units}` : "—")}
+                                </td>
+
+                                <td className="px-3 py-2 align-top">
+                                    {(it.tags?.length || 0) === 0 ? (
+                                        <span className="text-gray-500 dark:text-gray-400">—</span>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {it.tags!.slice(0, 6).map((t, idx) => (
+                                                <span
+                                                    key={`${t}-${idx}`}
+                                                    className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200/70 dark:border-neutral-700 dark:text-gray-200"
+                                                >
+                                                    {t}
+                                                </span>
+                                            ))}
+                                            {it.tags!.length > 6 ? (
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                                    +{it.tags!.length - 6}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
 }
 
 export default function WIRDocDis() {
@@ -1882,6 +1887,16 @@ export default function WIRDocDis() {
                                                     ev.kind ||
                                                     "Attachment";
 
+                                                const rawTag =
+                                                    ev.meta?.tag ||
+                                                    ev.meta?.category ||    // optional fallback
+                                                    ev.tag ||               // in case BE also sends tag at root
+                                                    ev.kind ||
+                                                    "File";
+
+                                                const tagLabel =
+                                                    typeof rawTag === "string" ? rawTag : String(rawTag);
+
                                                 return (
                                                     <div
                                                         key={ev.id || displayName}
@@ -1896,7 +1911,7 @@ export default function WIRDocDis() {
                                                             {displayName}
                                                         </a>
                                                         <span className="shrink-0 text-[11px] px-2 py-0.5 rounded border border-gray-200/70 dark:border-neutral-800/60">
-                                                            {ev.kind || "File"}
+                                                            {tagLabel}
                                                         </span>
                                                     </div>
                                                 );
