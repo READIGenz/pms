@@ -303,7 +303,7 @@ export class WirService {
       where: { projectId },
       orderBy: [{ updatedAt: 'desc' }],
       select: {
-        wirId: true, code: true, title: true, status: true,
+        wirId: true, code: true, title: true, status: true, discipline: true, 
         createdAt: true, updatedAt: true,
         forDate: true,
         forTime: true,
@@ -322,6 +322,7 @@ export class WirService {
       code: r.code,
       title: r.title,
       status: r.status,
+      discipline: r.discipline ?? null, 
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       itemsCount: r._count.items,
