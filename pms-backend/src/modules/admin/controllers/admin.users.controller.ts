@@ -2,7 +2,7 @@
 import {
   Body, Controller, Get, Param, Patch, Post, Query,
   UploadedFile, UseGuards, UseInterceptors, HttpException, HttpStatus,
-  Req, ForbiddenException
+  Req, ForbiddenException, Inject
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -10,7 +10,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 // import { extname } from 'path';
 // import * as fs from 'fs';
 import { memoryStorage } from 'multer';
-import { FilesService } from 'src/common/storage/files.service';
+//import { FilesService } from 'src/common/storage/local-files.service';
+import {
+  FILES_SERVICE,
+  FilesServiceInterface,
+} from 'src/common/storage/files.interface';
 import {
   Prisma, UserRole, CompanyRole, RoleScope
 } from '@prisma/client';
@@ -24,7 +28,9 @@ export class AdminUsersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly codeSvc: AdminCodeService,
-    private readonly files: FilesService,
+    //private readonly files: FilesService,
+    @Inject(FILES_SERVICE)
+    private readonly files: FilesServiceInterface, 
   ) { }
 
   // IMPORTANT: keep specific routes ABOVE the :id param route so they aren't shadowed.
